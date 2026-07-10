@@ -21,7 +21,7 @@ direction="${2:-${SHEPHERD_DIRECTION:-$(read_cfg direction)}}"
 placement="${placement:-split}"
 direction="${direction:-right}"
 
-args=(--plugin jwarykowski.herdr-shepherd --entrypoint board --placement "$placement")
+args=(--plugin jwarykowski.herdr-shepherd --entrypoint shepherd --placement "$placement")
 # direction only applies to split panes.
 [ "$placement" = "split" ] && args+=(--direction "$direction")
 

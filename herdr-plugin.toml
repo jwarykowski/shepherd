@@ -35,7 +35,7 @@ title = "shepherd (zoomed)"
 command = ["bash", "open.sh", "zoomed"]
 
 [[panes]]
-id = "board"
+id = "shepherd"
 title = "shepherd"
 placement = "split"
 command = ["./bin/shepherd"]
