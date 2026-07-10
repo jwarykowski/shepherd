@@ -1,4 +1,4 @@
-# 🦯 Shepherd
+# 𓋾 Shepherd
 
 Your todos herded. An interactive todo board for [herdr](https://herdr.dev),
 opened in a split, tab, overlay, or zoomed pane. Backed by a plain markdown
