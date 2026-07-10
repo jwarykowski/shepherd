@@ -156,7 +156,7 @@ func load(path string) []item {
 			case "created":
 				last.created = m[2]
 			case "category":
-				last.category = m[2]
+				last.category = strings.ToLower(m[2])
 			case "due":
 				last.due = m[2]
 			case "note":
@@ -479,7 +479,7 @@ func parseQuickAdd(s string) item {
 	for _, tok := range strings.Fields(s) {
 		switch {
 		case strings.HasPrefix(tok, "@") && len(tok) > 1:
-			it.category = tok[1:]
+			it.category = strings.ToLower(tok[1:])
 		case strings.HasPrefix(tok, "!") && len(tok) == 2 && strings.ContainsRune("hHmMlL", rune(tok[1])):
 			it.prio = strings.ToUpper(tok[1:])[0]
 		case strings.HasPrefix(tok, "due:") && len(tok) > 4:
@@ -938,7 +938,7 @@ func (m model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if idx >= 0 {
 				m.beforeMutate()
 				cur := m.items[idx]
-				cur.category = v // empty clears
+				cur.category = strings.ToLower(v) // empty clears
 				m.items[idx] = cur
 				m.resort()
 				m.place(cur)
@@ -1030,7 +1030,7 @@ func (m model) listView() string {
 			}
 			done, total := m.groupCount(it)
 			cnt := countStyle.Render(fmt.Sprintf("%d/%d", done, total))
-			left := catStyle.Render(strings.ToLower(label)) // lowercase for consistent section headers
+			left := catStyle.Render(label)
 			gap := w - lipgloss.Width(left) - lipgloss.Width(cnt)
 			if gap < 1 {
 				gap = 1
@@ -1084,14 +1084,19 @@ func (m model) listView() string {
 	return m.frame(b.String(), m.listFooter())
 }
 
-// header renders the list/table title block: the active view flush-right.
-func (m model) header() string {
-	done, total := 0, len(m.items)
+// count returns the done and total item counts across the whole board.
+func (m model) count() (done, total int) {
 	for _, it := range m.items {
 		if it.done {
 			done++
 		}
 	}
+	return done, len(m.items)
+}
+
+// header renders the list/table title block: the active view flush-right.
+func (m model) header() string {
+	done, total := m.count()
 	return m.headerWith(viewName[m.view], done, total)
 }
 
@@ -1184,7 +1189,11 @@ func (m model) tableView() string {
 		}
 		rows = append(rows, table.Row{box, p, it.text, it.category, due})
 	}
-	h := m.innerHeight() - 6 // header block + footer rule/help
+	head, footer := m.header(), m.listFooter()
+	// derive table height from the actual header/footer sizes (+1 for the
+	// table's own column-header row) rather than a hard-coded constant.
+	overhead := lines(head) + lines(footer) + 1
+	h := m.innerHeight() - overhead
 	if h < 3 {
 		h = 3
 	}
@@ -1199,7 +1208,7 @@ func (m model) tableView() string {
 	// bubbles default pink foreground.
 	st.Selected = lipgloss.NewStyle().Bold(true).Reverse(true)
 	t.SetStyles(st)
-	return m.frame(m.header()+"\n"+t.View(), m.listFooter())
+	return m.frame(head+"\n"+t.View(), footer)
 }
 
 // helpBody returns the full help content as individual (already-wrapped) lines.
@@ -1276,12 +1285,7 @@ func (m model) helpView() string {
 		end = len(lines)
 	}
 
-	done, total := 0, len(m.items)
-	for _, it := range m.items {
-		if it.done {
-			done++
-		}
-	}
+	done, total := m.count()
 	var b strings.Builder
 	b.WriteString(m.headerWith("help", done, total) + "\n\n")
 	b.WriteString(strings.Join(lines[off:end], "\n"))
@@ -1297,6 +1301,9 @@ func (m model) helpView() string {
 		dimStyle.Render("scroll j/k · "+hint)
 	return m.frame(b.String(), footer)
 }
+
+// lines counts the visual lines in a rendered string.
+func lines(s string) int { return strings.Count(s, "\n") + 1 }
 
 // frame pins the footer to the bottom of the pane, padding the middle.
 func (m model) frame(body, footer string) string {
