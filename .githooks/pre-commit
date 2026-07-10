@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Format staged Go files before commit. Enable once with:
+#   git config core.hooksPath .githooks
+set -euo pipefail
+
+# Only staged, still-present .go files.
+mapfile -t files < <(git diff --cached --name-only --diff-filter=ACM -- '*.go')
+[ ${#files[@]} -eq 0 ] && exit 0
+
+gofmt -w "${files[@]}"
+git add "${files[@]}"   # re-stage anything gofmt rewrote
