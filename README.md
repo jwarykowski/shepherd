@@ -51,7 +51,7 @@ In a herdr manifest, give a project its own pane entrypoint:
 
 ```toml
 [[panes]]
-id = "board-work"
+id = "shepherd-work"
 title = "todo: work"
 placement = "tab"
 command = ["./bin/shepherd", "--filter", "work"]
