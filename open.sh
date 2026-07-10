@@ -5,10 +5,10 @@ set -euo pipefail
 
 herdr_bin="${HERDR_BIN_PATH:-herdr}"
 
-# Same config path the board binary uses.
+# Same config path the shepherd binary uses.
 cfg="${SHEPHERD_CONFIG:-${HERDR_PLUGIN_STATE_DIR:-$HOME/.config/shepherd}/config.toml}"
 
-# ponytail: grep one key out of the tiny TOML instead of a parser. Strips quotes.
+# grep one key out of the tiny TOML instead of a parser. Strips quotes.
 # Must return 0 even when the file/key is missing, else `set -e` kills the
 # assignment `placement=$(read_cfg ...)` and no pane opens.
 read_cfg() {

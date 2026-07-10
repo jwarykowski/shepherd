@@ -23,7 +23,6 @@ import (
 
 const (
 	tsFormat    = "02-01-2006 15:04"
-	appTitle    = "𓋾 shepherd"
 	appSubtitle = "your todos herded"
 	padX        = 2
 	padY        = 1
@@ -380,7 +379,6 @@ func sortByPriority(items []item) {
 
 // ---- styles ----
 var (
-	titleStyle  = lipgloss.NewStyle().Bold(true)
 	dimStyle    = lipgloss.NewStyle().Faint(true)
 	doneStyle   = lipgloss.NewStyle().Faint(true).Strikethrough(true)
 	cursorStyle = lipgloss.NewStyle().Reverse(true)
@@ -495,7 +493,7 @@ func parseQuickAdd(s string) item {
 }
 
 // histCap bounds the undo/redo depth so history can't grow unbounded.
-// ponytail: 100 is plenty for a todo list; raise if anyone ever hits it.
+// 100 is plenty for a todo list; raise if anyone ever hits it.
 const histCap = 100
 
 func newModel() model {
@@ -688,8 +686,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.dirty = false
 		return m, nil
 	case tickMsg:
-		// ponytail: only auto-reload external edits when we have no pending
-		// in-memory changes, so a dotfile sync can't clobber the user's work.
+		// only auto-reload external edits when we have no pending in-memory
+		// changes, so a dotfile sync can't clobber the user's work.
 		if !m.dirty {
 			if mt := fileModTime(m.path); mt.After(m.lastMod) {
 				m.items = load(m.path)
@@ -1032,7 +1030,7 @@ func (m model) listView() string {
 			}
 			done, total := m.groupCount(it)
 			cnt := countStyle.Render(fmt.Sprintf("%d/%d", done, total))
-			left := catStyle.Render(label)
+			left := catStyle.Render(strings.ToLower(label)) // lowercase for consistent section headers
 			gap := w - lipgloss.Width(left) - lipgloss.Width(cnt)
 			if gap < 1 {
 				gap = 1
@@ -1050,9 +1048,10 @@ func (m model) listView() string {
 		if pos == m.cursor {
 			mark = cursorStyle.Render(" ")
 		}
-		// right cluster: due (left) then priority label flush far-right
+		// right cluster: due (left) then priority label flush far-right.
+		// Overdue rows live under the ⚠ overdue group, so don't repeat "overdue" on the line.
 		label := ""
-		if it.due != "" {
+		if it.due != "" && !pinned(it) {
 			lbl, over := dueLabel(it.due)
 			st := dimStyle
 			if over {
@@ -1085,36 +1084,34 @@ func (m model) listView() string {
 	return m.frame(b.String(), m.listFooter())
 }
 
-// header: title (left) with the active filter flush-right, a faint subtitle,
-// then a full-width rule.
+// header renders the list/table title block: the active view flush-right.
 func (m model) header() string {
-	w := m.width()
-	title := titleStyle.Render(appTitle)
-	done := 0
+	done, total := 0, len(m.items)
 	for _, it := range m.items {
 		if it.done {
 			done++
 		}
 	}
-	right := countStyle.Render(fmt.Sprintf("%d/%d", done, len(m.items)))
+	return m.headerWith(viewName[m.view], done, total)
+}
+
+// headerWith renders the shared title block used by every view: the subtitle
+// (left) with the context label + done/total count (and active filter)
+// flush-right, then a full-width rule.
+func (m model) headerWith(context string, done, total int) string {
+	w := m.width()
+	left := dimStyle.Render(appSubtitle)
+
+	right := dimStyle.Render(context) + "  " + countStyle.Render(fmt.Sprintf("%d/%d", done, total))
 	if m.filter != "" || m.mode == modeFilter {
 		right = matchStyle.Render("/"+m.filter) + "  " + right
 	}
-	gap := w - lipgloss.Width(title) - lipgloss.Width(right)
+	gap := w - lipgloss.Width(left) - lipgloss.Width(right)
 	if gap < 1 {
 		gap = 1
 	}
-	line := title + strings.Repeat(" ", gap) + right
 
-	sub := dimStyle.Render(appSubtitle)
-	vlabel := dimStyle.Render("view: " + viewName[m.view])
-	sgap := w - lipgloss.Width(sub) - lipgloss.Width(vlabel)
-	if sgap < 1 {
-		sgap = 1
-	}
-	subLine := sub + strings.Repeat(" ", sgap) + vlabel
-
-	return line + "\n" + subLine + "\n" +
+	return left + strings.Repeat(" ", gap) + right + "\n" +
 		dimStyle.Render(strings.Repeat("─", w))
 }
 
@@ -1198,7 +1195,9 @@ func (m model) tableView() string {
 	)
 	t.SetCursor(m.cursor)
 	st := table.DefaultStyles()
-	st.Selected = st.Selected.Bold(true).Reverse(true)
+	// plain reverse-video highlight (matches the list cursor); drop the
+	// bubbles default pink foreground.
+	st.Selected = lipgloss.NewStyle().Bold(true).Reverse(true)
 	t.SetStyles(st)
 	return m.frame(m.header()+"\n"+t.View(), m.listFooter())
 }
@@ -1248,7 +1247,7 @@ func (m model) helpViewport() int {
 	if ih == 0 {
 		return len(m.helpBody()) // unknown size: show everything
 	}
-	vh := ih - 5 // title + rule + blank, footer rule + hint
+	vh := ih - 5 // subtitle + rule + blank, footer rule + hint
 	if vh < 1 {
 		vh = 1
 	}
@@ -1277,9 +1276,14 @@ func (m model) helpView() string {
 		end = len(lines)
 	}
 
+	done, total := 0, len(m.items)
+	for _, it := range m.items {
+		if it.done {
+			done++
+		}
+	}
 	var b strings.Builder
-	b.WriteString(titleStyle.Render(appTitle+" · help") + "\n")
-	b.WriteString(dimStyle.Render(strings.Repeat("─", w)) + "\n\n")
+	b.WriteString(m.headerWith("help", done, total) + "\n\n")
 	b.WriteString(strings.Join(lines[off:end], "\n"))
 
 	hint := "enter to close"
@@ -1312,9 +1316,18 @@ func (m model) detailView() string {
 		return "no item"
 	}
 	it := m.items[idx]
+	// count reflects the item's own category, not the whole board
+	cdone, ctotal := 0, 0
+	for _, x := range m.items {
+		if x.category == it.category {
+			ctotal++
+			if x.done {
+				cdone++
+			}
+		}
+	}
 	var b strings.Builder
-	b.WriteString(titleStyle.Render(appTitle+" · detail") + "\n")
-	b.WriteString(dimStyle.Render(strings.Repeat("─", m.width())) + "\n\n")
+	b.WriteString(m.headerWith("detail", cdone, ctotal) + "\n\n")
 
 	status := "open"
 	if it.done {

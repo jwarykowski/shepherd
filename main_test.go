@@ -211,9 +211,6 @@ func TestView(t *testing.T) {
 	nm, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")}) // no-op, ensure View path
 	m = nm.(model)
 	v := m.View()
-	if !strings.Contains(v, appTitle) {
-		t.Fatal("title/emoji missing")
-	}
 	if !strings.Contains(v, appSubtitle) {
 		t.Fatal("subtitle missing")
 	}
@@ -236,8 +233,8 @@ func TestFilterFarRight(t *testing.T) {
 		items: []item{{text: "call bank"}}}
 	head := m.header()
 	first := strings.SplitN(head, "\n", 2)[0]
-	// title left; filter then done/total flush to the right edge (inner width 46)
-	if !strings.Contains(first, appTitle) || !strings.Contains(first, "/bank") || !strings.HasSuffix(first, "0/1") {
+	// subtitle left; filter then done/total flush to the right edge (inner width 46)
+	if !strings.Contains(first, appSubtitle) || !strings.Contains(first, "/bank") || !strings.HasSuffix(first, "0/1") {
 		t.Fatalf("header layout wrong: %q", first)
 	}
 	if lipgloss.Width(first) != 46 {
