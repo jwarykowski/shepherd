@@ -4,7 +4,7 @@ Your todos herded. An interactive todo board for [herdr](https://herdr.dev),
 opened in a split, tab, overlay, or zoomed pane. Backed by a plain markdown
 file: greppable, hand-editable, syncable.
 
-## Keys (inside the panel)
+## Keys
 
 | key | action |
 |-----|--------|
