@@ -1,0 +1,21 @@
+id = "jwarykowski.herdr-shepherd"
+name = "Shepherd"
+version = "0.5.0"
+min_herdr_version = "0.7.0"
+description = "Shepherd — interactive todo board in a split pane (Bubble Tea). Category + priority ordering, notes, timestamps, detail view, filter. Backed by a markdown file."
+platforms = ["linux", "macos"]
+
+# Compile the board binary at install time. Requires a Go toolchain.
+[[build]]
+command = ["go", "build", "-o", "bin/board", "."]
+
+[[actions]]
+id = "open"
+title = "Shepherd: open board"
+command = ["bash", "open.sh"]
+
+[[panes]]
+id = "board"
+title = "Shepherd"
+placement = "split"
+command = ["./bin/board"]
