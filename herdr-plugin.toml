@@ -5,9 +5,9 @@ min_herdr_version = "0.7.0"
 description = "Shepherd — your todos herded. Interactive todo board in a split, tab, overlay, or zoomed pane. Category/priority/due ordering, overdue pinning, notes, due dates, undo/redo, filter, archive. Backed by a markdown file."
 platforms = ["linux", "macos"]
 
-# Compile the board binary at install time. Requires a Go toolchain.
+# Compile the shepherd binary at install time. Requires a Go toolchain.
 [[build]]
-command = ["go", "build", "-o", "bin/board", "."]
+command = ["go", "build", "-o", "bin/shepherd", "."]
 
 [[actions]]
 id = "open"
@@ -38,4 +38,4 @@ command = ["bash", "open.sh", "zoomed"]
 id = "board"
 title = "shepherd"
 placement = "split"
-command = ["./bin/board"]
+command = ["./bin/shepherd"]

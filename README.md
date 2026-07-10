@@ -44,7 +44,7 @@ sync) show up on their own.
 Start the board pre-filtered — useful for a per-project tab:
 
 ```sh
-./bin/board --filter work      # or: SHEPHERD_FILTER=work ./bin/board
+./bin/shepherd --filter work      # or: SHEPHERD_FILTER=work ./bin/shepherd
 ```
 
 In a herdr manifest, give a project its own pane entrypoint:
@@ -54,7 +54,7 @@ In a herdr manifest, give a project its own pane entrypoint:
 id = "board-work"
 title = "todo: work"
 placement = "tab"
-command = ["./bin/board", "--filter", "work"]
+command = ["./bin/shepherd", "--filter", "work"]
 ```
 
 ## Storage
@@ -107,7 +107,7 @@ Requires a Go toolchain to build.
 Local dev, from a checkout:
 
 ```sh
-go build -o bin/board .
+go build -o bin/shepherd .
 herdr plugin link .
 ```
 

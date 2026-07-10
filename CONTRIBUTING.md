@@ -3,7 +3,7 @@
 Single-package Go plugin. No frameworks.
 
 ```sh
-go build -o bin/board .   # build the board binary
+go build -o bin/shepherd .   # build the shepherd binary
 go test ./...             # logic + model + view tests
 gofmt -l .                # lint: lists unformatted files (should print nothing)
 go vet ./...              # lint: static checks
