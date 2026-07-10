@@ -1,21 +1,41 @@
 id = "jwarykowski.herdr-shepherd"
 name = "Shepherd"
-version = "0.5.0"
+version = "0.6.0"
 min_herdr_version = "0.7.0"
-description = "Shepherd — interactive todo board in a split pane (Bubble Tea). Category + priority ordering, notes, timestamps, detail view, filter. Backed by a markdown file."
+description = "Shepherd — your todos herded. Interactive todo board in a split, tab, overlay, or zoomed pane. Category/priority/due ordering, overdue pinning, notes, due dates, undo/redo, filter, archive. Backed by a markdown file."
 platforms = ["linux", "macos"]
 
-# Compile the board binary at install time. Requires a Go toolchain.
+# Compile the shepherd binary at install time. Requires a Go toolchain.
 [[build]]
-command = ["go", "build", "-o", "bin/board", "."]
+command = ["go", "build", "-o", "bin/shepherd", "."]
 
 [[actions]]
 id = "open"
-title = "Shepherd: open board"
+title = "shepherd"
 command = ["bash", "open.sh"]
 
+[[actions]]
+id = "open-split"
+title = "shepherd (split)"
+command = ["bash", "open.sh", "split"]
+
+[[actions]]
+id = "open-tab"
+title = "shepherd (tab)"
+command = ["bash", "open.sh", "tab"]
+
+[[actions]]
+id = "open-overlay"
+title = "shepherd (overlay)"
+command = ["bash", "open.sh", "overlay"]
+
+[[actions]]
+id = "open-zoomed"
+title = "shepherd (zoomed)"
+command = ["bash", "open.sh", "zoomed"]
+
 [[panes]]
-id = "board"
-title = "Shepherd"
+id = "shepherd"
+title = "shepherd"
 placement = "split"
-command = ["./bin/board"]
+command = ["./bin/shepherd"]

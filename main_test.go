@@ -37,7 +37,7 @@ func TestRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "todo.md")
 	src := "- [ ] alpha\n- [x] (H) beta\n  created: 2026-07-10 13:40\n  category: work\n  note: from the store\n- [ ] (L) gamma\n"
-	os.WriteFile(p, []byte(src), 0o644)
+	_ = os.WriteFile(p, []byte(src), 0o644)
 	items := load(p)
 	if len(items) != 3 {
 		t.Fatalf("want 3 items, got %d", len(items))
@@ -90,7 +90,7 @@ func TestSortByCategoryThenPrio(t *testing.T) {
 func TestModelActions(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "todo.md")
-	os.WriteFile(p, []byte("- [ ] alpha\n- [ ] beta\n"), 0o644)
+	_ = os.WriteFile(p, []byte("- [ ] alpha\n- [ ] beta\n"), 0o644)
 	m := model{path: p, items: load(p), input: textinput.New()}
 
 	// toggle first item done
@@ -309,7 +309,7 @@ func TestParseDue(t *testing.T) {
 		"next month": "2026-08-10",
 		"+3d":        "2026-07-13",
 		"1y":         "2027-07-10",
-		"25/12/2026": "2026-12-25", // British input -> ISO storage
+		"25-12-2026": "2026-12-25", // DMY input -> ISO storage
 		"2026-12-25": "2026-12-25",
 		"whatever":   "", // unrecognized -> blank
 	}
@@ -336,7 +336,7 @@ func TestDueSort(t *testing.T) {
 func TestArchive(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "todo.md")
-	os.WriteFile(p, []byte("- [x] done one\n- [ ] keep me\n"), 0o644)
+	_ = os.WriteFile(p, []byte("- [x] done one\n- [ ] keep me\n"), 0o644)
 	m := model{path: p, input: textinput.New(), items: load(p)}
 	m = drive(m, "c") // archive done items
 	if len(m.items) != 1 || m.items[0].text != "keep me" {
@@ -418,7 +418,7 @@ func TestArchiveSearch(t *testing.T) {
 func TestLoadConfig(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "config.toml")
-	os.WriteFile(p, []byte("# shepherd\nview = priority\ndensity = comfort\ncategories = [\"work\", \"home\", personal]\n"), 0o644)
+	_ = os.WriteFile(p, []byte("# shepherd\nview = priority\ndensity = comfort\ncategories = [\"work\", \"home\", personal]\n"), 0o644)
 	c := loadConfig(p)
 	if c.view != viewPriority {
 		t.Fatalf("view not parsed: %d", c.view)

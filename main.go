@@ -22,7 +22,7 @@ import (
 )
 
 const (
-	tsFormat    = "02/01/2006 15:04"
+	tsFormat    = "02-01-2006 15:04"
 	appTitle    = "𓋾 shepherd"
 	appSubtitle = "your todos herded"
 	padX        = 2
@@ -37,13 +37,13 @@ var (
 
 const (
 	dateFormat = "2006-01-02" // ISO on disk: sorts lexically, so due ordering works
-	ukDate     = "02/01/2006" // British, for display + input
+	dmyDate    = "02-01-2006" // day-month-year (DMY), for display + input
 )
 
-// displayDate renders an ISO date as British DD/MM/YYYY; raw if unparseable.
+// displayDate renders an ISO date as day-month-year DD-MM-YYYY; raw if unparseable.
 func displayDate(iso string) string {
 	if t, err := time.Parse(dateFormat, iso); err == nil {
-		return t.Format(ukDate)
+		return t.Format(dmyDate)
 	}
 	return iso
 }
@@ -213,9 +213,12 @@ func appendArchive(todo string, items []item) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
-	_, err = f.WriteString(serialize(items))
-	return err
+	_, werr := f.WriteString(serialize(items))
+	cerr := f.Close()
+	if werr != nil {
+		return werr
+	}
+	return cerr
 }
 
 func fileModTime(p string) time.Time {
@@ -292,8 +295,8 @@ func parseDue(s string) string {
 			}
 		}
 	}
-	// explicit dates: accept British or ISO, normalize to ISO on disk
-	if t, err := time.Parse(ukDate, s); err == nil {
+	// explicit dates: accept DMY or ISO, normalize to ISO on disk
+	if t, err := time.Parse(dmyDate, s); err == nil {
 		return t.Format(dateFormat)
 	}
 	if t, err := time.Parse(dateFormat, s); err == nil {
@@ -428,8 +431,6 @@ func (d density) padY() int {
 	}
 	return padY
 }
-
-var densityName = map[density]string{compact: "compact", comfort: "comfort"}
 
 // viewMode selects how the list is grouped/rendered.
 type viewMode int
@@ -839,7 +840,7 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if idx >= 0 {
 			m.mode = modeDue
 			m.input.SetValue(m.items[idx].due)
-			m.input.Placeholder = "today · tomorrow · 3d · 2w · 5m · 1y · DD/MM/YYYY"
+			m.input.Placeholder = "today · tomorrow · 3d · 2w · 5m · 1y · DD-MM-YYYY"
 			m.input.Focus()
 		}
 	case "ctrl+e":
@@ -1049,24 +1050,23 @@ func (m model) listView() string {
 		if pos == m.cursor {
 			mark = cursorStyle.Render(" ")
 		}
-		note := ""
-		if it.note != "" {
-			note = dimStyle.Render(" ✎")
-		}
-		// right cluster: priority label (fixed width), then due flush far-right
-		label := strings.Repeat(" ", 6)
-		if lbl, ok := prioLabel[it.prio]; ok {
-			label = prioStyles[it.prio].Render(fmt.Sprintf("%-6s", lbl))
-		}
+		// right cluster: due (left) then priority label flush far-right
+		label := ""
 		if it.due != "" {
 			lbl, over := dueLabel(it.due)
 			st := dimStyle
 			if over {
 				st = prioStyles['H'] // red for due/overdue
 			}
-			label += "  " + st.Render(lbl)
+			label = st.Render(lbl)
 		}
-		left := fmt.Sprintf("%s  %s %s%s", mark, boxStyle.Render(box), text, note) // 2-space indent under header
+		if lbl, ok := prioLabel[it.prio]; ok {
+			if label != "" {
+				label += "  "
+			}
+			label += prioStyles[it.prio].Render(lbl)
+		}
+		left := fmt.Sprintf("%s  %s %s", mark, boxStyle.Render(box), text) // 2-space indent under header
 		gap := w - lipgloss.Width(left) - lipgloss.Width(label)
 		if gap < 1 {
 			gap = 1
@@ -1228,7 +1228,7 @@ func (m model) helpBody() []string {
 	line("space — toggle done · x — delete · c — archive done")
 	blank()
 	sec("due dates")
-	line("today · tomorrow · Nd/Nw/Nm/Ny (e.g. 3d, 2w) · DD/MM/YYYY. Anything unrecognised clears the date. Overdue items are pinned to a group at the top.")
+	line("today · tomorrow · Nd/Nw/Nm/Ny (e.g. 3d, 2w) · DD-MM-YYYY. Anything unrecognised clears the date. Overdue items are pinned to a group at the top.")
 	blank()
 	sec("view & find")
 	line("v — cycle view: category / priority / table")

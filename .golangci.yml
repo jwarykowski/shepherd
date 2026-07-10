@@ -1,0 +1,6 @@
+version: "2"
+
+# Standard linter set: errcheck, govet, ineffassign, staticcheck, unused.
+# Add more under `enable:` if you want stricter checks.
+linters:
+  default: standard
