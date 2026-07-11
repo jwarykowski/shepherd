@@ -1,8 +1,9 @@
 # 𓋾 Shepherd
 
-Your todos herded. An interactive todo board for [herdr](https://herdr.dev),
-opened in a split, tab, overlay, or zoomed pane. Backed by a plain markdown
-file: greppable, hand-editable, syncable.
+Your todos herded. An interactive todo board that runs standalone in any
+terminal, or as a [herdr](https://herdr.dev) plugin in a split, tab, overlay,
+or zoomed pane. Backed by a plain markdown file: greppable, hand-editable,
+syncable.
 
 - [install](#install)
 - [usage](#usage)
