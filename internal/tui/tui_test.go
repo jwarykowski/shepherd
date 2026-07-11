@@ -130,6 +130,52 @@ func TestSetCategory(t *testing.T) {
 	}
 }
 
+func TestAddInheritsFilterCategory(t *testing.T) {
+	// filter names a category in use -> new item inherits it
+	m := model{input: textinput.New(), items: []todo.Item{{Text: "a", Category: "work"}}, filter: "work"}
+	m = drive(m, "a")
+	m.input.SetValue("ship it")
+	m = drive(m, "enter")
+	if got := lastByText(m, "ship it"); got.Category != "work" {
+		t.Fatalf("add under category filter should inherit: %+v", got)
+	}
+
+	// inline @category overrides the filter
+	m = drive(m, "a")
+	m.input.SetValue("errand @home")
+	m = drive(m, "enter")
+	if got := lastByText(m, "errand"); got.Category != "home" {
+		t.Fatalf("inline category should override filter: %+v", got)
+	}
+
+	// non-category filter (no match in config or items) -> no inheritance
+	m = model{input: textinput.New(), items: []todo.Item{{Text: "a", Category: "work"}}, filter: "buy"}
+	m = drive(m, "a")
+	m.input.SetValue("buy milk")
+	m = drive(m, "enter")
+	if got := lastByText(m, "buy milk"); got.Category != "" {
+		t.Fatalf("non-category filter should not tag: %+v", got)
+	}
+
+	// configured-but-unused category also counts
+	m = model{input: textinput.New(), categories: []string{"personal"}, filter: "personal"}
+	m = drive(m, "a")
+	m.input.SetValue("call mum")
+	m = drive(m, "enter")
+	if got := lastByText(m, "call mum"); got.Category != "personal" {
+		t.Fatalf("configured category filter should inherit: %+v", got)
+	}
+}
+
+func lastByText(m model, text string) todo.Item {
+	for i := len(m.items) - 1; i >= 0; i-- {
+		if m.items[i].Text == text {
+			return m.items[i]
+		}
+	}
+	return todo.Item{}
+}
+
 func TestDetailNote(t *testing.T) {
 	m := model{input: textinput.New(), items: []todo.Item{{Text: "task"}}}
 	m = drive(m, "d")

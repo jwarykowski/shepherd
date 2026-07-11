@@ -58,6 +58,28 @@ func matchItem(it todo.Item, q string) bool {
 		strings.Contains(strings.ToLower(it.Due), q)
 }
 
+// filterCategory returns the active filter when it exactly names a known
+// category (configured or already in use), so a new item added under a
+// category filter inherits it and stays visible. Empty for a non-category
+// filter (text/due/partial), leaving the item uncategorized.
+func (m model) filterCategory() string {
+	if m.filter == "" {
+		return ""
+	}
+	f := strings.ToLower(m.filter)
+	for _, c := range m.categories {
+		if strings.ToLower(c) == f {
+			return f
+		}
+	}
+	for _, it := range m.items {
+		if strings.ToLower(it.Category) == f {
+			return f
+		}
+	}
+	return ""
+}
+
 // visible returns the item indices matching the current filter, in order.
 func (m model) visible() []int {
 	idx := make([]int, 0, len(m.items))
@@ -363,6 +385,9 @@ func (m model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		switch m.mode {
 		case modeAdd:
 			if it := todo.ParseQuickAdd(v); it.Text != "" {
+				if it.Category == "" {
+					it.Category = m.filterCategory()
+				}
 				m.beforeMutate()
 				m.items = append(m.items, it)
 				m.resort()

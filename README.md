@@ -82,6 +82,11 @@ Start the board pre-filtered — useful for a per-project tab:
 ./bin/shepherd --filter work      # or: SHEPHERD_FILTER=work ./bin/shepherd
 ```
 
+When the filter names a category (one you've configured or already use), items
+you add while it's active inherit that category — so a task added on a
+`--filter work` board lands in `work` and stays in view. An inline `@category`
+still overrides; a filter that isn't a category leaves new items uncategorized.
+
 In a herdr manifest, give a project its own pane entrypoint:
 
 ```toml
