@@ -84,6 +84,24 @@ board picks up the change within ~2s.
 ]
 ```
 
+## Agentic tools
+
+The command API is the whole integration — any agent that can run a shell drives
+shepherd with the same verbs. Discovery is layered:
+
+- **Any tool:** `shepherd help` prints the contract. That's the universal
+  fallback; nothing else is required.
+- **Claude Code:** symlink the bundled skill in once —
+  ```sh
+  ln -s "$PWD/skills/shepherd" ~/.claude/skills/shepherd
+  ```
+  Available in every project; Claude invokes it when a request relates to your
+  todos (the skill's description is what it matches on).
+- **Cursor / Codex / Zed / others:** paste [`AGENTS.md`](AGENTS.md) into the
+  tool's global rules / instructions slot.
+
+All three point at the same `shepherd` CLI — no per-tool server, no MCP.
+
 ## Storage
 
 `$HERDR_PLUGIN_STATE_DIR/todo.md`, else `~/.config/shepherd/todo.md`.
