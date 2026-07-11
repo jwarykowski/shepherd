@@ -1393,6 +1393,12 @@ func (m model) detailView() string {
 }
 
 func main() {
+	// A leading non-flag arg switches to the command API (see cli.go);
+	// bare `shepherd` and `shepherd --filter …` stay the interactive board.
+	if len(os.Args) > 1 && !strings.HasPrefix(os.Args[1], "-") {
+		os.Exit(runCLI(os.Args[1], os.Args[2:]))
+	}
+
 	filter := flag.String("filter", os.Getenv("SHEPHERD_FILTER"), "start with this filter applied (matches text/note/category/due)")
 	flag.Parse()
 

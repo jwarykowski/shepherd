@@ -57,6 +57,33 @@ placement = "tab"
 command = ["./bin/shepherd", "--filter", "work"]
 ```
 
+## Command API
+
+For scripts and agentic tools that can't drive the TUI. A leading non-flag
+argument switches shepherd from the board to a one-shot command that reads or
+mutates `todo.md` and exits — the binary owns the file format, so writes are
+always valid. Indexes are 1-based and match `list` order.
+
+```sh
+shepherd list [--json]              # show items with their index
+shepherd add "buy milk @home !h due:tomorrow"
+shepherd done 2                     # mark item 2 done
+shepherd undone 2                   # mark item 2 not done
+shepherd rm 2                       # remove item 2
+```
+
+`add` accepts the same quick-add tokens as the board: `@category`, `!h`/`!m`/`!l`
+priority, `due:<today|tomorrow|+3d|15-07-2026>`. Agents should read with
+`list --json` (stable machine shape) and mutate with `add`/`done`/`rm`; an open
+board picks up the change within ~2s.
+
+```json
+[
+  { "index": 1, "done": false, "priority": "H", "text": "buy milk",
+    "category": "home", "created": "10-07-2026 13:40", "due": "2026-07-15" }
+]
+```
+
 ## Storage
 
 `$HERDR_PLUGIN_STATE_DIR/todo.md`, else `~/.config/shepherd/todo.md`.
