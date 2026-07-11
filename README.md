@@ -1,10 +1,45 @@
 # 𓋾 Shepherd
 
-Your todos herded. An interactive todo board for [herdr](https://herdr.dev),
-opened in a split, tab, overlay, or zoomed pane. Backed by a plain markdown
-file: greppable, hand-editable, syncable.
+Your todos herded. An interactive todo board that runs standalone in any
+terminal, or as a [herdr](https://herdr.dev) plugin in a split, tab, overlay,
+or zoomed pane. Backed by a plain markdown file: greppable, hand-editable,
+syncable.
 
-## Keys
+- [install](#install)
+- [usage](#usage)
+- [launch filter](#launch-filter)
+- [command api](#command-api)
+- [agentic tools](#agentic-tools)
+- [configuration](#configuration)
+- [storage](#storage)
+- [herdr integration](#herdr-integration)
+- [develop](#develop)
+
+## install
+
+Requires a Go toolchain to build.
+
+Homebrew (recommended):
+
+```sh
+brew install jwarykowski/tap/shepherd
+```
+
+Local dev, from a checkout:
+
+```sh
+go build -o bin/shepherd .
+herdr plugin link .
+```
+
+Published (public repo + GitHub topic `herdr-plugin`) — herdr runs the
+`[[build]]` step for you:
+
+```sh
+herdr plugin install jwarykowski/shepherd
+```
+
+## usage
 
 | key | action |
 |-----|--------|
@@ -39,7 +74,7 @@ timestamp; due items show a relative label
 automatically when you have no unsaved edits, so external edits (or a dotfile
 sync) show up on their own.
 
-## Launch filter
+## launch filter
 
 Start the board pre-filtered — useful for a per-project tab:
 
@@ -57,7 +92,7 @@ placement = "tab"
 command = ["./bin/shepherd", "--filter", "work"]
 ```
 
-## Command API
+## command api
 
 For scripts and agentic tools that can't drive the TUI. A leading non-flag
 argument switches shepherd from the board to a one-shot command that reads or
@@ -84,7 +119,7 @@ board picks up the change within ~2s.
 ]
 ```
 
-## Agentic tools
+## agentic tools
 
 The command API is the whole integration — any agent that can run a shell drives
 shepherd with the same verbs. Discovery is layered:
@@ -102,31 +137,7 @@ shepherd with the same verbs. Discovery is layered:
 
 All three point at the same `shepherd` CLI — no per-tool server, no MCP.
 
-## Storage
-
-`$HERDR_PLUGIN_STATE_DIR/todo.md`, else `~/.config/shepherd/todo.md`.
-Override with `HERDR_TODO_FILE`. Dates are stored ISO (`YYYY-MM-DD`) so they
-sort correctly, but shown and entered day-month-year / DMY (`DD-MM-YYYY`).
-Metadata rides as indented sub-lines:
-
-```markdown
-- [ ] (H) ship the release
-  created: 10-07-2026 13:40
-  due: 2026-07-15
-  category: work
-  note: block on the migration first
-```
-
-### Archive
-
-Pressing `c` moves every done item off the board and **appends** it to a
-sibling `archive.md` (same directory as `todo.md`, created on first use). Same
-markdown format as `todo.md`, so it's greppable and hand-editable. It's
-append-only — shepherd never rewrites or prunes it; trim it yourself if it
-grows. The board doesn't display the archive, but `/` filtering also greps it
-and shows matches in a separate section, so archived items stay findable.
-
-## Config
+## configuration
 
 Optional `config.toml`, next to `todo.md` (override with `SHEPHERD_CONFIG`):
 
@@ -145,25 +156,33 @@ direction = "right"                        # split only: right (default) | left 
   `.open-split` / `.open-tab` / `.open-overlay` / `.open-zoomed` force one
   regardless of config. `SHEPHERD_PLACEMENT` / `SHEPHERD_DIRECTION` override too.
 
-## Install
+## storage
 
-Requires a Go toolchain to build.
+`$HERDR_PLUGIN_STATE_DIR/todo.md`, else `~/.config/shepherd/todo.md`.
+Override with `HERDR_TODO_FILE`. Dates are stored ISO (`YYYY-MM-DD`) so they
+sort correctly, but shown and entered day-month-year / DMY (`DD-MM-YYYY`).
+Metadata rides as indented sub-lines:
 
-Local dev, from a checkout:
-
-```sh
-go build -o bin/shepherd .
-herdr plugin link .
+```markdown
+- [ ] (H) ship the release
+  created: 10-07-2026 13:40
+  due: 2026-07-15
+  category: work
+  note: block on the migration first
 ```
 
-Published (public repo + GitHub topic `herdr-plugin`) — herdr runs the
-`[[build]]` step for you:
+### archive
 
-```sh
-herdr plugin install jwarykowski/shepherd
-```
+Pressing `c` moves every done item off the board and **appends** it to a
+sibling `archive.md` (same directory as `todo.md`, created on first use). Same
+markdown format as `todo.md`, so it's greppable and hand-editable. It's
+append-only — shepherd never rewrites or prunes it; trim it yourself if it
+grows. The board doesn't display the archive, but `/` filtering also greps it
+and shows matches in a separate section, so archived items stay findable.
 
-## Placement
+## herdr integration
+
+### placement
 
 The board opens as a `split`, `tab`, `overlay`, or `zoomed` pane. Five actions:
 
@@ -179,7 +198,7 @@ The board opens as a `split`, `tab`, `overlay`, or `zoomed` pane. Five actions:
 `SHEPHERD_PLACEMENT`/`SHEPHERD_DIRECTION` → `config.toml` → `split`/`right`.
 `direction` (`right`/`left`/`up`/`down`) applies to `split` only.
 
-## Keybindings
+### keybindings
 
 ```toml
 [[keys.command]]
@@ -207,6 +226,6 @@ command = "jwarykowski.herdr-shepherd.open-zoomed"
 description = "shepherd (zoomed)"
 ```
 
-## Develop
+## develop
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).
