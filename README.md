@@ -95,7 +95,8 @@ shepherd with the same verbs. Discovery is layered:
   ```sh
   ln -s "$PWD/skills/shepherd" ~/.claude/skills/shepherd
   ```
-  It auto-loads when you mention todos, in any project.
+  Available in every project; Claude invokes it when a request relates to your
+  todos (the skill's description is what it matches on).
 - **Cursor / Codex / Zed / others:** paste [`AGENTS.md`](AGENTS.md) into the
   tool's global rules / instructions slot.
 
