@@ -30,7 +30,7 @@ Indexes are 1-based and match the order shown by 'list'.`
 // for a single-user local todo; add locking only if concurrent writers appear.
 func runCLI(verb string, args []string) int {
 	switch verb {
-	case "list", "ls":
+	case "list":
 		return cmdList(args, os.Stdout)
 	case "add":
 		return cmdAdd(args, os.Stdout)
@@ -38,7 +38,7 @@ func runCLI(verb string, args []string) int {
 		return cmdToggle(args, true, os.Stdout)
 	case "undone":
 		return cmdToggle(args, false, os.Stdout)
-	case "rm", "remove":
+	case "rm":
 		return cmdRemove(args, os.Stdout)
 	case "help":
 		fmt.Println(cliUsage)

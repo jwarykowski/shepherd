@@ -58,7 +58,7 @@ func TestRoundTrip(t *testing.T) {
 
 func TestSortStable(t *testing.T) {
 	items := []item{{text: "a"}, {prio: 'L', text: "b"}, {prio: 'H', text: "c"}, {prio: 'H', text: "d"}}
-	sortItems(items)
+	sortItems(items, false)
 	got := ""
 	for _, it := range items {
 		got += it.text
@@ -76,7 +76,7 @@ func TestSortByCategoryThenPrio(t *testing.T) {
 		{text: "u1"}, // uncategorized -> last
 		{text: "b2", category: "beta", prio: 'M'},
 	}
-	sortItems(items)
+	sortItems(items, false)
 	got := ""
 	for _, it := range items {
 		got += it.text + " "
@@ -172,8 +172,8 @@ func TestSetCategory(t *testing.T) {
 	m := model{input: textinput.New(), items: []item{
 		{text: "a", category: "work"}, {text: "b"},
 	}}
-	sortItems(m.items) // work first, b (uncategorized) last; cursor 0 -> "a"
-	m = drive(m, "g")  // category mode on "a"
+	sortItems(m.items, false) // work first, b (uncategorized) last; cursor 0 -> "a"
+	m = drive(m, "g")         // category mode on "a"
 	m.input.SetValue("home")
 	m = drive(m, "enter")
 	// "a" now category home; re-sorted: home("a") before work? home<work -> a first
@@ -323,7 +323,7 @@ func TestDueSort(t *testing.T) {
 		{text: "none"},
 		{text: "soon", due: "2026-07-11"},
 	}
-	sortItems(items) // same cat+prio: soonest due first, no-due last
+	sortItems(items, false) // same cat+prio: soonest due first, no-due last
 	got := items[0].text + items[1].text + items[2].text
 	if got != "soonlatenone" {
 		t.Fatalf("due sort wrong: %q", got)
@@ -367,7 +367,7 @@ func TestOverduePin(t *testing.T) {
 		{text: "late", category: "home", due: "2026-07-01"}, // overdue
 		{text: "plain", category: "work"},
 	}
-	sortItems(items)
+	sortItems(items, false)
 	if items[0].text != "late" {
 		t.Fatalf("overdue not pinned first: %+v", items)
 	}
