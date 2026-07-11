@@ -1,4 +1,6 @@
-package main
+// Package cli is shepherd's non-interactive command API, used by scripts and
+// agentic tools. It reuses store + todo, so the file format has a single owner.
+package cli
 
 import (
 	"encoding/json"
@@ -8,6 +10,9 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"shepherd/internal/store"
+	"shepherd/internal/todo"
 )
 
 const cliUsage = `shepherd — todo board
@@ -22,13 +27,11 @@ Usage:
 
 Indexes are 1-based and match the order shown by 'list'.`
 
-// runCLI handles the non-interactive command API used by scripts and agentic
-// tools. It reuses the same load/save/parseQuickAdd the TUI uses, so the file
-// format has a single owner. Returns a process exit code.
+// Run handles one command-API invocation and returns a process exit code.
 //
 // ponytail: last-writer-wins on the file (load, mutate, save; no lock). Fine
 // for a single-user local todo; add locking only if concurrent writers appear.
-func runCLI(verb string, args []string) int {
+func Run(verb string, args []string) int {
 	switch verb {
 	case "list":
 		return cmdList(args, os.Stdout)
@@ -49,8 +52,7 @@ func runCLI(verb string, args []string) int {
 	}
 }
 
-// itemJSON is the machine-readable view agents read via `list --json`
-// (item's own fields are unexported).
+// itemJSON is the machine-readable view agents read via `list --json`.
 type itemJSON struct {
 	Index    int    `json:"index"`
 	Done     bool   `json:"done"`
@@ -62,17 +64,17 @@ type itemJSON struct {
 	Note     string `json:"note,omitempty"`
 }
 
-// emit writes a best-effort line to w. Output to stdout/a buffer has no
-// actionable failure mode, so the write error is deliberately discarded.
-func emit(w io.Writer, s string) { _, _ = io.WriteString(w, s+"\n") }
-
-func toJSON(it item, idx int) itemJSON {
-	j := itemJSON{Index: idx, Done: it.done, Text: it.text, Category: it.category, Created: it.created, Due: it.due, Note: it.note}
-	if it.prio != 0 {
-		j.Priority = string(it.prio)
+func toJSON(it todo.Item, idx int) itemJSON {
+	j := itemJSON{Index: idx, Done: it.Done, Text: it.Text, Category: it.Category, Created: it.Created, Due: it.Due, Note: it.Note}
+	if it.Prio != 0 {
+		j.Priority = string(it.Prio)
 	}
 	return j
 }
+
+// emit writes a best-effort line to w. Output to stdout/a buffer has no
+// actionable failure mode, so the write error is deliberately discarded.
+func emit(w io.Writer, s string) { _, _ = io.WriteString(w, s+"\n") }
 
 func cmdList(args []string, w io.Writer) int {
 	fs := flag.NewFlagSet("list", flag.ContinueOnError)
@@ -80,7 +82,7 @@ func cmdList(args []string, w io.Writer) int {
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	items := load(todoPath())
+	items := store.Load(store.TodoPath())
 
 	if *asJSON {
 		out := make([]itemJSON, len(items))
@@ -112,14 +114,14 @@ func cmdAdd(args []string, w io.Writer) int {
 		fmt.Fprintln(os.Stderr, `shepherd: add needs text, e.g. shepherd add "buy milk @home !h"`)
 		return 2
 	}
-	it := parseQuickAdd(text)
-	if it.text == "" {
+	it := todo.ParseQuickAdd(text)
+	if it.Text == "" {
 		fmt.Fprintln(os.Stderr, "shepherd: nothing to add after parsing tokens")
 		return 2
 	}
-	path := todoPath()
-	items := append(load(path), it)
-	if err := save(path, items); err != nil {
+	path := store.TodoPath()
+	items := append(store.Load(path), it)
+	if err := store.Save(path, items); err != nil {
 		fmt.Fprintln(os.Stderr, "shepherd:", err)
 		return 1
 	}
@@ -128,14 +130,14 @@ func cmdAdd(args []string, w io.Writer) int {
 }
 
 func cmdToggle(args []string, done bool, w io.Writer) int {
-	path := todoPath()
-	items := load(path)
+	path := store.TodoPath()
+	items := store.Load(path)
 	idx, ok := parseIndex(args, len(items))
 	if !ok {
 		return 1
 	}
-	items[idx-1].done = done
-	if err := save(path, items); err != nil {
+	items[idx-1].Done = done
+	if err := store.Save(path, items); err != nil {
 		fmt.Fprintln(os.Stderr, "shepherd:", err)
 		return 1
 	}
@@ -144,19 +146,19 @@ func cmdToggle(args []string, done bool, w io.Writer) int {
 }
 
 func cmdRemove(args []string, w io.Writer) int {
-	path := todoPath()
-	items := load(path)
+	path := store.TodoPath()
+	items := store.Load(path)
 	idx, ok := parseIndex(args, len(items))
 	if !ok {
 		return 1
 	}
 	removed := items[idx-1]
 	items = append(items[:idx-1], items[idx:]...)
-	if err := save(path, items); err != nil {
+	if err := store.Save(path, items); err != nil {
 		fmt.Fprintln(os.Stderr, "shepherd:", err)
 		return 1
 	}
-	emit(w, fmt.Sprintf("removed %q", removed.text))
+	emit(w, fmt.Sprintf("removed %q", removed.Text))
 	return 0
 }
 
@@ -175,23 +177,23 @@ func parseIndex(args []string, n int) (int, bool) {
 	return idx, true
 }
 
-// formatLine renders one item for the plain-text `list`/`add`/`done` output.
-func formatLine(idx int, it item) string {
+// formatLine renders one item for the plain-text list/add/done output.
+func formatLine(idx int, it todo.Item) string {
 	box := " "
-	if it.done {
+	if it.Done {
 		box = "x"
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "%d\t[%s]", idx, box)
-	if it.prio != 0 {
-		fmt.Fprintf(&b, " (%c)", it.prio)
+	if it.Prio != 0 {
+		fmt.Fprintf(&b, " (%c)", it.Prio)
 	}
-	fmt.Fprintf(&b, " %s", it.text)
-	if it.category != "" {
-		fmt.Fprintf(&b, "  @%s", it.category)
+	fmt.Fprintf(&b, " %s", it.Text)
+	if it.Category != "" {
+		fmt.Fprintf(&b, "  @%s", it.Category)
 	}
-	if it.due != "" {
-		fmt.Fprintf(&b, "  due %s", it.due)
+	if it.Due != "" {
+		fmt.Fprintf(&b, "  due %s", it.Due)
 	}
 	return b.String()
 }
