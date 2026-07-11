@@ -1,9 +1,9 @@
-// herdr-todo — interactive todo board for herdr, as a Bubble Tea TUI.
-// Bubble Tea owns the alt-screen, input, and redraw loop, so none of the
-// terminal wrangling that plagued the shell version lives here.
+// shepherd — an interactive todo board backed by a markdown file, plus a
+// non-interactive command API (see cli.go) for scripts and agents.
 package main
 
 import (
+	"cmp"
 	"flag"
 	"fmt"
 	"os"
@@ -343,37 +343,27 @@ func pinned(it item) bool {
 	return d.Before(t)
 }
 
-// Sort: overdue pinned first, then category, then priority, then soonest due.
-func sortItems(items []item) {
+// sortItems orders items: overdue pinned first, then soonest due. The middle
+// two keys are category then priority, or priority then category when byPrio
+// (the priority view).
+func sortItems(items []item, byPrio bool) {
 	sort.SliceStable(items, func(i, j int) bool {
-		if pi, pj := pinned(items[i]), pinned(items[j]); pi != pj {
-			return pi
+		a, b := items[i], items[j]
+		if pa, pb := pinned(a), pinned(b); pa != pb {
+			return pa
 		}
-		ci, cj := catKey(items[i].category), catKey(items[j].category)
-		if ci != cj {
-			return ci < cj
+		cat := cmp.Compare(catKey(a.category), catKey(b.category))
+		prio := cmp.Compare(rank(a.prio), rank(b.prio))
+		order := [2]int{cat, prio}
+		if byPrio {
+			order = [2]int{prio, cat}
 		}
-		if ri, rj := rank(items[i].prio), rank(items[j].prio); ri != rj {
-			return ri < rj
+		for _, c := range order {
+			if c != 0 {
+				return c < 0
+			}
 		}
-		return dueKey(items[i].due) < dueKey(items[j].due)
-	})
-}
-
-// sortByPriority: overdue pinned first, then priority, then category, then due.
-func sortByPriority(items []item) {
-	sort.SliceStable(items, func(i, j int) bool {
-		if pi, pj := pinned(items[i]), pinned(items[j]); pi != pj {
-			return pi
-		}
-		if ri, rj := rank(items[i].prio), rank(items[j].prio); ri != rj {
-			return ri < rj
-		}
-		ci, cj := catKey(items[i].category), catKey(items[j].category)
-		if ci != cj {
-			return ci < cj
-		}
-		return dueKey(items[i].due) < dueKey(items[j].due)
+		return cmp.Compare(dueKey(a.due), dueKey(b.due)) < 0
 	})
 }
 
@@ -464,11 +454,7 @@ type model struct {
 
 // resort orders items for the active view.
 func (m *model) resort() {
-	if m.view == viewPriority {
-		sortByPriority(m.items)
-	} else {
-		sortItems(m.items)
-	}
+	sortItems(m.items, m.view == viewPriority)
 }
 
 // parseQuickAdd splits an add line into text plus @category, !h/!m/!l priority,
