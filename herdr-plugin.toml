@@ -1,6 +1,6 @@
 id = "jwarykowski.herdr-shepherd"
 name = "Shepherd"
-version = "0.6.0"
+version = "0.0.1"
 min_herdr_version = "0.7.0"
 description = "Shepherd — your todos herded. Interactive todo board in a split, tab, overlay, or zoomed pane. Category/priority/due ordering, overdue pinning, notes, due dates, undo/redo, filter, archive. Backed by a markdown file."
 platforms = ["linux", "macos"]
