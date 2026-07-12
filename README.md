@@ -5,8 +5,21 @@ terminal, or as a [herdr](https://herdr.dev) plugin in a split, tab, overlay,
 or zoomed pane. Backed by a plain markdown file: greppable, hand-editable,
 syncable.
 
+No setup required — everything defaults under `~/.config/shepherd/`:
+
+| What | Path |
+|------|------|
+| Default board | `~/.config/shepherd/todo.md` |
+| Project board | `~/.config/shepherd/projects/<name>.md` — via `--project <name>` |
+| Archive | sibling of the board: `archive.md` / `<name>-archive.md` |
+| Config (optional, shared) | `~/.config/shepherd/config.toml` |
+
+Overrides: `$SHEPHERD_TODO_FILE` (exact board file), `$SHEPHERD_CONFIG` (config
+file). See [storage](#storage).
+
 - [install](#install)
 - [usage](#usage)
+- [projects](#projects)
 - [launch filter](#launch-filter)
 - [command api](#command-api)
 - [agentic tools](#agentic-tools)
