@@ -175,16 +175,14 @@ every board (override with `SHEPHERD_CONFIG`):
 view = "category"                          # category (default) | priority | table
 density = "compact"                        # compact (default) | comfort
 categories = ["work", "home", "personal"]  # tab-cycles in the category prompt
-placement = "split"                        # split (default) | tab | overlay | zoomed
-direction = "right"                        # split only: right (default) | left | up | down
 ```
 
 - `view` — default grouping/layout on launch (`v` still cycles at runtime).
 - `density` — `comfort` adds outer padding and blank lines between rows.
 - `categories` — press `tab` in the category prompt (`g`) to cycle through them.
-- `placement` / `direction` — how `.open` opens the pane. `.open` reads these;
-  `.open-split` / `.open-tab` / `.open-overlay` / `.open-zoomed` force one
-  regardless of config. `SHEPHERD_PLACEMENT` / `SHEPHERD_DIRECTION` override too.
+
+herdr pane placement (`placement` / `direction`) lives in the same file — see
+[herdr integration](#herdr-integration).
 
 ## storage
 
@@ -234,6 +232,17 @@ The board opens as a `split`, `tab`, `overlay`, or `zoomed` pane. Five actions:
 `open` resolves placement from (highest first): env
 `SHEPHERD_PLACEMENT`/`SHEPHERD_DIRECTION` → `config.toml` → `split`/`right`.
 `direction` (`right`/`left`/`up`/`down`) applies to `split` only.
+
+Set the `config.toml` defaults (in the shared
+`~/.config/shepherd/config.toml`):
+
+```toml
+placement = "split"     # split (default) | tab | overlay | zoomed
+direction = "right"     # split only: right (default) | left | up | down
+```
+
+`open-split` / `open-tab` / `open-overlay` / `open-zoomed` force one placement
+regardless of config; `SHEPHERD_PLACEMENT` / `SHEPHERD_DIRECTION` override too.
 
 ### keybindings
 
