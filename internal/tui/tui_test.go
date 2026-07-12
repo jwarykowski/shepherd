@@ -336,8 +336,8 @@ func TestNewModelLoads(t *testing.T) {
 	if err := os.WriteFile(path, []byte("- [ ] (H) seeded\n  category: work\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("HERDR_TODO_FILE", path)
-	m := newModel()
+	t.Setenv("SHEPHERD_TODO_FILE", path)
+	m := newModel("")
 	if len(m.items) != 1 || m.items[0].Text != "seeded" || m.items[0].Prio != 'H' || m.items[0].Category != "work" {
 		t.Fatalf("newModel did not load items: %+v", m.items)
 	}

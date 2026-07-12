@@ -5,8 +5,21 @@ terminal, or as a [herdr](https://herdr.dev) plugin in a split, tab, overlay,
 or zoomed pane. Backed by a plain markdown file: greppable, hand-editable,
 syncable.
 
+No setup required — everything defaults under `~/.config/shepherd/`:
+
+| What | Path |
+|------|------|
+| Default board | `~/.config/shepherd/todo.md` |
+| Project board | `~/.config/shepherd/projects/<name>.md` — via `--project <name>` |
+| Archive | sibling of the board: `archive.md` / `<name>-archive.md` |
+| Config (optional, shared) | `~/.config/shepherd/config.toml` |
+
+Overrides: `$SHEPHERD_TODO_FILE` (exact board file), `$SHEPHERD_CONFIG` (config
+file). See [storage](#storage).
+
 - [install](#install)
 - [usage](#usage)
+- [projects](#projects)
 - [launch filter](#launch-filter)
 - [command api](#command-api)
 - [agentic tools](#agentic-tools)
@@ -74,9 +87,34 @@ timestamp; due items show a relative label
 automatically when you have no unsaved edits, so external edits (or a dotfile
 sync) show up on their own.
 
+## projects
+
+Each project gets its own board file at
+`~/.config/shepherd/projects/<name>.md`; with no project selected you're on the
+default `todo.md`. `config.toml` is shared across every board.
+
+```sh
+shepherd --project web            # open the web board
+SHEPHERD_PROJECT=web shepherd     # same, via env
+```
+
+Names are a simple slug — letters, digits, `.` `_` `-`. The archive is
+per-board (`projects/web.md` → `projects/web-archive.md`); see
+[storage](#storage). This also works from the command API (below) and as a
+herdr pane entrypoint:
+
+```toml
+[[panes]]
+id = "shepherd-work"
+title = "todo: work"
+placement = "tab"
+command = ["./bin/shepherd", "--project", "work"]
+```
+
 ## launch filter
 
-Start the board pre-filtered — useful for a per-project tab:
+`--project` gives a project its own file; `--filter` is a saved *view* over one
+board — start it pre-filtered by text/note/category/due:
 
 ```sh
 ./bin/shepherd --filter work      # or: SHEPHERD_FILTER=work ./bin/shepherd
@@ -86,22 +124,13 @@ When the filter names a category (one you've configured or already use), items
 you add while it's active inherit that category — so a task added on a
 `--filter work` board lands in `work` and stays in view. An inline `@category`
 still overrides; a filter that isn't a category leaves new items uncategorized.
-
-In a herdr manifest, give a project its own pane entrypoint:
-
-```toml
-[[panes]]
-id = "shepherd-work"
-title = "todo: work"
-placement = "tab"
-command = ["./bin/shepherd", "--filter", "work"]
-```
+The two combine: `shepherd --project web --filter '!h'`.
 
 ## command api
 
 For scripts and agentic tools that can't drive the TUI. A leading non-flag
 argument switches shepherd from the board to a one-shot command that reads or
-mutates `todo.md` and exits — the binary owns the file format, so writes are
+mutates a board file and exits — the binary owns the file format, so writes are
 always valid. Indexes are 1-based and match `list` order.
 
 ```sh
@@ -110,6 +139,14 @@ shepherd add "buy milk @home !h due:tomorrow"
 shepherd done 2                     # mark item 2 done
 shepherd undone 2                   # mark item 2 not done
 shepherd rm 2                       # remove item 2
+```
+
+Flags go **after** the verb. Add `--project <name>` (or set `$SHEPHERD_PROJECT`)
+to target a project board instead of the default:
+
+```sh
+shepherd add "ship v2 @work !h" --project web
+shepherd list --project web
 ```
 
 `add` accepts the same quick-add tokens as the board: `@category`, `!h`/`!m`/`!l`
@@ -144,29 +181,34 @@ All three point at the same `shepherd` CLI — no per-tool server, no MCP.
 
 ## configuration
 
-Optional `config.toml`, next to `todo.md` (override with `SHEPHERD_CONFIG`):
+Optional `config.toml` at `~/.config/shepherd/config.toml` — shared across
+every board (override with `SHEPHERD_CONFIG`):
 
 ```toml
 view = "category"                          # category (default) | priority | table
 density = "compact"                        # compact (default) | comfort
 categories = ["work", "home", "personal"]  # tab-cycles in the category prompt
-placement = "split"                        # split (default) | tab | overlay | zoomed
-direction = "right"                        # split only: right (default) | left | up | down
 ```
 
 - `view` — default grouping/layout on launch (`v` still cycles at runtime).
 - `density` — `comfort` adds outer padding and blank lines between rows.
 - `categories` — press `tab` in the category prompt (`g`) to cycle through them.
-- `placement` / `direction` — how `.open` opens the pane. `.open` reads these;
-  `.open-split` / `.open-tab` / `.open-overlay` / `.open-zoomed` force one
-  regardless of config. `SHEPHERD_PLACEMENT` / `SHEPHERD_DIRECTION` override too.
+
+herdr pane placement (`placement` / `direction`) lives in the same file — see
+[herdr integration](#herdr-integration).
 
 ## storage
 
-`$HERDR_PLUGIN_STATE_DIR/todo.md`, else `~/.config/shepherd/todo.md`.
-Override with `HERDR_TODO_FILE`. Dates are stored ISO (`YYYY-MM-DD`) so they
-sort correctly, but shown and entered day-month-year / DMY (`DD-MM-YYYY`).
-Metadata rides as indented sub-lines:
+Everything lives under `~/.config/shepherd`: the default board `todo.md`, a
+shared `config.toml`, and one file per project at `projects/<name>.md`. Pick a
+project with `--project <name>` (or `$SHEPHERD_PROJECT`); unset uses the default
+board. `config.toml` is shared across every board. Point at an exact file with
+`$SHEPHERD_TODO_FILE` if you need to. In the command API, flags follow the
+verb: `shepherd add "…" --project web`, `shepherd list --project web`.
+
+Dates are stored ISO (`YYYY-MM-DD`) so they sort correctly, but shown and
+entered day-month-year / DMY (`DD-MM-YYYY`). Metadata rides as indented
+sub-lines:
 
 ```markdown
 - [ ] (H) ship the release
@@ -179,7 +221,8 @@ Metadata rides as indented sub-lines:
 ### archive
 
 Pressing `c` moves every done item off the board and **appends** it to a
-sibling `archive.md` (same directory as `todo.md`, created on first use). Same
+sibling archive file (`todo.md` → `archive.md`, `projects/web.md` →
+`projects/web-archive.md`, created on first use). Same
 markdown format as `todo.md`, so it's greppable and hand-editable. It's
 append-only — shepherd never rewrites or prunes it; trim it yourself if it
 grows. The board doesn't display the archive, but `/` filtering also greps it
@@ -202,6 +245,17 @@ The board opens as a `split`, `tab`, `overlay`, or `zoomed` pane. Five actions:
 `open` resolves placement from (highest first): env
 `SHEPHERD_PLACEMENT`/`SHEPHERD_DIRECTION` → `config.toml` → `split`/`right`.
 `direction` (`right`/`left`/`up`/`down`) applies to `split` only.
+
+Set the `config.toml` defaults (in the shared
+`~/.config/shepherd/config.toml`):
+
+```toml
+placement = "split"     # split (default) | tab | overlay | zoomed
+direction = "right"     # split only: right (default) | left | up | down
+```
+
+`open-split` / `open-tab` / `open-overlay` / `open-zoomed` force one placement
+regardless of config; `SHEPHERD_PLACEMENT` / `SHEPHERD_DIRECTION` override too.
 
 ### keybindings
 

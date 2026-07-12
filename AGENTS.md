@@ -10,5 +10,8 @@ format.
 - `shepherd rm <n>` — remove item n
 
 Indexes are 1-based and match `list` order. Quick-add tokens: `@category`,
-`!h`/`!m`/`!l` priority, `due:<today|tomorrow|+3d|15-07-2026>`. Run
-`shepherd help` for the full contract.
+`!h`/`!m`/`!l` priority, `due:<today|tomorrow|+3d|15-07-2026>`.
+
+Boards are per-project: add `--project <name>` after the verb to target a
+project's board (e.g. `shepherd list --project web`), else the default board is
+used. Run `shepherd help` for the full contract.

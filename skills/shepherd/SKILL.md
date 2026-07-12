@@ -35,8 +35,11 @@ Indexes are 1-based and match `list` order. Read with `--json`, act by index.
 
 ## Notes
 
-- Data file: `$HERDR_TODO_FILE`, else `$HERDR_PLUGIN_STATE_DIR/todo.md`, else
-  `~/.config/shepherd/todo.md`. Dates stored ISO.
+- Data file: `~/.config/shepherd/todo.md` by default, or
+  `~/.config/shepherd/projects/<name>.md` when a project is selected with
+  `--project <name>` (or `$SHEPHERD_PROJECT`). Flags follow the verb, e.g.
+  `shepherd list --project web`. Override the exact file with
+  `$SHEPHERD_TODO_FILE`. Dates stored ISO.
 - If `shepherd` isn't found, it isn't installed —
   `brew install jwarykowski/tap/shepherd`.
 - An open board picks up your changes within ~2s.

@@ -25,6 +25,9 @@ Usage:
   shepherd undone <n>           mark item n not done
   shepherd rm <n>               remove item n
 
+Flags go after the verb. --project <name> (or $SHEPHERD_PROJECT) selects a
+project board (else the default): e.g. shepherd list --project web.
+
 Indexes are 1-based and match the order shown by 'list'.`
 
 // Run handles one command-API invocation and returns a process exit code.
@@ -32,24 +35,60 @@ Indexes are 1-based and match the order shown by 'list'.`
 // ponytail: last-writer-wins on the file (load, mutate, save; no lock). Fine
 // for a single-user local todo; add locking only if concurrent writers appear.
 func Run(verb string, args []string) int {
-	switch verb {
-	case "list":
-		return cmdList(args, os.Stdout)
-	case "add":
-		return cmdAdd(args, os.Stdout)
-	case "done":
-		return cmdToggle(args, true, os.Stdout)
-	case "undone":
-		return cmdToggle(args, false, os.Stdout)
-	case "rm":
-		return cmdRemove(args, os.Stdout)
-	case "help":
+	if verb == "help" {
 		fmt.Println(cliUsage)
 		return 0
+	}
+	flagVal, rest, err := extractProject(args)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "shepherd:", err)
+		return 2
+	}
+	project, err := store.ResolveProject(flagVal)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "shepherd:", err)
+		return 2
+	}
+	switch verb {
+	case "list":
+		return cmdList(rest, project, os.Stdout)
+	case "add":
+		return cmdAdd(rest, project, os.Stdout)
+	case "done":
+		return cmdToggle(rest, project, true, os.Stdout)
+	case "undone":
+		return cmdToggle(rest, project, false, os.Stdout)
+	case "rm":
+		return cmdRemove(rest, project, os.Stdout)
 	default:
 		fmt.Fprintf(os.Stderr, "shepherd: unknown command %q\n\n%s\n", verb, cliUsage)
 		return 2
 	}
+}
+
+// extractProject pulls a --project <name> / --project=<name> flag out of args
+// (flags follow the verb), returning its value and the remaining args. This
+// runs before the per-command FlagSets, which would reject it as unknown, and
+// before `add` joins its args into text. Last occurrence wins.
+func extractProject(args []string) (string, []string, error) {
+	project := ""
+	rest := make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		switch {
+		case a == "--project":
+			if i+1 >= len(args) {
+				return "", nil, fmt.Errorf("--project needs a name")
+			}
+			project = args[i+1]
+			i++
+		case strings.HasPrefix(a, "--project="):
+			project = strings.TrimPrefix(a, "--project=")
+		default:
+			rest = append(rest, a)
+		}
+	}
+	return project, rest, nil
 }
 
 // itemJSON is the machine-readable view agents read via `list --json`.
@@ -76,13 +115,13 @@ func toJSON(it todo.Item, idx int) itemJSON {
 // actionable failure mode, so the write error is deliberately discarded.
 func emit(w io.Writer, s string) { _, _ = io.WriteString(w, s+"\n") }
 
-func cmdList(args []string, w io.Writer) int {
+func cmdList(args []string, project string, w io.Writer) int {
 	fs := flag.NewFlagSet("list", flag.ContinueOnError)
 	asJSON := fs.Bool("json", false, "machine-readable JSON output")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	items := store.Load(store.TodoPath())
+	items := store.Load(store.TodoPathFor(project))
 
 	if *asJSON {
 		out := make([]itemJSON, len(items))
@@ -108,7 +147,7 @@ func cmdList(args []string, w io.Writer) int {
 	return 0
 }
 
-func cmdAdd(args []string, w io.Writer) int {
+func cmdAdd(args []string, project string, w io.Writer) int {
 	text := strings.TrimSpace(strings.Join(args, " "))
 	if text == "" {
 		fmt.Fprintln(os.Stderr, `shepherd: add needs text, e.g. shepherd add "buy milk @home !h"`)
@@ -119,7 +158,7 @@ func cmdAdd(args []string, w io.Writer) int {
 		fmt.Fprintln(os.Stderr, "shepherd: nothing to add after parsing tokens")
 		return 2
 	}
-	path := store.TodoPath()
+	path := store.TodoPathFor(project)
 	items := append(store.Load(path), it)
 	if err := store.Save(path, items); err != nil {
 		fmt.Fprintln(os.Stderr, "shepherd:", err)
@@ -129,8 +168,8 @@ func cmdAdd(args []string, w io.Writer) int {
 	return 0
 }
 
-func cmdToggle(args []string, done bool, w io.Writer) int {
-	path := store.TodoPath()
+func cmdToggle(args []string, project string, done bool, w io.Writer) int {
+	path := store.TodoPathFor(project)
 	items := store.Load(path)
 	idx, ok := parseIndex(args, len(items))
 	if !ok {
@@ -145,8 +184,8 @@ func cmdToggle(args []string, done bool, w io.Writer) int {
 	return 0
 }
 
-func cmdRemove(args []string, w io.Writer) int {
-	path := store.TodoPath()
+func cmdRemove(args []string, project string, w io.Writer) int {
+	path := store.TodoPathFor(project)
 	items := store.Load(path)
 	idx, ok := parseIndex(args, len(items))
 	if !ok {

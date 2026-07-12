@@ -151,11 +151,11 @@ func (m *model) resort() {
 // 100 is plenty for a todo list; raise if anyone ever hits it.
 const histCap = 100
 
-// newModel builds the initial board from the configured files.
-func newModel() model {
+// newModel builds the initial board for the given project ("" = default).
+func newModel(project string) model {
 	ti := textinput.New()
 	ti.Prompt = "› "
-	p := store.TodoPath()
+	p := store.TodoPathFor(project)
 	cfg := loadConfig(store.ConfigPath())
 	m := model{
 		path:       p,
@@ -171,9 +171,10 @@ func newModel() model {
 	return m
 }
 
-// Run builds the board, applies an initial filter, and runs it to exit.
-func Run(filter string) error {
-	m := newModel()
+// Run builds the board for a project, applies an initial filter, and runs it
+// to exit.
+func Run(filter, project string) error {
+	m := newModel(project)
 	m.filter = filter
 	m.clamp()
 	p := tea.NewProgram(m, tea.WithAltScreen())
