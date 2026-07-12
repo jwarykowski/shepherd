@@ -74,9 +74,34 @@ timestamp; due items show a relative label
 automatically when you have no unsaved edits, so external edits (or a dotfile
 sync) show up on their own.
 
+## projects
+
+Each project gets its own board file at
+`~/.config/shepherd/projects/<name>.md`; with no project selected you're on the
+default `todo.md`. `config.toml` is shared across every board.
+
+```sh
+shepherd --project web            # open the web board
+SHEPHERD_PROJECT=web shepherd     # same, via env
+```
+
+Names are a simple slug — letters, digits, `.` `_` `-`. The archive is
+per-board (`projects/web.md` → `projects/web-archive.md`); see
+[storage](#storage). This also works from the command API (below) and as a
+herdr pane entrypoint:
+
+```toml
+[[panes]]
+id = "shepherd-work"
+title = "todo: work"
+placement = "tab"
+command = ["./bin/shepherd", "--project", "work"]
+```
+
 ## launch filter
 
-Start the board pre-filtered — useful for a per-project tab:
+`--project` gives a project its own file; `--filter` is a saved *view* over one
+board — start it pre-filtered by text/note/category/due:
 
 ```sh
 ./bin/shepherd --filter work      # or: SHEPHERD_FILTER=work ./bin/shepherd
@@ -86,22 +111,13 @@ When the filter names a category (one you've configured or already use), items
 you add while it's active inherit that category — so a task added on a
 `--filter work` board lands in `work` and stays in view. An inline `@category`
 still overrides; a filter that isn't a category leaves new items uncategorized.
-
-In a herdr manifest, give a project its own pane entrypoint:
-
-```toml
-[[panes]]
-id = "shepherd-work"
-title = "todo: work"
-placement = "tab"
-command = ["./bin/shepherd", "--filter", "work"]
-```
+The two combine: `shepherd --project web --filter '!h'`.
 
 ## command api
 
 For scripts and agentic tools that can't drive the TUI. A leading non-flag
 argument switches shepherd from the board to a one-shot command that reads or
-mutates `todo.md` and exits — the binary owns the file format, so writes are
+mutates a board file and exits — the binary owns the file format, so writes are
 always valid. Indexes are 1-based and match `list` order.
 
 ```sh
@@ -110,6 +126,14 @@ shepherd add "buy milk @home !h due:tomorrow"
 shepherd done 2                     # mark item 2 done
 shepherd undone 2                   # mark item 2 not done
 shepherd rm 2                       # remove item 2
+```
+
+Flags go **after** the verb. Add `--project <name>` (or set `$SHEPHERD_PROJECT`)
+to target a project board instead of the default:
+
+```sh
+shepherd add "ship v2 @work !h" --project web
+shepherd list --project web
 ```
 
 `add` accepts the same quick-add tokens as the board: `@category`, `!h`/`!m`/`!l`
