@@ -168,7 +168,8 @@ All three point at the same `shepherd` CLI — no per-tool server, no MCP.
 
 ## configuration
 
-Optional `config.toml`, next to `todo.md` (override with `SHEPHERD_CONFIG`):
+Optional `config.toml` at `~/.config/shepherd/config.toml` — shared across
+every board (override with `SHEPHERD_CONFIG`):
 
 ```toml
 view = "category"                          # category (default) | priority | table
