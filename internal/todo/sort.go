@@ -36,26 +36,40 @@ func dueKey(d string) string {
 	return d
 }
 
+// less is the shared item ordering: overdue pinned first, then soonest due,
+// with category-then-priority (or priority-then-category when byPrio) between.
+func less(a, b Item, byPrio bool) bool {
+	if pa, pb := Pinned(a), Pinned(b); pa != pb {
+		return pa
+	}
+	cat := cmp.Compare(catKey(a.Category), catKey(b.Category))
+	prio := cmp.Compare(Rank(a.Prio), Rank(b.Prio))
+	order := [2]int{cat, prio}
+	if byPrio {
+		order = [2]int{prio, cat}
+	}
+	for _, c := range order {
+		if c != 0 {
+			return c < 0
+		}
+	}
+	return cmp.Compare(dueKey(a.Due), dueKey(b.Due)) < 0
+}
+
 // Sort orders items: overdue pinned first, then soonest due. The middle two
 // keys are category then priority, or priority then category when byPrio (the
 // priority view).
 func Sort(items []Item, byPrio bool) {
+	sort.SliceStable(items, func(i, j int) bool { return less(items[i], items[j], byPrio) })
+}
+
+// SortBySource orders items by Source first (the global project view), then by
+// the shared intra-group order, so each board's items stay contiguous.
+func SortBySource(items []Item) {
 	sort.SliceStable(items, func(i, j int) bool {
-		a, b := items[i], items[j]
-		if pa, pb := Pinned(a), Pinned(b); pa != pb {
-			return pa
+		if items[i].Source != items[j].Source {
+			return items[i].Source < items[j].Source
 		}
-		cat := cmp.Compare(catKey(a.Category), catKey(b.Category))
-		prio := cmp.Compare(Rank(a.Prio), Rank(b.Prio))
-		order := [2]int{cat, prio}
-		if byPrio {
-			order = [2]int{prio, cat}
-		}
-		for _, c := range order {
-			if c != 0 {
-				return c < 0
-			}
-		}
-		return cmp.Compare(dueKey(a.Due), dueKey(b.Due)) < 0
+		return less(items[i], items[j], false)
 	})
 }

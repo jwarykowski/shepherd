@@ -99,6 +99,41 @@ func TestExtractProject(t *testing.T) {
 	}
 }
 
+// TestListAll checks the aggregate read spans every board and tags each item
+// with its source project.
+func TestListAll(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("SHEPHERD_TODO_FILE", "")
+	t.Setenv("SHEPHERD_PROJECT", "")
+
+	if code := Run("add", []string{"a @work"}); code != 0 { // default board
+		t.Fatalf("add default exit %d", code)
+	}
+	if code := Run("add", []string{"b @dev", "--project", "web"}); code != 0 {
+		t.Fatalf("add web exit %d", code)
+	}
+
+	var buf bytes.Buffer
+	if code := cmdList([]string{"--all", "--json"}, "", &buf); code != 0 {
+		t.Fatalf("list --all exit %d", code)
+	}
+	var got []itemJSON
+	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+		t.Fatalf("json: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("want 2 items across boards, got %d", len(got))
+	}
+	proj := map[string]bool{}
+	for _, j := range got {
+		proj[j.Project] = true
+	}
+	if !proj["default"] || !proj["web"] {
+		t.Fatalf("expected default+web sources, got %+v", got)
+	}
+}
+
 // TestProjectRouting checks --project writes under BaseDir/projects and that a
 // traversal name is rejected before any file is touched.
 func TestProjectRouting(t *testing.T) {

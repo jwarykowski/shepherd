@@ -20,6 +20,7 @@ Run `shepherd help` for the authoritative command list. Summary:
 | Command | Does |
 | --- | --- |
 | `shepherd list --json` | read all items (machine shape — prefer this) |
+| `shepherd list --all --json` | read across every board; adds a `project` field |
 | `shepherd add "<text>"` | add an item |
 | `shepherd done <n>` / `undone <n>` | (un)complete item n |
 | `shepherd rm <n>` | remove item n |

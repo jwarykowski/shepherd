@@ -41,6 +41,23 @@ func TestSortByCategoryThenPrio(t *testing.T) {
 	}
 }
 
+func TestSortBySource(t *testing.T) {
+	items := []Item{
+		{Text: "w2", Source: "web", Category: "z"},
+		{Text: "a1", Source: "api"},
+		{Text: "w1", Source: "web", Category: "a"},
+	}
+	SortBySource(items)
+	got := ""
+	for _, it := range items {
+		got += it.Text + " "
+	}
+	// grouped by source (api<web), category order within a source
+	if got != "a1 w1 w2 " {
+		t.Fatalf("source order wrong: %q", got)
+	}
+}
+
 func TestSortByPriorityView(t *testing.T) {
 	items := []Item{
 		{Text: "a", Category: "z", Prio: 'L'},

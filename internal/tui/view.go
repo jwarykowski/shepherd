@@ -70,6 +70,10 @@ func (m model) innerHeight() int {
 // groupOf returns a stable group id (for change detection) and display label
 // for an item under the active view; overdue items form a pinned top group.
 func (m model) groupOf(it todo.Item) (id, label string) {
+	if m.view == viewProject {
+		// group strictly by board (no overdue pin) so sources stay contiguous
+		return "s" + it.Source, it.Source
+	}
 	if todo.Pinned(it) {
 		return "\x00pin", "⚠ overdue"
 	}
@@ -89,6 +93,15 @@ func (m model) groupOf(it todo.Item) (id, label string) {
 // are excluded from their category/priority group (they show in overdue).
 func (m model) groupCount(it todo.Item) (done, total int) {
 	switch {
+	case m.view == viewProject:
+		for _, x := range m.items {
+			if x.Source == it.Source {
+				total++
+				if x.Done {
+					done++
+				}
+			}
+		}
 	case todo.Pinned(it):
 		for _, x := range m.items {
 			if todo.Pinned(x) {
@@ -152,6 +165,9 @@ func (m model) listView() string {
 			box = "✓"
 			text = doneStyle.Render(text)
 		}
+		if m.global && m.view != viewProject && it.Source != "" {
+			text += " " + dimStyle.Render("["+it.Source+"]")
+		}
 		mark := " "
 		if pos == m.cursor {
 			mark = cursorStyle.Render(" ")
@@ -205,7 +221,11 @@ func (m model) count() (done, total int) {
 // header renders the list/table title block: the active view flush-right.
 func (m model) header() string {
 	done, total := m.count()
-	return m.headerWith(viewName[m.view], done, total)
+	ctx := viewName[m.view]
+	if m.global {
+		ctx = "all · " + ctx
+	}
+	return m.headerWith(ctx, done, total)
 }
 
 // headerWith renders the shared title block used by every view: the subtitle
@@ -251,7 +271,7 @@ func (m model) helpGrid() string {
 		{"prio", "h/m/l"}, {"due", "t"}, {"cat", "g"},
 		{"view", "v"}, {"undo", "U"}, {"redo", "^r"},
 		{"del", "x"}, {"arch", "c"}, {"editor", "^e"},
-		{"help", "?"}, {"quit", "q"},
+		{"global", "A"}, {"help", "?"}, {"quit", "q"},
 	}
 	var b strings.Builder
 	for i, c := range cells {
@@ -268,8 +288,11 @@ func (m model) helpGrid() string {
 func (m model) tableView() string {
 	w := m.width()
 	vis := m.visible()
-	catW, dueW := 12, 11
-	taskW := w - (2 + 2 + catW + dueW + 8) // marks + fixed cols + cell padding
+	catW, dueW, projW := 12, 11, 0
+	if m.global {
+		projW = 12
+	}
+	taskW := w - (2 + 2 + catW + dueW + projW + 8) // marks + fixed cols + cell padding
 	if taskW < 10 {
 		taskW = 10
 	}
@@ -277,9 +300,14 @@ func (m model) tableView() string {
 		{Title: "✓", Width: 1},
 		{Title: "!", Width: 1},
 		{Title: "task", Width: taskW},
-		{Title: "category", Width: catW},
-		{Title: "due", Width: dueW},
 	}
+	if m.global {
+		cols = append(cols, table.Column{Title: "project", Width: projW})
+	}
+	cols = append(cols,
+		table.Column{Title: "category", Width: catW},
+		table.Column{Title: "due", Width: dueW},
+	)
 	rows := make([]table.Row, 0, len(vis))
 	for _, i := range vis {
 		it := m.items[i]
@@ -295,7 +323,12 @@ func (m model) tableView() string {
 		if it.Due != "" {
 			due, _ = todo.DueLabel(it.Due)
 		}
-		rows = append(rows, table.Row{box, p, it.Text, it.Category, due})
+		row := table.Row{box, p, it.Text}
+		if m.global {
+			row = append(row, it.Source)
+		}
+		row = append(row, it.Category, due)
+		rows = append(rows, row)
 	}
 	head, footer := m.header(), m.listFooter()
 	// derive table height from the actual header/footer sizes (+1 for the

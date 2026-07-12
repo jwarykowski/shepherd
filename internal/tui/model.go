@@ -117,9 +117,10 @@ const (
 	viewCategory viewMode = iota // grouped under category headers
 	viewPriority                 // grouped under priority headers
 	viewTable                    // flat bubbles/table
+	viewProject                  // grouped by source board (global view only)
 )
 
-var viewName = map[viewMode]string{viewCategory: "category", viewPriority: "priority", viewTable: "table"}
+var viewName = map[viewMode]string{viewCategory: "category", viewPriority: "priority", viewTable: "table", viewProject: "project"}
 
 type model struct {
 	path       string
@@ -140,10 +141,16 @@ type model struct {
 	categories []string      // configured categories (tab-cycle in category mode)
 	catIdx     int           // cursor into categories while cycling
 	density    density       // spacing mode
+	global     bool          // read-only aggregate across all boards
+	project    string        // the board to return to when leaving global
 }
 
 // resort orders items for the active view.
 func (m *model) resort() {
+	if m.view == viewProject {
+		todo.SortBySource(m.items)
+		return
+	}
 	todo.Sort(m.items, m.view == viewPriority)
 }
 
@@ -159,6 +166,7 @@ func newModel(project string) model {
 	cfg := loadConfig(store.ConfigPath())
 	m := model{
 		path:       p,
+		project:    project,
 		items:      store.Load(p),
 		archived:   store.Load(store.ArchivePath(p)),
 		input:      ti,
@@ -171,10 +179,45 @@ func newModel(project string) model {
 	return m
 }
 
-// Run builds the board for a project, applies an initial filter, and runs it
-// to exit.
-func Run(filter, project string) error {
+// loadGlobal replaces the model's items with the read-only aggregate across
+// every board, grouped by project. Shared by --all launch and the A toggle.
+func (m *model) loadGlobal() {
+	m.global = true
+	m.items = store.LoadAll()
+	m.archived = nil
+	m.view = viewProject
+	m.lastMod = store.BoardsLatestMod()
+	m.past, m.future, m.dirty = nil, nil, false
+	m.resort()
+	m.cursor = 0
+	m.clamp()
+}
+
+// toggleGlobal flips between the focused board and the global aggregate. On the
+// way in it flushes any unsaved edits to the current board; on the way out it
+// reloads that board fresh from disk.
+func (m *model) toggleGlobal() {
+	if m.global {
+		nm := newModel(m.project)
+		nm.filter, nm.w, nm.height, nm.density = m.filter, m.w, m.height, m.density
+		nm.clamp()
+		*m = nm
+		return
+	}
+	if m.dirty {
+		_ = store.Save(m.path, m.items)
+		m.dirty = false
+	}
+	m.loadGlobal()
+}
+
+// Run builds the board for a project (or the global view), applies an initial
+// filter, and runs it to exit.
+func Run(filter, project string, global bool) error {
 	m := newModel(project)
+	if global {
+		m.loadGlobal()
+	}
 	m.filter = filter
 	m.clamp()
 	p := tea.NewProgram(m, tea.WithAltScreen())

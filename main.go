@@ -22,6 +22,7 @@ func main() {
 
 	filter := flag.String("filter", os.Getenv("SHEPHERD_FILTER"), "start with this filter applied (matches text/note/category/due)")
 	project := flag.String("project", "", "open this project's board (else $SHEPHERD_PROJECT, else the default)")
+	all := flag.Bool("all", false, "open the read-only global view across all boards")
 	flag.Parse()
 
 	name, err := store.ResolveProject(*project)
@@ -30,7 +31,7 @@ func main() {
 		os.Exit(2)
 	}
 
-	if err := tui.Run(*filter, name); err != nil {
+	if err := tui.Run(*filter, name, *all); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
