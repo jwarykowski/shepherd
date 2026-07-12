@@ -134,6 +134,40 @@ func TestListAll(t *testing.T) {
 	}
 }
 
+// TestDoneStampsCompleted checks marking done records a completion timestamp in
+// the JSON, and reopening clears it.
+func TestDoneStampsCompleted(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "todo.md")
+	t.Setenv("SHEPHERD_TODO_FILE", path)
+
+	if code := cmdAdd([]string{"ship it"}, "", &bytes.Buffer{}); code != 0 {
+		t.Fatalf("add exit %d", code)
+	}
+	if code := cmdToggle([]string{"1"}, "", true, &bytes.Buffer{}); code != 0 {
+		t.Fatalf("done exit %d", code)
+	}
+	read := func() itemJSON {
+		var buf bytes.Buffer
+		if code := cmdList([]string{"--json"}, "", &buf); code != 0 {
+			t.Fatalf("list exit %d", code)
+		}
+		var got []itemJSON
+		if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+			t.Fatalf("json: %v", err)
+		}
+		return got[0]
+	}
+	if j := read(); !j.Done || j.Completed == "" {
+		t.Fatalf("done should stamp completed: %+v", j)
+	}
+	if code := cmdToggle([]string{"1"}, "", false, &bytes.Buffer{}); code != 0 {
+		t.Fatalf("undone exit %d", code)
+	}
+	if j := read(); j.Done || j.Completed != "" {
+		t.Fatalf("undone should clear completed: %+v", j)
+	}
+}
+
 // TestProjectRouting checks --project writes under BaseDir/projects and that a
 // traversal name is rejected before any file is touched.
 func TestProjectRouting(t *testing.T) {

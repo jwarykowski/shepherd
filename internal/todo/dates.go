@@ -97,6 +97,52 @@ func DueLabel(due string) (string, bool) {
 	}
 }
 
+// SetDone flips an item's done state and maintains the completion timestamp:
+// stamped when marked done, cleared when reopened.
+func SetDone(it *Item, done bool) {
+	it.Done = done
+	if done {
+		it.Completed = Now()
+	} else {
+		it.Completed = ""
+	}
+}
+
+// Deferred reports whether an open item's start/defer date is still in the
+// future — i.e. it hasn't begun yet.
+func Deferred(it Item) bool {
+	if it.Done || it.Defer == "" {
+		return false
+	}
+	d, err := time.Parse(dateFormat, it.Defer)
+	if err != nil {
+		return false
+	}
+	t, err := time.Parse(dateFormat, Today())
+	if err != nil {
+		return false
+	}
+	return d.After(t)
+}
+
+// DeferLabel renders how long until a defer/start date is reached ("starts Nd");
+// empty once it's today or past, or if unparseable.
+func DeferLabel(iso string) string {
+	d, err := time.Parse(dateFormat, iso)
+	if err != nil {
+		return ""
+	}
+	t, err := time.Parse(dateFormat, Today())
+	if err != nil {
+		return ""
+	}
+	days := int(d.Sub(t).Hours() / 24)
+	if days <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("starts %dd", days)
+}
+
 // Pinned reports whether an item is surfaced to the top: open and past due.
 func Pinned(it Item) bool {
 	if it.Done || it.Due == "" {

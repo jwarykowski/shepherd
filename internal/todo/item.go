@@ -7,20 +7,24 @@ import "strings"
 
 // Item is a single todo entry.
 type Item struct {
-	Done     bool
-	Prio     byte // 'H', 'M', 'L', or 0 for none
-	Text     string
-	Category string
-	Created  string
-	Due      string // YYYY-MM-DD, or empty
-	Note     string
+	Done      bool
+	Prio      byte // 'H', 'M', 'L', or 0 for none
+	Text      string
+	Category  string
+	Created   string
+	Completed string // timestamp the item was marked done, or empty
+	Defer     string // YYYY-MM-DD start/defer date, or empty
+	Due       string // YYYY-MM-DD, or empty
+	Note      string
+	Link      string // reference URL, or empty
 	// Source is the board an item came from in an aggregated (global) view,
 	// e.g. "web" or "default". Derived from the filename; never serialized.
 	Source string
 }
 
 // ParseQuickAdd splits an add line into text plus @category, !h/!m/!l priority,
-// and due:<preset> tokens. Unrecognized tokens stay part of the text.
+// due:<preset>, defer:<preset>, and link:<url> tokens. Unrecognized tokens stay
+// part of the text.
 func ParseQuickAdd(s string) Item {
 	it := Item{Created: Now()}
 	var words []string
@@ -32,6 +36,10 @@ func ParseQuickAdd(s string) Item {
 			it.Prio = strings.ToUpper(tok[1:])[0]
 		case strings.HasPrefix(tok, "due:") && len(tok) > 4:
 			it.Due = ParseDue(tok[4:])
+		case strings.HasPrefix(tok, "defer:") && len(tok) > 6:
+			it.Defer = ParseDue(tok[6:])
+		case strings.HasPrefix(tok, "link:") && len(tok) > 5:
+			it.Link = tok[5:]
 		default:
 			words = append(words, tok)
 		}

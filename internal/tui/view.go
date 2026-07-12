@@ -161,9 +161,12 @@ func (m model) listView() string {
 		}
 		box := "○"
 		text := it.Text
+		deferred := todo.Deferred(it)
 		if it.Done {
 			box = "✓"
 			text = doneStyle.Render(text)
+		} else if deferred {
+			text = dimStyle.Render(text) // not started yet
 		}
 		if m.global && m.view != viewProject && it.Source != "" {
 			text += " " + dimStyle.Render("["+it.Source+"]")
@@ -175,7 +178,11 @@ func (m model) listView() string {
 		// right cluster: due (left) then priority label flush far-right.
 		// Overdue rows live under the ⚠ overdue group, so don't repeat "overdue" on the line.
 		label := ""
-		if it.Due != "" && !todo.Pinned(it) {
+		if deferred {
+			if lbl := todo.DeferLabel(it.Defer); lbl != "" {
+				label = dimStyle.Render(lbl)
+			}
+		} else if it.Due != "" && !todo.Pinned(it) {
 			lbl, over := todo.DueLabel(it.Due)
 			st := dimStyle
 			if over {
@@ -255,8 +262,8 @@ func (m model) listFooter() string {
 	switch m.mode {
 	case modeFilter:
 		return rule + "\n" + m.input.View() + "  " + dimStyle.Render("(filter: enter=apply esc=clear)")
-	case modeAdd, modeEdit, modeCategory, modeDue:
-		verb := map[mode]string{modeAdd: "add", modeEdit: "edit", modeCategory: "category", modeDue: "due"}[m.mode]
+	case modeAdd, modeEdit, modeCategory, modeDue, modeDefer, modeLink:
+		verb := map[mode]string{modeAdd: "add", modeEdit: "edit", modeCategory: "category", modeDue: "due", modeDefer: "defer", modeLink: "link"}[m.mode]
 		return rule + "\n" + m.input.View() + "  " + dimStyle.Render("("+verb+": enter=save esc=cancel)")
 	default:
 		return rule + "\n" + m.helpGrid()
@@ -269,6 +276,7 @@ func (m model) helpGrid() string {
 		{"move", "j/k"}, {"toggle", "space"}, {"detail", "d"},
 		{"add", "a"}, {"edit", "u"}, {"filter", "/"},
 		{"prio", "h/m/l"}, {"due", "t"}, {"cat", "g"},
+		{"defer", "s"}, {"link", "L"}, {"open", "o"},
 		{"view", "v"}, {"undo", "U"}, {"redo", "^r"},
 		{"del", "x"}, {"arch", "c"}, {"editor", "^e"},
 		{"global", "A"}, {"help", "?"}, {"quit", "q"},
@@ -368,12 +376,13 @@ func (m model) helpBody() []string {
 	line("An interactive todo board in a herdr pane, backed by a plain markdown file. Changes save on quit; the board reloads external edits automatically when you have nothing unsaved.")
 	blank()
 	sec("adding")
-	line("a — add. Inline syntax: text @category !h|!m|!l due:tomorrow")
+	line("a — add. Inline syntax: text @category !h|!m|!l due:tomorrow defer:3d link:https://…")
 	line("u — edit the selected item's text")
 	blank()
 	sec("organise")
 	line("h/m/l — set priority high/medium/low (same key again clears)")
-	line("g — set category · t — set due date")
+	line("g — set category · t — set due date · s — set defer/start date")
+	line("L — set link · o — open the link in the browser")
 	line("space — toggle done · x — delete · c — archive done")
 	blank()
 	sec("due dates")
@@ -491,7 +500,7 @@ func (m model) detailView() string {
 	}
 
 	field := func(k, v string) string {
-		return dimStyle.Render(fmt.Sprintf("%-9s", k)) + v + "\n"
+		return dimStyle.Render(fmt.Sprintf("%-10s", k)) + v + "\n"
 	}
 	category := it.Category
 	if category == "" {
@@ -503,6 +512,16 @@ func (m model) detailView() string {
 	b.WriteString(field("status", status))
 	b.WriteString(field("priority", prio))
 	b.WriteString(field("category", category))
+	if m.global && it.Source != "" {
+		b.WriteString(field("board", catStyle.Render(it.Source)))
+	}
+	if it.Defer != "" {
+		defer_ := todo.DisplayDate(it.Defer)
+		if lbl := todo.DeferLabel(it.Defer); lbl != "" {
+			defer_ += "  " + dimStyle.Render(lbl)
+		}
+		b.WriteString(field("defer", defer_))
+	}
 	due := dimStyle.Render("—")
 	if it.Due != "" {
 		lbl, over := todo.DueLabel(it.Due)
@@ -513,7 +532,13 @@ func (m model) detailView() string {
 		due = fmt.Sprintf("%s  %s", todo.DisplayDate(it.Due), st.Render(lbl))
 	}
 	b.WriteString(field("due", due))
+	if it.Link != "" {
+		b.WriteString(field("link", matchStyle.Render(it.Link)))
+	}
 	b.WriteString(field("created", created))
+	if it.Completed != "" {
+		b.WriteString(field("completed", it.Completed))
+	}
 	b.WriteString("\n" + dimStyle.Render("note") + "\n")
 	if m.mode == modeNote {
 		b.WriteString(m.input.View() + "\n")
@@ -528,7 +553,7 @@ func (m model) detailView() string {
 	if m.mode == modeNote {
 		help = rule + "\n" + dimStyle.Render("note: enter=save · esc=cancel")
 	} else {
-		help = rule + "\n" + dimStyle.Render("e edit note   space toggle   d/esc/q back")
+		help = rule + "\n" + dimStyle.Render("e edit note   space toggle   o open link   d/esc/q back")
 	}
 	return m.frame(b.String(), help)
 }

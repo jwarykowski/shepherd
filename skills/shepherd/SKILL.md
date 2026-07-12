@@ -42,9 +42,14 @@ found via `--all`, re-list that board (`list --project <name> --json`) and use
 ## Adding
 
 `add` accepts quick-add tokens in the text:
-`shepherd add "renew passport @home !h due:+2w"`
+`shepherd add "renew passport @home !h due:+2w defer:1w link:https://gov.uk"`
 
 - `@category` · `!h`/`!m`/`!l` priority · `due:<today|tomorrow|+3d|15-07-2026>`
+- `defer:<same date forms>` — start/defer date (item shown but not "started"
+  until then) · `link:<url>` — a reference URL
+
+`list --json` includes `completed` (timestamp set when an item is marked done),
+`defer`, and `link` per item.
 
 ## Notes
 

@@ -83,6 +83,8 @@ const (
 	modeNote
 	modeCategory
 	modeDue
+	modeDefer
+	modeLink
 	modeFilter
 	modeDetail
 	modeHelp

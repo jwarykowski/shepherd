@@ -15,7 +15,7 @@ import (
 
 var (
 	lineRE = regexp.MustCompile(`^- \[([ xX])\] (?:\(([HMLhml])\) )?(.*)$`)
-	metaRE = regexp.MustCompile(`^  (created|note|category|due): (.*)$`)
+	metaRE = regexp.MustCompile(`^  (created|completed|defer|note|category|due|link): (.*)$`)
 )
 
 // projectRE is the allowed project-name slug. Anchored and free of path
@@ -166,10 +166,16 @@ func Load(path string) []todo.Item {
 			switch m[1] {
 			case "created":
 				last.Created = m[2]
+			case "completed":
+				last.Completed = m[2]
+			case "defer":
+				last.Defer = m[2]
 			case "category":
 				last.Category = strings.ToLower(m[2])
 			case "due":
 				last.Due = m[2]
+			case "link":
+				last.Link = m[2]
 			case "note":
 				last.Note = m[2]
 			}
@@ -194,11 +200,20 @@ func Serialize(items []todo.Item) string {
 		if it.Created != "" {
 			fmt.Fprintf(&b, "  created: %s\n", it.Created)
 		}
+		if it.Completed != "" {
+			fmt.Fprintf(&b, "  completed: %s\n", it.Completed)
+		}
+		if it.Defer != "" {
+			fmt.Fprintf(&b, "  defer: %s\n", it.Defer)
+		}
 		if it.Due != "" {
 			fmt.Fprintf(&b, "  due: %s\n", it.Due)
 		}
 		if it.Category != "" {
 			fmt.Fprintf(&b, "  category: %s\n", it.Category)
+		}
+		if it.Link != "" {
+			fmt.Fprintf(&b, "  link: %s\n", strings.ReplaceAll(it.Link, "\n", " "))
 		}
 		if it.Note != "" {
 			fmt.Fprintf(&b, "  note: %s\n", strings.ReplaceAll(it.Note, "\n", " "))

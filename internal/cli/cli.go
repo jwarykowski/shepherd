@@ -20,7 +20,7 @@ const cliUsage = `shepherd — todo board
 Usage:
   shepherd                      open the interactive board
   shepherd list [--json] [--all] list items (--all aggregates every board)
-  shepherd add "<text>"         add an item (@category !h/!m/!l due:tomorrow)
+  shepherd add "<text>"         add an item (@category !h/!m/!l due: defer: link:)
   shepherd done <n>             mark item n done
   shepherd undone <n>           mark item n not done
   shepherd rm <n>               remove item n
@@ -93,19 +93,22 @@ func extractProject(args []string) (string, []string, error) {
 
 // itemJSON is the machine-readable view agents read via `list --json`.
 type itemJSON struct {
-	Index    int    `json:"index"`
-	Done     bool   `json:"done"`
-	Priority string `json:"priority,omitempty"` // "H"/"M"/"L"
-	Text     string `json:"text"`
-	Category string `json:"category,omitempty"`
-	Created  string `json:"created,omitempty"`
-	Due      string `json:"due,omitempty"` // ISO YYYY-MM-DD
-	Note     string `json:"note,omitempty"`
-	Project  string `json:"project,omitempty"` // board name, only in --all
+	Index     int    `json:"index"`
+	Done      bool   `json:"done"`
+	Priority  string `json:"priority,omitempty"` // "H"/"M"/"L"
+	Text      string `json:"text"`
+	Category  string `json:"category,omitempty"`
+	Created   string `json:"created,omitempty"`
+	Completed string `json:"completed,omitempty"`
+	Defer     string `json:"defer,omitempty"` // ISO YYYY-MM-DD
+	Due       string `json:"due,omitempty"`   // ISO YYYY-MM-DD
+	Link      string `json:"link,omitempty"`
+	Note      string `json:"note,omitempty"`
+	Project   string `json:"project,omitempty"` // board name, only in --all
 }
 
 func toJSON(it todo.Item, idx int) itemJSON {
-	j := itemJSON{Index: idx, Done: it.Done, Text: it.Text, Category: it.Category, Created: it.Created, Due: it.Due, Note: it.Note, Project: it.Source}
+	j := itemJSON{Index: idx, Done: it.Done, Text: it.Text, Category: it.Category, Created: it.Created, Completed: it.Completed, Defer: it.Defer, Due: it.Due, Link: it.Link, Note: it.Note, Project: it.Source}
 	if it.Prio != 0 {
 		j.Priority = string(it.Prio)
 	}
@@ -182,7 +185,7 @@ func cmdToggle(args []string, project string, done bool, w io.Writer) int {
 	if !ok {
 		return 1
 	}
-	items[idx-1].Done = done
+	todo.SetDone(&items[idx-1], done)
 	if err := store.Save(path, items); err != nil {
 		fmt.Fprintln(os.Stderr, "shepherd:", err)
 		return 1
