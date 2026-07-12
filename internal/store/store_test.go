@@ -58,18 +58,28 @@ func TestAppendArchive(t *testing.T) {
 }
 
 func TestTodoPathResolution(t *testing.T) {
-	t.Setenv("HERDR_TODO_FILE", "/x/y.md")
+	// SHEPHERD_TODO_FILE is the whole-file override.
+	t.Setenv("SHEPHERD_TODO_FILE", "/x/y.md")
 	if got := TodoPath(); got != "/x/y.md" {
-		t.Errorf("HERDR_TODO_FILE not honoured: %q", got)
+		t.Errorf("SHEPHERD_TODO_FILE not honoured: %q", got)
+	}
+	_ = os.Unsetenv("SHEPHERD_TODO_FILE")
+
+	// The old HERDR_ vars no longer affect paths.
+	t.Setenv("HERDR_TODO_FILE", "/x/y.md")
+	t.Setenv("HERDR_PLUGIN_STATE_DIR", "/state")
+	if got := TodoPath(); !strings.HasSuffix(got, "/.config/shepherd/todo.md") {
+		t.Errorf("HERDR_ vars should be ignored, got %q", got)
 	}
 	_ = os.Unsetenv("HERDR_TODO_FILE")
-	t.Setenv("HERDR_PLUGIN_STATE_DIR", "/state")
-	if got := TodoPath(); got != "/state/todo.md" {
-		t.Errorf("state dir path = %q, want /state/todo.md", got)
-	}
 	_ = os.Unsetenv("HERDR_PLUGIN_STATE_DIR")
 	if got := TodoPath(); !strings.HasSuffix(got, "/.config/shepherd/todo.md") {
-		t.Errorf("home fallback path = %q", got)
+		t.Errorf("default path = %q", got)
+	}
+
+	// A named project -> projects/<name>.md under the base dir.
+	if got := TodoPathFor("web"); !strings.HasSuffix(got, "/.config/shepherd/projects/web.md") {
+		t.Errorf("project path = %q", got)
 	}
 }
 
@@ -79,8 +89,46 @@ func TestConfigPath(t *testing.T) {
 		t.Errorf("explicit config = %q", got)
 	}
 	_ = os.Unsetenv("SHEPHERD_CONFIG")
-	t.Setenv("HERDR_TODO_FILE", "/data/todo.md")
+
+	// With a whole-file override, config is its sibling.
+	t.Setenv("SHEPHERD_TODO_FILE", "/data/todo.md")
 	if got := ConfigPath(); got != "/data/config.toml" {
-		t.Errorf("derived config = %q, want /data/config.toml", got)
+		t.Errorf("sibling config = %q, want /data/config.toml", got)
+	}
+	_ = os.Unsetenv("SHEPHERD_TODO_FILE")
+
+	// Otherwise shared at the base dir (also for project boards).
+	if got := ConfigPath(); !strings.HasSuffix(got, "/.config/shepherd/config.toml") {
+		t.Errorf("base config = %q", got)
+	}
+}
+
+func TestResolveProject(t *testing.T) {
+	t.Setenv("SHEPHERD_PROJECT", "envproj")
+	if got, err := ResolveProject("flagproj"); err != nil || got != "flagproj" {
+		t.Fatalf("flag should win: %q %v", got, err)
+	}
+	if got, err := ResolveProject(""); err != nil || got != "envproj" {
+		t.Fatalf("env fallback: %q %v", got, err)
+	}
+	_ = os.Unsetenv("SHEPHERD_PROJECT")
+	if got, err := ResolveProject(""); err != nil || got != "" {
+		t.Fatalf("empty -> default: %q %v", got, err)
+	}
+	if _, err := ResolveProject("../evil"); err == nil {
+		t.Fatal("traversal via flag not rejected")
+	}
+	t.Setenv("SHEPHERD_PROJECT", "../evil")
+	if _, err := ResolveProject(""); err == nil {
+		t.Fatal("traversal via env not rejected")
+	}
+}
+
+func TestArchivePath(t *testing.T) {
+	if got := ArchivePath("/c/shepherd/todo.md"); got != "/c/shepherd/archive.md" {
+		t.Errorf("default archive = %q", got)
+	}
+	if got := ArchivePath("/c/shepherd/projects/web.md"); got != "/c/shepherd/projects/web-archive.md" {
+		t.Errorf("project archive = %q", got)
 	}
 }

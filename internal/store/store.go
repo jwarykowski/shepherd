@@ -17,32 +17,79 @@ var (
 	metaRE = regexp.MustCompile(`^  (created|note|category|due): (.*)$`)
 )
 
-// TodoPath resolves the todo file: $HERDR_TODO_FILE, else
-// $HERDR_PLUGIN_STATE_DIR/todo.md, else ~/.config/shepherd/todo.md.
-func TodoPath() string {
-	if p := os.Getenv("HERDR_TODO_FILE"); p != "" {
-		return p
-	}
-	dir := os.Getenv("HERDR_PLUGIN_STATE_DIR")
-	if dir == "" {
-		home, _ := os.UserHomeDir()
-		dir = filepath.Join(home, ".config", "shepherd")
-	}
-	return filepath.Join(dir, "todo.md")
+// projectRE is the allowed project-name slug. Anchored and free of path
+// separators or dots-only names, so a project can never escape BaseDir.
+var projectRE = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]*$`)
+
+// BaseDir is where every board lives: ~/.config/shepherd. Fixed on purpose —
+// shepherd does not follow $HERDR_PLUGIN_STATE_DIR, so the default and all
+// project boards stay in one dotfiles-syncable directory.
+func BaseDir() string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".config", "shepherd")
 }
 
-// ConfigPath resolves the config file: $SHEPHERD_CONFIG, else a sibling
-// config.toml next to the todo file.
+// todoFileOverride is the explicit whole-file override, $SHEPHERD_TODO_FILE
+// (else ""). Both TodoPathFor and ConfigPath key off it.
+func todoFileOverride() string {
+	return os.Getenv("SHEPHERD_TODO_FILE")
+}
+
+// ResolveProject picks the effective project name: the flag if non-empty, else
+// $SHEPHERD_PROJECT, else "". A non-empty name must be a safe slug — this is
+// the one validation point, so the env path can't smuggle path traversal.
+func ResolveProject(flag string) (string, error) {
+	name := flag
+	if name == "" {
+		name = os.Getenv("SHEPHERD_PROJECT")
+	}
+	if name != "" && !projectRE.MatchString(name) {
+		return "", fmt.Errorf("invalid project name %q (use letters, digits, . _ -)", name)
+	}
+	return name, nil
+}
+
+// TodoPathFor resolves the todo file for a (validated) project. The override
+// wins; else an empty project is the default todo.md and a named project is
+// projects/<name>.md — both under BaseDir.
+//
+// ponytail: a future "global view" would glob BaseDir()/projects/*.md
+// (skipping *-archive.md).
+func TodoPathFor(project string) string {
+	if p := todoFileOverride(); p != "" {
+		return p
+	}
+	if project != "" {
+		return filepath.Join(BaseDir(), "projects", project+".md")
+	}
+	return filepath.Join(BaseDir(), "todo.md")
+}
+
+// TodoPath resolves the default todo file (no project).
+func TodoPath() string { return TodoPathFor("") }
+
+// ConfigPath resolves the shared config file: $SHEPHERD_CONFIG, else a sibling
+// of the whole-file override if one is set, else BaseDir/config.toml. It stays
+// at BaseDir for project boards so every board shares one config.
 func ConfigPath() string {
 	if p := os.Getenv("SHEPHERD_CONFIG"); p != "" {
 		return p
 	}
-	return filepath.Join(filepath.Dir(TodoPath()), "config.toml")
+	if p := todoFileOverride(); p != "" {
+		return filepath.Join(filepath.Dir(p), "config.toml")
+	}
+	return filepath.Join(BaseDir(), "config.toml")
 }
 
-// ArchivePath is a sibling archive.md next to the todo file.
+// ArchivePath is the archive sibling of the todo file: todo.md -> archive.md,
+// projects/web.md -> projects/web-archive.md.
 func ArchivePath(todoFile string) string {
-	return filepath.Join(filepath.Dir(todoFile), "archive.md")
+	dir := filepath.Dir(todoFile)
+	base := strings.TrimSuffix(filepath.Base(todoFile), ".md")
+	if base == "todo" {
+		return filepath.Join(dir, "archive.md")
+	}
+	return filepath.Join(dir, base+"-archive.md")
 }
 
 // Load parses the markdown checklist at path into items (nil if unreadable).

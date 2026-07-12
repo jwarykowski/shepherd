@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"shepherd/internal/cli"
+	"shepherd/internal/store"
 	"shepherd/internal/tui"
 )
 
@@ -20,9 +21,16 @@ func main() {
 	}
 
 	filter := flag.String("filter", os.Getenv("SHEPHERD_FILTER"), "start with this filter applied (matches text/note/category/due)")
+	project := flag.String("project", "", "open this project's board (else $SHEPHERD_PROJECT, else the default)")
 	flag.Parse()
 
-	if err := tui.Run(*filter); err != nil {
+	name, err := store.ResolveProject(*project)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "shepherd:", err)
+		os.Exit(2)
+	}
+
+	if err := tui.Run(*filter, name); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

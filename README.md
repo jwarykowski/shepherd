@@ -163,10 +163,16 @@ direction = "right"                        # split only: right (default) | left 
 
 ## storage
 
-`$HERDR_PLUGIN_STATE_DIR/todo.md`, else `~/.config/shepherd/todo.md`.
-Override with `HERDR_TODO_FILE`. Dates are stored ISO (`YYYY-MM-DD`) so they
-sort correctly, but shown and entered day-month-year / DMY (`DD-MM-YYYY`).
-Metadata rides as indented sub-lines:
+Everything lives under `~/.config/shepherd`: the default board `todo.md`, a
+shared `config.toml`, and one file per project at `projects/<name>.md`. Pick a
+project with `--project <name>` (or `$SHEPHERD_PROJECT`); unset uses the default
+board. `config.toml` is shared across every board. Point at an exact file with
+`$SHEPHERD_TODO_FILE` if you need to. In the command API, flags follow the
+verb: `shepherd add "…" --project web`, `shepherd list --project web`.
+
+Dates are stored ISO (`YYYY-MM-DD`) so they sort correctly, but shown and
+entered day-month-year / DMY (`DD-MM-YYYY`). Metadata rides as indented
+sub-lines:
 
 ```markdown
 - [ ] (H) ship the release
@@ -179,7 +185,8 @@ Metadata rides as indented sub-lines:
 ### archive
 
 Pressing `c` moves every done item off the board and **appends** it to a
-sibling `archive.md` (same directory as `todo.md`, created on first use). Same
+sibling archive file (`todo.md` → `archive.md`, `projects/web.md` →
+`projects/web-archive.md`, created on first use). Same
 markdown format as `todo.md`, so it's greppable and hand-editable. It's
 append-only — shepherd never rewrites or prunes it; trim it yourself if it
 grows. The board doesn't display the archive, but `/` filtering also greps it
