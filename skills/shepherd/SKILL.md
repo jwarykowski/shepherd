@@ -27,6 +27,18 @@ Run `shepherd help` for the authoritative command list. Summary:
 
 Indexes are 1-based and match `list` order. Read with `--json`, act by index.
 
+## Projects
+
+Each project has its own board: `--project <name>` (or `$SHEPHERD_PROJECT`)
+targets `~/.config/shepherd/projects/<name>.md`; with no project you're on the
+default board. Flags follow the verb — `shepherd list --project web`,
+`shepherd add "…" --project web`, `shepherd done 2 --project web`.
+
+`shepherd list --all` reads across every board and is **read-only**; its
+indexes are aggregate, **not** valid for `done`/`rm`. To act on an item you
+found via `--all`, re-list that board (`list --project <name> --json`) and use
+*that* board's index, mutating with the same `--project`.
+
 ## Adding
 
 `add` accepts quick-add tokens in the text:
