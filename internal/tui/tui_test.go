@@ -461,3 +461,34 @@ func TestOverdueGroupLabel(t *testing.T) {
 		t.Fatalf("overdue group label wrong: %q", label)
 	}
 }
+
+func TestGlobalReadOnly(t *testing.T) {
+	m := model{
+		input:  textinput.New(),
+		global: true,
+		view:   viewProject,
+		items: []todo.Item{
+			{Text: "a", Source: "default"},
+			{Text: "b", Source: "web"},
+		},
+	}
+	m.resort()
+
+	// space must not toggle done in the read-only global view
+	if got := drive(m, " "); got.items[0].Done || got.items[1].Done {
+		t.Fatal("space toggled done in read-only global view")
+	}
+
+	// v cycles through all 4 modes back to project
+	if got := drive(m, "v", "v", "v", "v"); got.view != viewProject {
+		t.Fatalf("v cycle did not return to project after 4 steps: %v", got.view)
+	}
+
+	// items group by source; header id/label is the board name
+	if id, label := m.groupOf(m.items[0]); id != "sdefault" || label != "default" {
+		t.Fatalf("project group wrong: %q %q", id, label)
+	}
+	if d, tot := m.groupCount(m.items[1]); d != 0 || tot != 1 {
+		t.Fatalf("project group count wrong: %d/%d", d, tot)
+	}
+}

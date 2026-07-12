@@ -14,6 +14,9 @@ type Item struct {
 	Created  string
 	Due      string // YYYY-MM-DD, or empty
 	Note     string
+	// Source is the board an item came from in an aggregated (global) view,
+	// e.g. "web" or "default". Derived from the filename; never serialized.
+	Source string
 }
 
 // ParseQuickAdd splits an add line into text plus @category, !h/!m/!l priority,

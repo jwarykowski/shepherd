@@ -157,7 +157,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tickMsg:
 		// only auto-reload external edits when we have no pending in-memory
 		// changes, so a dotfile sync can't clobber the user's work.
-		if !m.dirty {
+		if m.global {
+			if mt := store.BoardsLatestMod(); mt.After(m.lastMod) {
+				m.items = store.LoadAll()
+				m.resort()
+				m.clamp()
+				m.lastMod = mt
+			}
+		} else if !m.dirty {
 			if mt := store.FileModTime(m.path); mt.After(m.lastMod) {
 				m.items = store.Load(m.path)
 				m.archived = store.Load(store.ArchivePath(m.path))
@@ -176,8 +183,56 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case modeHelp:
 			return m.updateHelp(msg)
 		default:
+			if m.global {
+				return m.updateGlobal(msg)
+			}
 			return m.updateList(msg)
 		}
+	}
+	return m, nil
+}
+
+// updateGlobal handles keys in the read-only global view. It deliberately has
+// no mutation cases — read-only is structural here, not a per-case guard — and
+// never saves the aggregate to disk.
+func (m model) updateGlobal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	vis := m.visible()
+	switch msg.String() {
+	case "q", "ctrl+c":
+		return m, tea.Quit // no save: the aggregate must never be written back
+	case "A", "esc":
+		m.toggleGlobal()
+	case "j", "down":
+		if m.cursor < len(vis)-1 {
+			m.cursor++
+		}
+	case "k", "up":
+		if m.cursor > 0 {
+			m.cursor--
+		}
+	case "v":
+		var cur todo.Item
+		has := m.sel() >= 0
+		if has {
+			cur = m.items[m.sel()]
+		}
+		m.view = (m.view + 1) % 4
+		m.resort()
+		if has {
+			m.place(cur)
+		}
+		m.clamp()
+	case "d":
+		if m.sel() >= 0 {
+			m.mode = modeDetail
+		}
+	case "?":
+		m.mode = modeHelp
+	case "/":
+		m.mode = modeFilter
+		m.input.SetValue(m.filter)
+		m.input.Placeholder = "filter"
+		m.input.Focus()
 	}
 	return m, nil
 }
@@ -270,6 +325,8 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.place(cur)
 		}
 		m.clamp()
+	case "A":
+		m.toggleGlobal()
 	case "?":
 		m.mode = modeHelp
 	case "/":
@@ -343,14 +400,14 @@ func (m model) updateDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "esc", "q", "d":
 		m.mode = modeList
 	case "e", "n":
-		if idx >= 0 {
+		if idx >= 0 && !m.global {
 			m.mode = modeNote
 			m.input.SetValue(m.items[idx].Note)
 			m.input.Placeholder = "note"
 			m.input.Focus()
 		}
 	case "space", " ":
-		if idx >= 0 {
+		if idx >= 0 && !m.global {
 			m.beforeMutate()
 			m.items[idx].Done = !m.items[idx].Done
 		}

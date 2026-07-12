@@ -19,7 +19,7 @@ const cliUsage = `shepherd — todo board
 
 Usage:
   shepherd                      open the interactive board
-  shepherd list [--json]        list items with their index
+  shepherd list [--json] [--all] list items (--all aggregates every board)
   shepherd add "<text>"         add an item (@category !h/!m/!l due:tomorrow)
   shepherd done <n>             mark item n done
   shepherd undone <n>           mark item n not done
@@ -101,10 +101,11 @@ type itemJSON struct {
 	Created  string `json:"created,omitempty"`
 	Due      string `json:"due,omitempty"` // ISO YYYY-MM-DD
 	Note     string `json:"note,omitempty"`
+	Project  string `json:"project,omitempty"` // board name, only in --all
 }
 
 func toJSON(it todo.Item, idx int) itemJSON {
-	j := itemJSON{Index: idx, Done: it.Done, Text: it.Text, Category: it.Category, Created: it.Created, Due: it.Due, Note: it.Note}
+	j := itemJSON{Index: idx, Done: it.Done, Text: it.Text, Category: it.Category, Created: it.Created, Due: it.Due, Note: it.Note, Project: it.Source}
 	if it.Prio != 0 {
 		j.Priority = string(it.Prio)
 	}
@@ -118,10 +119,16 @@ func emit(w io.Writer, s string) { _, _ = io.WriteString(w, s+"\n") }
 func cmdList(args []string, project string, w io.Writer) int {
 	fs := flag.NewFlagSet("list", flag.ContinueOnError)
 	asJSON := fs.Bool("json", false, "machine-readable JSON output")
+	all := fs.Bool("all", false, "aggregate items across every board (read-only)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	items := store.Load(store.TodoPathFor(project))
+	var items []todo.Item
+	if *all {
+		items = store.LoadAll()
+	} else {
+		items = store.Load(store.TodoPathFor(project))
+	}
 
 	if *asJSON {
 		out := make([]itemJSON, len(items))
@@ -228,6 +235,9 @@ func formatLine(idx int, it todo.Item) string {
 		fmt.Fprintf(&b, " (%c)", it.Prio)
 	}
 	fmt.Fprintf(&b, " %s", it.Text)
+	if it.Source != "" {
+		fmt.Fprintf(&b, "  [%s]", it.Source)
+	}
 	if it.Category != "" {
 		fmt.Fprintf(&b, "  @%s", it.Category)
 	}

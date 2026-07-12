@@ -132,3 +132,56 @@ func TestArchivePath(t *testing.T) {
 		t.Errorf("project archive = %q", got)
 	}
 }
+
+// seedBoards points BaseDir at a temp HOME and writes a default board plus two
+// project boards (and an archive sibling that must be ignored).
+func seedBoards(t *testing.T) string {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("SHEPHERD_TODO_FILE", "")
+	base := filepath.Join(home, ".config", "shepherd", "projects")
+	if err := os.MkdirAll(base, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write := func(p, s string) {
+		if err := os.WriteFile(p, []byte(s), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(filepath.Join(home, ".config", "shepherd", "todo.md"), "- [ ] a\n")
+	write(filepath.Join(base, "web.md"), "- [ ] b\n")
+	write(filepath.Join(base, "api.md"), "- [ ] c\n")
+	write(filepath.Join(base, "web-archive.md"), "- [x] old\n") // must be skipped
+	return home
+}
+
+func TestBoards(t *testing.T) {
+	seedBoards(t)
+	bs := Boards()
+	if len(bs) != 3 {
+		t.Fatalf("want 3 boards, got %d: %+v", len(bs), bs)
+	}
+	// default first, then projects alphabetical; archive excluded.
+	want := []string{"default", "api", "web"}
+	for i, b := range bs {
+		if b.Name != want[i] {
+			t.Errorf("board %d = %q, want %q", i, b.Name, want[i])
+		}
+	}
+}
+
+func TestLoadAll(t *testing.T) {
+	seedBoards(t)
+	items := LoadAll()
+	if len(items) != 3 {
+		t.Fatalf("want 3 items, got %d", len(items))
+	}
+	bySource := map[string]string{}
+	for _, it := range items {
+		bySource[it.Source] = it.Text
+	}
+	if bySource["default"] != "a" || bySource["web"] != "b" || bySource["api"] != "c" {
+		t.Fatalf("source tagging wrong: %+v", bySource)
+	}
+}

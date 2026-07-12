@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"shepherd/internal/todo"
 )
@@ -90,6 +91,58 @@ func ArchivePath(todoFile string) string {
 		return filepath.Join(dir, "archive.md")
 	}
 	return filepath.Join(dir, base+"-archive.md")
+}
+
+// Board is one todo board: a display name and its file path.
+type Board struct {
+	Name string
+	Path string
+}
+
+// Boards lists the default board (if its file exists) then each
+// projects/<name>.md, skipping archive siblings. filepath.Glob returns sorted
+// paths, so the projects come out alphabetical.
+func Boards() []Board {
+	var bs []Board
+	def := filepath.Join(BaseDir(), "todo.md")
+	if _, err := os.Stat(def); err == nil {
+		bs = append(bs, Board{Name: "default", Path: def})
+	}
+	matches, _ := filepath.Glob(filepath.Join(BaseDir(), "projects", "*.md"))
+	for _, p := range matches {
+		name := strings.TrimSuffix(filepath.Base(p), ".md")
+		if strings.HasSuffix(name, "-archive") {
+			continue
+		}
+		bs = append(bs, Board{Name: name, Path: p})
+	}
+	return bs
+}
+
+// LoadAll returns every board's items with Source set to the board name — the
+// read-only aggregate behind the global view. Never write these back: items
+// from many files must not be flattened into one.
+func LoadAll() []todo.Item {
+	var all []todo.Item
+	for _, b := range Boards() {
+		for _, it := range Load(b.Path) {
+			it.Source = b.Name
+			all = append(all, it)
+		}
+	}
+	return all
+}
+
+// BoardsLatestMod is the newest mtime across all boards; it drives the global
+// view's reload check (a brand-new board file bumps the max).
+func BoardsLatestMod() time.Time {
+	var latest time.Time
+	for _, b := range Boards() {
+		if mt := FileModTime(b.Path); mt.After(latest) {
+			latest = mt
+		}
+	}
+	return latest
 }
 
 // Load parses the markdown checklist at path into items (nil if unreadable).

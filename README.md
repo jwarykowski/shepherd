@@ -20,6 +20,7 @@ file). See [storage](#storage).
 - [install](#install)
 - [usage](#usage)
 - [projects](#projects)
+- [global view](#global-view)
 - [launch filter](#launch-filter)
 - [command api](#command-api)
 - [agentic tools](#agentic-tools)
@@ -65,6 +66,7 @@ herdr plugin install jwarykowski/shepherd
 | `u` | edit item text |
 | `d` | open detail view |
 | `v` | cycle view: category / priority / table |
+| `A` | toggle the [global view](#global-view) across all boards |
 | `/` | filter (text, note, category, due — also greps `archive.md`) |
 | `U` / `ctrl+r` | undo / redo (multi-level) |
 | `ctrl+e` | open the markdown file in `$EDITOR` |
@@ -111,6 +113,24 @@ placement = "tab"
 command = ["./bin/shepherd", "--project", "work"]
 ```
 
+## global view
+
+See every board at once — the default plus all projects — in one **read-only**
+view. Launch with `--all`, or press `A` from any board to toggle in and out
+(your board is saved first, and `A` again drops you back on it).
+
+```sh
+shepherd --all        # aggregate of every board
+```
+
+`v` cycles four groupings: **project → category → priority → table**. In the
+project grouping each board is a header; in the others every row carries a
+`[project]` tag (the table gets a `project` column). It's read-only by design —
+editing stays on the focused board, so the aggregate is never written back.
+`/` filters across boards (including by project name).
+
+The command API mirrors it: `shepherd list --all` (see [command api](#command-api)).
+
 ## launch filter
 
 `--project` gives a project its own file; `--filter` is a saved *view* over one
@@ -135,6 +155,7 @@ always valid. Indexes are 1-based and match `list` order.
 
 ```sh
 shepherd list [--json]              # show items with their index
+shepherd list --all [--json]        # aggregate across every board (read-only)
 shepherd add "buy milk @home !h due:tomorrow"
 shepherd done 2                     # mark item 2 done
 shepherd undone 2                   # mark item 2 not done
@@ -152,7 +173,8 @@ shepherd list --project web
 `add` accepts the same quick-add tokens as the board: `@category`, `!h`/`!m`/`!l`
 priority, `due:<today|tomorrow|+3d|15-07-2026>`. Agents should read with
 `list --json` (stable machine shape) and mutate with `add`/`done`/`rm`; an open
-board picks up the change within ~2s.
+board picks up the change within ~2s. `list --all --json` adds a `project`
+field per item so you can tell which board each came from.
 
 ```json
 [
