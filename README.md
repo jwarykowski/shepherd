@@ -72,6 +72,7 @@ herdr plugin install jwarykowski/shepherd
 | `A` | toggle the [global view](#global-view) across all boards |
 | `/` | filter (text, note, category, due — also greps `archive.md`) |
 | `U` / `ctrl+r` | undo / redo (multi-level) |
+| `w` | save now (the header shows `● unsaved` / `● saved`) |
 | `ctrl+e` | open the markdown file in `$EDITOR` |
 | `x` | delete item |
 | `c` | archive all done items to `archive.md` |
@@ -89,7 +90,9 @@ Items are ordered by **category, then priority, then soonest due**, grouped
 under headers, with a colored priority label flush right. **Overdue** open
 items are pinned to a `⚠ overdue` group at the top. New items get a `created`
 timestamp; due items show a relative label
-(`due 3d`, `overdue 2d` in red). The board reloads on-disk changes
+(`due 3d`, `overdue 2d` in red). Edits save on quit, autosave after a short
+idle pause (`autosave` seconds, default 60; `0` disables), or on demand with
+`w`; the header shows `● unsaved` / `● saved`. The board reloads on-disk changes
 automatically when you have no unsaved edits, so external edits (or a dotfile
 sync) show up on their own.
 
@@ -214,11 +217,13 @@ every board (override with `SHEPHERD_CONFIG`):
 ```toml
 view = "category"                          # category (default) | priority | table
 density = "compact"                        # compact (default) | comfort
+autosave = 60                              # seconds idle before writing; 0 disables
 categories = ["work", "home", "personal"]  # tab-cycles in the category prompt
 ```
 
 - `view` — default grouping/layout on launch (`v` still cycles at runtime).
 - `density` — `comfort` adds outer padding and blank lines between rows.
+- `autosave` — idle seconds before an unsaved board is written to disk (default 60); `0` disables it, so only `w` and quit save.
 - `categories` — press `tab` in the category prompt (`g`) to cycle through them.
 
 herdr pane placement (`placement` / `direction`) lives in the same file — see

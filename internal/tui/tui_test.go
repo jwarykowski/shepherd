@@ -219,15 +219,59 @@ func TestView(t *testing.T) {
 }
 
 func TestFilterFarRight(t *testing.T) {
-	m := model{input: textinput.New(), w: 50, height: 10, filter: "bank",
+	m := model{input: textinput.New(), w: 60, height: 10, filter: "bank",
 		items: []todo.Item{{Text: "call bank"}}}
 	head := m.header()
 	first := strings.SplitN(head, "\n", 2)[0]
-	if !strings.Contains(first, appSubtitle) || !strings.Contains(first, "/bank") || !strings.HasSuffix(first, "0/1") {
+	if !strings.Contains(first, appSubtitle) || !strings.Contains(first, "/bank") || !strings.Contains(first, "0/1") || !strings.HasSuffix(first, "● saved") {
 		t.Fatalf("header layout wrong: %q", first)
 	}
-	if lipgloss.Width(first) != 46 {
-		t.Fatalf("header line width = %d, want 46", lipgloss.Width(first))
+	if lipgloss.Width(first) != 56 { // 60 - 2*padX
+		t.Fatalf("header line width = %d, want 56", lipgloss.Width(first))
+	}
+}
+
+func TestAutosaveAndManualSave(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "todo.md")
+	_ = os.WriteFile(p, []byte("- [ ] alpha\n- [ ] beta\n"), 0o644)
+
+	// Debounced autosave: a mutation marks dirty; a tick before the idle gap
+	// elapses does NOT save; a tick after it does.
+	m := model{path: p, items: store.Load(p), input: textinput.New(), autosaveEvery: time.Minute}
+	m = drive(m, "x") // delete "alpha" → dirty
+	if !m.dirty {
+		t.Fatal("mutation did not mark dirty")
+	}
+	nm, _ := m.Update(tickMsg{})
+	m = nm.(model)
+	if !m.dirty {
+		t.Fatal("autosave fired before debounce elapsed")
+	}
+	m.lastEdit = m.lastEdit.Add(-2 * time.Minute) // pretend the idle gap passed
+	nm, _ = m.Update(tickMsg{})
+	m = nm.(model)
+	if m.dirty {
+		t.Fatal("autosave did not fire after debounce elapsed")
+	}
+	if got := len(store.Load(p)); got != 1 {
+		t.Fatalf("autosave wrote wrong contents: %d items", got)
+	}
+
+	// autosave = 0 disables the tick save; only manual w / quit persist.
+	m2 := model{path: p, items: store.Load(p), input: textinput.New(), autosaveEvery: 0}
+	m2 = drive(m2, "x") // delete the last item → dirty, 0 items in memory
+	m2.lastEdit = m2.lastEdit.Add(-2 * time.Minute)
+	nm, _ = m2.Update(tickMsg{})
+	m2 = nm.(model)
+	if !m2.dirty {
+		t.Fatal("autosave=0 should never autosave")
+	}
+	m2 = drive(m2, "w") // manual save
+	if m2.dirty {
+		t.Fatal("w did not clear dirty")
+	}
+	if got := len(store.Load(p)); got != 0 {
+		t.Fatalf("manual save wrote wrong contents: %d items", got)
 	}
 }
 

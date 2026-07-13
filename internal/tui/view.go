@@ -19,6 +19,7 @@ var (
 	matchStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("4"))
 	catStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("6"))
 	countStyle  = lipgloss.NewStyle().Faint(true)
+	warnStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
 	prioStyles  = map[byte]lipgloss.Style{
 		'H': lipgloss.NewStyle().Foreground(lipgloss.Color("1")),
 		'M': lipgloss.NewStyle().Foreground(lipgloss.Color("3")),
@@ -246,6 +247,13 @@ func (m model) headerWith(context string, done, total int) string {
 	if m.filter != "" || m.mode == modeFilter {
 		right = matchStyle.Render("/"+m.filter) + "  " + right
 	}
+	if !m.global { // global view is read-only; no save state to show
+		save := dimStyle.Render("● saved")
+		if m.dirty {
+			save = warnStyle.Render("● unsaved")
+		}
+		right = right + "  " + save
+	}
 	gap := w - lipgloss.Width(left) - lipgloss.Width(right)
 	if gap < 1 {
 		gap = 1
@@ -279,7 +287,8 @@ func (m model) helpGrid() string {
 		{"defer", "s"}, {"link", "L"}, {"open", "o"},
 		{"view", "v"}, {"undo", "U"}, {"redo", "^r"},
 		{"del", "x"}, {"arch", "c"}, {"editor", "^e"},
-		{"global", "A"}, {"help", "?"}, {"quit", "q"},
+		{"save", "w"}, {"global", "A"}, {"help", "?"},
+		{"quit", "q"},
 	}
 	var b strings.Builder
 	for i, c := range cells {
@@ -373,7 +382,7 @@ func (m model) helpBody() []string {
 	}
 	blank := func() { out = append(out, "") }
 
-	line("An interactive todo board in a herdr pane, backed by a plain markdown file. Changes save on quit; the board reloads external edits automatically when you have nothing unsaved.")
+	line("An interactive todo board in a herdr pane, backed by a plain markdown file. Changes save on quit, autosave after a short idle pause, or on demand with w; the header shows ● unsaved / ● saved. The board reloads external edits automatically when you have nothing unsaved.")
 	blank()
 	sec("adding")
 	line("a — add. Inline syntax: text @category !h|!m|!l due:tomorrow defer:3d link:https://…")
@@ -395,6 +404,7 @@ func (m model) helpBody() []string {
 	blank()
 	sec("history & files")
 	line("U — undo · ^r — redo (multi-level)")
+	line("w — save now · autosave runs after idle (config: autosave = seconds, 0 disables)")
 	line("^e — open the markdown file in $EDITOR")
 	line("q — save + quit")
 	return out

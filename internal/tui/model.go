@@ -4,6 +4,7 @@ package tui
 
 import (
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -24,6 +25,7 @@ type config struct {
 	view       viewMode
 	density    density
 	categories []string
+	autosave   int // seconds of idle before autosaving; 0 disables
 }
 
 // loadConfig reads a tiny key=value config (leniently TOML-ish):
@@ -31,7 +33,7 @@ type config struct {
 //	view = table
 //	categories = ["work", "home", "personal"]   # or: work, home, personal
 func loadConfig(path string) config {
-	c := config{}
+	c := config{autosave: 60}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return c
@@ -68,6 +70,10 @@ func loadConfig(path string) config {
 				if p := strings.Trim(strings.TrimSpace(part), `"`); p != "" {
 					c.categories = append(c.categories, p)
 				}
+			}
+		case "autosave":
+			if n, err := strconv.Atoi(strings.Trim(v, `"`)); err == nil {
+				c.autosave = n
 			}
 		}
 	}
@@ -125,26 +131,28 @@ const (
 var viewName = map[viewMode]string{viewCategory: "category", viewPriority: "priority", viewTable: "table", viewProject: "project"}
 
 type model struct {
-	path       string
-	items      []todo.Item
-	archived   []todo.Item // loaded from archive.md, searched when filtering
-	cursor     int         // index into the VISIBLE subset, not items
-	filter     string
-	mode       mode
-	view       viewMode
-	input      textinput.Model
-	w          int
-	height     int
-	past       [][]todo.Item // undo stack (snapshots before each mutation)
-	future     [][]todo.Item // redo stack (snapshots undone)
-	dirty      bool          // in-memory changes not yet saved
-	lastMod    time.Time     // todo file mtime we last saw
-	helpScroll int           // scroll offset in the help page
-	categories []string      // configured categories (tab-cycle in category mode)
-	catIdx     int           // cursor into categories while cycling
-	density    density       // spacing mode
-	global     bool          // read-only aggregate across all boards
-	project    string        // the board to return to when leaving global
+	path          string
+	items         []todo.Item
+	archived      []todo.Item // loaded from archive.md, searched when filtering
+	cursor        int         // index into the VISIBLE subset, not items
+	filter        string
+	mode          mode
+	view          viewMode
+	input         textinput.Model
+	w             int
+	height        int
+	past          [][]todo.Item // undo stack (snapshots before each mutation)
+	future        [][]todo.Item // redo stack (snapshots undone)
+	dirty         bool          // in-memory changes not yet saved
+	lastEdit      time.Time     // when the last mutation happened (debounce autosave)
+	autosaveEvery time.Duration // idle gap before autosaving; 0 disables
+	lastMod       time.Time     // todo file mtime we last saw
+	helpScroll    int           // scroll offset in the help page
+	categories    []string      // configured categories (tab-cycle in category mode)
+	catIdx        int           // cursor into categories while cycling
+	density       density       // spacing mode
+	global        bool          // read-only aggregate across all boards
+	project       string        // the board to return to when leaving global
 }
 
 // resort orders items for the active view.
@@ -167,15 +175,16 @@ func newModel(project string) model {
 	p := store.TodoPathFor(project)
 	cfg := loadConfig(store.ConfigPath())
 	m := model{
-		path:       p,
-		project:    project,
-		items:      store.Load(p),
-		archived:   store.Load(store.ArchivePath(p)),
-		input:      ti,
-		lastMod:    store.FileModTime(p),
-		view:       cfg.view,
-		density:    cfg.density,
-		categories: cfg.categories,
+		path:          p,
+		project:       project,
+		items:         store.Load(p),
+		archived:      store.Load(store.ArchivePath(p)),
+		input:         ti,
+		lastMod:       store.FileModTime(p),
+		view:          cfg.view,
+		density:       cfg.density,
+		categories:    cfg.categories,
+		autosaveEvery: time.Duration(cfg.autosave) * time.Second,
 	}
 	m.resort()
 	return m

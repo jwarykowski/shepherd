@@ -24,6 +24,7 @@ func (m *model) beforeMutate() {
 	}
 	m.future = nil
 	m.dirty = true
+	m.lastEdit = time.Now()
 }
 
 // editorDoneMsg is sent when the external editor exits.
@@ -167,7 +168,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.clamp()
 				m.lastMod = mt
 			}
-		} else if !m.dirty {
+		} else if m.dirty {
+			// debounced autosave: flush once the user has paused editing.
+			if m.autosaveEvery > 0 && time.Since(m.lastEdit) >= m.autosaveEvery {
+				_ = store.Save(m.path, m.items)
+				m.dirty = false
+				m.lastMod = store.FileModTime(m.path)
+			}
+		} else {
 			if mt := store.FileModTime(m.path); mt.After(m.lastMod) {
 				m.items = store.Load(m.path)
 				m.archived = store.Load(store.ArchivePath(m.path))
@@ -266,6 +274,11 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "q", "ctrl+c":
 		_ = store.Save(m.path, m.items)
 		return m, tea.Quit
+	case "w":
+		_ = store.Save(m.path, m.items)
+		m.dirty = false
+		m.lastMod = store.FileModTime(m.path)
+		return m, nil
 	case "j", "down":
 		if m.cursor < len(vis)-1 {
 			m.cursor++
@@ -311,6 +324,7 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.items = m.past[n-1]
 			m.past = m.past[:n-1]
 			m.dirty = true
+			m.lastEdit = time.Now()
 			m.clamp()
 		}
 	case "ctrl+r":
@@ -319,6 +333,7 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.items = m.future[n-1]
 			m.future = m.future[:n-1]
 			m.dirty = true
+			m.lastEdit = time.Now()
 			m.clamp()
 		}
 	case "h", "m", "l":
