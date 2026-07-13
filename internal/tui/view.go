@@ -482,6 +482,7 @@ func (m model) helpBody() []string {
 	sec("view & find")
 	line("v — cycle view: category / priority / table")
 	line("/ — filter text, note, category, due (also greps the archive)")
+	line("A — toggle the read-only global view across all boards (esc/A to leave)")
 	line("d — detail view · ? — this help")
 	blank()
 	sec("history & files")
