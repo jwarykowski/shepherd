@@ -4,6 +4,7 @@ package tui
 
 import (
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -143,7 +144,8 @@ type model struct {
 	height        int
 	past          [][]todo.Item // undo stack (snapshots before each mutation)
 	future        [][]todo.Item // redo stack (snapshots undone)
-	dirty         bool          // in-memory changes not yet saved
+	dirty         bool          // cached: board differs from disk; recomputed per event
+	saved         string        // fingerprint of the board as last saved to disk
 	lastEdit      time.Time     // when the last mutation happened (debounce autosave)
 	autosaveEvery time.Duration // idle gap before autosaving; 0 disables
 	lastMod       time.Time     // todo file mtime we last saw
@@ -163,6 +165,25 @@ func (m *model) resort() {
 	}
 	todo.Sort(m.items, m.view == viewPriority)
 }
+
+// fingerprint is an order-independent snapshot of board content, so the saved
+// indicator reflects real differences from disk, not row order (switching view
+// reorders items but changes nothing on disk). Naive per-item serialize+sort;
+// fine at histCap-scale boards.
+func fingerprint(items []todo.Item) string {
+	blocks := make([]string, len(items))
+	for i, it := range items {
+		blocks[i] = store.Serialize([]todo.Item{it})
+	}
+	sort.Strings(blocks)
+	return strings.Join(blocks, "")
+}
+
+// markSaved records the current board as the on-disk baseline, clearing dirty.
+func (m *model) markSaved() { m.saved = fingerprint(m.items); m.dirty = false }
+
+// refreshDirty recomputes the cached dirty flag from the saved baseline.
+func (m *model) refreshDirty() { m.dirty = fingerprint(m.items) != m.saved }
 
 // histCap bounds the undo/redo depth so history can't grow unbounded.
 // 100 is plenty for a todo list; raise if anyone ever hits it.
@@ -187,6 +208,7 @@ func newModel(project string) model {
 		autosaveEvery: time.Duration(cfg.autosave) * time.Second,
 	}
 	m.resort()
+	m.markSaved()
 	return m
 }
 
@@ -198,8 +220,9 @@ func (m *model) loadGlobal() {
 	m.archived = nil
 	m.view = viewProject
 	m.lastMod = store.BoardsLatestMod()
-	m.past, m.future, m.dirty = nil, nil, false
+	m.past, m.future = nil, nil
 	m.resort()
+	m.markSaved()
 	m.cursor = 0
 	m.clamp()
 }
@@ -217,7 +240,6 @@ func (m *model) toggleGlobal() {
 	}
 	if m.dirty {
 		_ = store.Save(m.path, m.items)
-		m.dirty = false
 	}
 	m.loadGlobal()
 }
