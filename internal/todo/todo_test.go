@@ -58,6 +58,60 @@ func TestSortBySource(t *testing.T) {
 	}
 }
 
+func TestSetDone(t *testing.T) {
+	Now = func() string { return "10-07-2026 09:00" }
+	t.Cleanup(func() { Now = func() string { return time.Now().Format(tsFormat) } })
+	it := Item{Text: "x"}
+	SetDone(&it, true)
+	if !it.Done || it.Completed != "10-07-2026 09:00" {
+		t.Fatalf("mark done: %+v", it)
+	}
+	SetDone(&it, false)
+	if it.Done || it.Completed != "" {
+		t.Fatalf("reopen should clear completed: %+v", it)
+	}
+}
+
+func TestDeferred(t *testing.T) {
+	pinToday(t, "2026-07-10")
+	cases := []struct {
+		it   Item
+		want bool
+	}{
+		{Item{Defer: "2026-07-15"}, true},              // future
+		{Item{Defer: "2026-07-10"}, false},             // today = started
+		{Item{Defer: "2026-07-01"}, false},             // past
+		{Item{Defer: "2026-07-15", Done: true}, false}, // done never deferred
+		{Item{}, false},                                // no defer date
+	}
+	for _, c := range cases {
+		if got := Deferred(c.it); got != c.want {
+			t.Fatalf("Deferred(%+v) = %v, want %v", c.it, got, c.want)
+		}
+	}
+}
+
+func TestDeferLabel(t *testing.T) {
+	pinToday(t, "2026-07-10")
+	if got := DeferLabel("2026-07-13"); got != "starts 3d" {
+		t.Fatalf("future label = %q, want starts 3d", got)
+	}
+	if got := DeferLabel("2026-07-10"); got != "" {
+		t.Fatalf("today label = %q, want empty", got)
+	}
+	if got := DeferLabel("garbage"); got != "" {
+		t.Fatalf("unparseable label = %q, want empty", got)
+	}
+}
+
+func TestQuickAddDeferLink(t *testing.T) {
+	pinToday(t, "2026-07-10")
+	it := ParseQuickAdd("read spec defer:3d link:https://ex.com/pr/1")
+	if it.Text != "read spec" || it.Defer != "2026-07-13" || it.Link != "https://ex.com/pr/1" {
+		t.Fatalf("defer/link quick-add wrong: %+v", it)
+	}
+}
+
 func TestSortByPriorityView(t *testing.T) {
 	items := []Item{
 		{Text: "a", Category: "z", Prio: 'L'},

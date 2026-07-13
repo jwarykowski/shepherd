@@ -42,6 +42,30 @@ func TestRoundTrip(t *testing.T) {
 	}
 }
 
+// TestRoundTripMetadata covers the added fields (completed, defer, link) parse
+// back and re-serialize in the fixed field order.
+func TestRoundTripMetadata(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "todo.md")
+	src := "- [x] (H) ship it\n  created: 2026-07-10 13:40\n  completed: 2026-07-12 09:00\n  defer: 2026-07-11\n  due: 2026-07-15\n  category: work\n  link: https://ex.com/pr/1\n  note: block first\n"
+	if err := os.WriteFile(p, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	items := Load(p)
+	if len(items) != 1 {
+		t.Fatalf("want 1 item, got %d", len(items))
+	}
+	it := items[0]
+	if it.Completed != "2026-07-12 09:00" || it.Defer != "2026-07-11" || it.Link != "https://ex.com/pr/1" {
+		t.Fatalf("new metadata not parsed: %+v", it)
+	}
+	if err := Save(p, items); err != nil {
+		t.Fatal(err)
+	}
+	if string(mustRead(t, p)) != src {
+		t.Fatalf("round-trip mismatch:\n%s", mustRead(t, p))
+	}
+}
+
 func TestAppendArchive(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "todo.md")
 	done := []todo.Item{{Text: "done one", Done: true}}

@@ -62,13 +62,17 @@ herdr plugin install jwarykowski/shepherd
 | `h` / `m` / `l` | set priority high / medium / low |
 | `g` | set category |
 | `t` | set due date — `today`, `tomorrow`, `3d`/`2w`/`5m`/`1y`, or `DD-MM-YYYY` (empty clears) |
+| `s` | set defer/start date (same formats as due; item shows dimmed with `starts Nd` until then) |
+| `L` | set a reference link (url) |
+| `o` | open the selected item's link in the browser |
 | `a` | add item (inline syntax below) |
 | `u` | edit item text |
-| `d` | open detail view |
+| `d` | open detail view (shows every field) |
 | `v` | cycle view: category / priority / table |
 | `A` | toggle the [global view](#global-view) across all boards |
 | `/` | filter (text, note, category, due — also greps `archive.md`) |
 | `U` / `ctrl+r` | undo / redo (multi-level) |
+| `w` | save now (the header shows `● unsaved` / `● saved`) |
 | `ctrl+e` | open the markdown file in `$EDITOR` |
 | `x` | delete item |
 | `c` | archive all done items to `archive.md` |
@@ -77,15 +81,18 @@ herdr plugin install jwarykowski/shepherd
 
 In the detail view: `e` edit note · `space` toggle · `d`/`esc`/`q` back.
 
-**Inline quick-add** — `a`, then one line: `deploy api @work !h due:tomorrow`.
-`@word` sets category, `!h`/`!m`/`!l` priority, `due:<preset>` the due date;
-everything else is the task text.
+**Inline quick-add** — `a`, then one line:
+`deploy api @work !h due:tomorrow defer:1w link:https://…`. `@word` sets
+category, `!h`/`!m`/`!l` priority, `due:<preset>` the due date, `defer:<preset>`
+a start/defer date, `link:<url>` a reference; everything else is the task text.
 
 Items are ordered by **category, then priority, then soonest due**, grouped
 under headers, with a colored priority label flush right. **Overdue** open
 items are pinned to a `⚠ overdue` group at the top. New items get a `created`
 timestamp; due items show a relative label
-(`due 3d`, `overdue 2d` in red). The board reloads on-disk changes
+(`due 3d`, `overdue 2d` in red). Edits save on quit, autosave after a short
+idle pause (`autosave` seconds, default 60; `0` disables), or on demand with
+`w`; the header shows `● unsaved` / `● saved`. The board reloads on-disk changes
 automatically when you have no unsaved edits, so external edits (or a dotfile
 sync) show up on their own.
 
@@ -179,7 +186,8 @@ field per item so you can tell which board each came from.
 ```json
 [
   { "index": 1, "done": false, "priority": "H", "text": "buy milk",
-    "category": "home", "created": "10-07-2026 13:40", "due": "2026-07-15" }
+    "category": "home", "created": "10-07-2026 13:40", "defer": "2026-07-11",
+    "due": "2026-07-15", "link": "https://…", "completed": "" }
 ]
 ```
 
@@ -209,11 +217,13 @@ every board (override with `SHEPHERD_CONFIG`):
 ```toml
 view = "category"                          # category (default) | priority | table
 density = "compact"                        # compact (default) | comfort
+autosave = 60                              # seconds idle before writing; 0 disables
 categories = ["work", "home", "personal"]  # tab-cycles in the category prompt
 ```
 
 - `view` — default grouping/layout on launch (`v` still cycles at runtime).
 - `density` — `comfort` adds outer padding and blank lines between rows.
+- `autosave` — idle seconds before an unsaved board is written to disk (default 60); `0` disables it, so only `w` and quit save.
 - `categories` — press `tab` in the category prompt (`g`) to cycle through them.
 
 herdr pane placement (`placement` / `direction`) lives in the same file — see
@@ -235,10 +245,15 @@ sub-lines:
 ```markdown
 - [ ] (H) ship the release
   created: 10-07-2026 13:40
+  defer: 2026-07-11
   due: 2026-07-15
   category: work
+  link: https://github.com/org/repo/pull/1
   note: block on the migration first
 ```
+
+`completed` (a timestamp) is added automatically when an item is marked done and
+cleared if it's reopened.
 
 ### archive
 

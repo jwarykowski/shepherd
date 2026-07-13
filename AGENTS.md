@@ -11,7 +11,9 @@ format.
 - `shepherd rm <n>` — remove item n
 
 Indexes are 1-based and match `list` order. Quick-add tokens: `@category`,
-`!h`/`!m`/`!l` priority, `due:<today|tomorrow|+3d|15-07-2026>`.
+`!h`/`!m`/`!l` priority, `due:<today|tomorrow|+3d|15-07-2026>`,
+`defer:<same date forms>` (start/defer date), `link:<url>`. `list --json`
+reports `completed` (done timestamp), `defer`, and `link` per item.
 
 Boards are per-project: add `--project <name>` after the verb to target a
 project's board (`shepherd list --project web`, `shepherd add "…" --project web`,

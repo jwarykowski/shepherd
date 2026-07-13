@@ -3,6 +3,7 @@ package tui
 import (
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"time"
 
@@ -23,6 +24,7 @@ func (m *model) beforeMutate() {
 	}
 	m.future = nil
 	m.dirty = true
+	m.lastEdit = time.Now()
 }
 
 // editorDoneMsg is sent when the external editor exits.
@@ -55,7 +57,9 @@ func matchItem(it todo.Item, q string) bool {
 	return strings.Contains(strings.ToLower(it.Text), q) ||
 		strings.Contains(strings.ToLower(it.Note), q) ||
 		strings.Contains(strings.ToLower(it.Category), q) ||
-		strings.Contains(strings.ToLower(it.Due), q)
+		strings.Contains(strings.ToLower(it.Due), q) ||
+		strings.Contains(strings.ToLower(it.Defer), q) ||
+		strings.Contains(strings.ToLower(it.Link), q)
 }
 
 // filterCategory returns the active filter when it exactly names a known
@@ -164,7 +168,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.clamp()
 				m.lastMod = mt
 			}
-		} else if !m.dirty {
+		} else if m.dirty {
+			// debounced autosave: flush once the user has paused editing.
+			if m.autosaveEvery > 0 && time.Since(m.lastEdit) >= m.autosaveEvery {
+				_ = store.Save(m.path, m.items)
+				m.dirty = false
+				m.lastMod = store.FileModTime(m.path)
+			}
+		} else {
 			if mt := store.FileModTime(m.path); mt.After(m.lastMod) {
 				m.items = store.Load(m.path)
 				m.archived = store.Load(store.ArchivePath(m.path))
@@ -176,7 +187,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tick()
 	case tea.KeyMsg:
 		switch m.mode {
-		case modeAdd, modeEdit, modeNote, modeCategory, modeDue, modeFilter:
+		case modeAdd, modeEdit, modeNote, modeCategory, modeDue, modeDefer, modeLink, modeFilter:
 			return m.updateInput(msg)
 		case modeDetail:
 			return m.updateDetail(msg)
@@ -226,6 +237,10 @@ func (m model) updateGlobal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.sel() >= 0 {
 			m.mode = modeDetail
 		}
+	case "o":
+		if m.sel() >= 0 {
+			return m, openLink(m.items[m.sel()].Link)
+		}
 	case "?":
 		m.mode = modeHelp
 	case "/":
@@ -237,6 +252,21 @@ func (m model) updateGlobal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// openLink launches the OS browser on url (open on macOS, xdg-open elsewhere),
+// detached. A no-op when url is empty. The exec error is dropped: there's no
+// board-side recovery and the TUI must not block on a spawn.
+func openLink(url string) tea.Cmd {
+	if url == "" {
+		return nil
+	}
+	opener := "xdg-open"
+	if runtime.GOOS == "darwin" {
+		opener = "open"
+	}
+	_ = exec.Command(opener, url).Start()
+	return nil
+}
+
 func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	vis := m.visible()
 	idx := m.sel()
@@ -244,6 +274,11 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "q", "ctrl+c":
 		_ = store.Save(m.path, m.items)
 		return m, tea.Quit
+	case "w":
+		_ = store.Save(m.path, m.items)
+		m.dirty = false
+		m.lastMod = store.FileModTime(m.path)
+		return m, nil
 	case "j", "down":
 		if m.cursor < len(vis)-1 {
 			m.cursor++
@@ -255,7 +290,7 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case " ", "enter":
 		if idx >= 0 {
 			m.beforeMutate()
-			m.items[idx].Done = !m.items[idx].Done
+			todo.SetDone(&m.items[idx], !m.items[idx].Done)
 		}
 	case "d":
 		if idx >= 0 {
@@ -289,6 +324,7 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.items = m.past[n-1]
 			m.past = m.past[:n-1]
 			m.dirty = true
+			m.lastEdit = time.Now()
 			m.clamp()
 		}
 	case "ctrl+r":
@@ -297,6 +333,7 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.items = m.future[n-1]
 			m.future = m.future[:n-1]
 			m.dirty = true
+			m.lastEdit = time.Now()
 			m.clamp()
 		}
 	case "h", "m", "l":
@@ -367,6 +404,24 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.input.Placeholder = "today · tomorrow · 3d · 2w · 5m · 1y · DD-MM-YYYY"
 			m.input.Focus()
 		}
+	case "s":
+		if idx >= 0 {
+			m.mode = modeDefer
+			m.input.SetValue(m.items[idx].Defer)
+			m.input.Placeholder = "start/defer: today · tomorrow · 3d · 2w · DD-MM-YYYY"
+			m.input.Focus()
+		}
+	case "L":
+		if idx >= 0 {
+			m.mode = modeLink
+			m.input.SetValue(m.items[idx].Link)
+			m.input.Placeholder = "link (url)"
+			m.input.Focus()
+		}
+	case "o":
+		if idx >= 0 {
+			return m, openLink(m.items[idx].Link)
+		}
 	case "ctrl+e":
 		return m, m.openEditor()
 	}
@@ -409,7 +464,11 @@ func (m model) updateDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "space", " ":
 		if idx >= 0 && !m.global {
 			m.beforeMutate()
-			m.items[idx].Done = !m.items[idx].Done
+			todo.SetDone(&m.items[idx], !m.items[idx].Done)
+		}
+	case "o":
+		if idx >= 0 {
+			return m, openLink(m.items[idx].Link)
 		}
 	}
 	return m, nil
@@ -481,6 +540,18 @@ func (m model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.items[idx] = cur
 				m.resort()
 				m.place(cur)
+			}
+			m.mode = modeList
+		case modeDefer:
+			if idx >= 0 {
+				m.beforeMutate()
+				m.items[idx].Defer = todo.ParseDue(v) // presets/relative resolved; empty clears
+			}
+			m.mode = modeList
+		case modeLink:
+			if idx >= 0 {
+				m.beforeMutate()
+				m.items[idx].Link = v // empty clears
 			}
 			m.mode = modeList
 		case modeFilter:
