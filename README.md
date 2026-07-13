@@ -59,6 +59,7 @@ herdr plugin install jwarykowski/shepherd
 |-----|--------|
 | `j` / `↓`, `k` / `↑` | move |
 | `space` / `enter` | toggle done |
+| `tab` | cycle status (open → in-progress → done → open); see `statuses` config |
 | `h` / `m` / `l` | set priority high / medium / low |
 | `g` | set category |
 | `t` | set due date — `today`, `tomorrow`, `3d`/`2w`/`5m`/`1y`, or `DD-MM-YYYY` (empty clears) |
@@ -172,6 +173,7 @@ shepherd stats [--json] [--all]     # board metrics as charts (--json = numbers)
 shepherd add "buy milk @home !h due:tomorrow"
 shepherd done 2                     # mark item 2 done
 shepherd undone 2                   # mark item 2 not done
+shepherd status 2 in-progress       # set item 2's status (done|open recognised)
 shepherd rm 2                       # remove item 2
 ```
 
@@ -185,9 +187,12 @@ shepherd list --project web
 
 `add` accepts the same quick-add tokens as the board: `@category`, `!h`/`!m`/`!l`
 priority, `due:<today|tomorrow|+3d|15-07-2026>`. Agents should read with
-`list --json` (stable machine shape) and mutate with `add`/`done`/`rm`; an open
-board picks up the change within ~2s. `list --all --json` adds a `project`
-field per item so you can tell which board each came from.
+`list --json` (stable machine shape) and mutate with `add`/`done`/`status`/`rm`;
+an open board picks up the change within ~2s. `status <n> <name>` accepts any
+name (like a free-form `@category`); `done`/`open` are recognised as the
+terminal/default ends, and the `status` field appears in `list --json`.
+`list --all --json` adds a `project` field per item so you can tell which board
+each came from.
 
 `stats` summarises a board as terminal charts — completion, due/urgency,
 priority load, throughput and backlog trend (drawn with
@@ -231,12 +236,14 @@ view = "category"                          # category (default) | priority | tab
 density = "compact"                        # compact (default) | comfort
 autosave = 60                              # seconds idle before writing; 0 disables
 categories = ["work", "home", "personal"]  # tab-cycles in the category prompt
+statuses = ["open", "in-progress", "done"] # tab cycles item status in the list
 ```
 
 - `view` — default grouping/layout on launch (`v` still cycles at runtime).
 - `density` — `comfort` adds outer padding and blank lines between rows.
 - `autosave` — idle seconds before an unsaved board is written to disk (default 60); `0` disables it, so only `w` and quit save.
 - `categories` — press `tab` in the category prompt (`g`) to cycle through them.
+- `statuses` — ordered list `tab` cycles through in the list; `done` is always kept and forced last. Defaults to `["open", "done"]`. Intermediate statuses persist as a `status:` line and show a `◐` glyph; the stats page breaks items down by status.
 
 herdr pane placement (`placement` / `direction`) lives in the same file — see
 [herdr integration](#herdr-integration).
@@ -260,12 +267,18 @@ sub-lines:
   defer: 2026-07-11
   due: 2026-07-15
   category: work
+  status: in-progress
   link: https://github.com/org/repo/pull/1
   note: block on the migration first
 ```
 
 `completed` (a timestamp) is added automatically when an item is marked done and
 cleared if it's reopened.
+
+`status` is the named intermediate status (`tab` cycles it — see the `statuses`
+config). It rides as a sub-line only on non-done items with a status past the
+first; a plain open item (`- [ ]`) and a done item (`- [x]`) carry no `status:`
+line, so existing files stay unchanged.
 
 ### archive
 

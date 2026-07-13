@@ -59,6 +59,34 @@ func TestCLIRoundTrip(t *testing.T) {
 	}
 }
 
+func TestCLISetStatus(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "todo.md")
+	t.Setenv("SHEPHERD_TODO_FILE", path)
+	if err := os.WriteFile(path, []byte("- [ ] alpha\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if code := cmdSetStatus([]string{"1", "in-progress"}, "", &bytes.Buffer{}); code != 0 {
+		t.Fatalf("status exit %d", code)
+	}
+	if it := store.Load(path)[0]; it.Done || it.Status != "in-progress" {
+		t.Fatalf("status not set: %+v", it)
+	}
+
+	// "done" is recognised as the terminal state, clearing any named status.
+	if code := cmdSetStatus([]string{"1", "done"}, "", &bytes.Buffer{}); code != 0 {
+		t.Fatalf("status done exit %d", code)
+	}
+	if it := store.Load(path)[0]; !it.Done || it.Status != "" {
+		t.Fatalf("status done wrong: %+v", it)
+	}
+
+	// missing name is a usage error (exit 2), not a panic.
+	if code := cmdSetStatus([]string{"1"}, "", &bytes.Buffer{}); code != 2 {
+		t.Fatalf("want exit 2 for missing name, got %d", code)
+	}
+}
+
 // TestRunDispatch drives the command-API dispatcher: routing, exit codes, and
 // the argument-error paths.
 func TestRunDispatch(t *testing.T) {

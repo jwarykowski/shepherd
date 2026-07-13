@@ -25,6 +25,12 @@ type ProjectStat struct {
 	Done int `json:"done"`
 }
 
+// StatusCount is one status's item count, for the by-status chart.
+type StatusCount struct {
+	Name  string `json:"name"`
+	Count int    `json:"count"`
+}
+
 // Stats is the computed summary of a board (or the aggregate of all boards).
 // Done-based counts include archived items; open-item counts do not (archives
 // hold no open items). All relative-date math keys off Today()/Now().
@@ -61,6 +67,7 @@ type Stats struct {
 	DoneShort    []int `json:"done_per_day_14"`    // 14 days, trend
 
 	ByCategory []CatCount             `json:"by_category"`          // open, desc by count
+	ByStatus   []StatusCount          `json:"by_status"`            // all items, desc by count
 	ByProject  map[string]ProjectStat `json:"by_project,omitempty"` // only in --all
 }
 
@@ -80,6 +87,10 @@ func Compute(items []Item) Stats {
 		DoneShort:    make([]int, 14),
 	}
 	cats := map[string]int{}
+	// ByStatus orders by count (Compute has no config), and a non-done item with
+	// no Status buckets as the literal "open". Pass the configured status order
+	// in if the CLI ever shares config.
+	statusCounts := map[string]int{}
 	var sumOpenAge, sumCycle float64
 	var openAged, cycled int
 
@@ -89,6 +100,15 @@ func Compute(items []Item) Stats {
 			s.Done++
 		} else {
 			s.Open++
+		}
+
+		switch {
+		case it.Done:
+			statusCounts["done"]++
+		case it.Status != "":
+			statusCounts[it.Status]++
+		default:
+			statusCounts["open"]++
 		}
 
 		// created-based windows + open aging
@@ -210,6 +230,17 @@ func Compute(items []Item) Stats {
 			return s.ByCategory[i].Open > s.ByCategory[j].Open
 		}
 		return s.ByCategory[i].Name < s.ByCategory[j].Name
+	})
+
+	s.ByStatus = make([]StatusCount, 0, len(statusCounts))
+	for n, c := range statusCounts {
+		s.ByStatus = append(s.ByStatus, StatusCount{Name: n, Count: c})
+	}
+	sort.Slice(s.ByStatus, func(i, j int) bool {
+		if s.ByStatus[i].Count != s.ByStatus[j].Count {
+			return s.ByStatus[i].Count > s.ByStatus[j].Count
+		}
+		return s.ByStatus[i].Name < s.ByStatus[j].Name
 	})
 	return s
 }

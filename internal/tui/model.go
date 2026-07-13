@@ -26,7 +26,8 @@ type config struct {
 	view       viewMode
 	density    density
 	categories []string
-	autosave   int // seconds of idle before autosaving; 0 disables
+	statuses   []string // ordered, normalized so "done" is present and last
+	autosave   int      // seconds of idle before autosaving; 0 disables
 }
 
 // loadConfig reads a tiny key=value config (leniently TOML-ish):
@@ -34,7 +35,7 @@ type config struct {
 //	view = table
 //	categories = ["work", "home", "personal"]   # or: work, home, personal
 func loadConfig(path string) config {
-	c := config{autosave: 60}
+	c := config{autosave: 60, statuses: []string{"open", "done"}}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return c
@@ -72,13 +73,39 @@ func loadConfig(path string) config {
 					c.categories = append(c.categories, p)
 				}
 			}
+		case "statuses":
+			var ss []string
+			for _, part := range strings.Split(strings.Trim(v, "[]"), ",") {
+				if p := strings.ToLower(strings.Trim(strings.TrimSpace(part), `"`)); p != "" {
+					ss = append(ss, p)
+				}
+			}
+			if len(ss) > 0 {
+				c.statuses = ss
+			}
 		case "autosave":
 			if n, err := strconv.Atoi(strings.Trim(v, `"`)); err == nil {
 				c.autosave = n
 			}
 		}
 	}
+	c.statuses = normalizeStatuses(c.statuses)
 	return c
+}
+
+// normalizeStatuses dedups the configured statuses and guarantees "done" is
+// present and last — the terminal state the cycle and archiving depend on.
+func normalizeStatuses(ss []string) []string {
+	out := make([]string, 0, len(ss)+1)
+	seen := map[string]bool{}
+	for _, s := range ss {
+		if s == "done" || seen[s] {
+			continue
+		}
+		seen[s] = true
+		out = append(out, s)
+	}
+	return append(out, "done")
 }
 
 type mode int
@@ -152,6 +179,7 @@ type model struct {
 	helpScroll    int           // scroll offset in the help page
 	categories    []string      // configured categories (tab-cycle in category mode)
 	catIdx        int           // cursor into categories while cycling
+	statuses      []string      // configured statuses, ordered, "done" last (Tab-cycle in list)
 	density       density       // spacing mode
 	global        bool          // read-only aggregate across all boards
 	project       string        // the board to return to when leaving global
@@ -205,6 +233,7 @@ func newModel(project string) model {
 		view:          cfg.view,
 		density:       cfg.density,
 		categories:    cfg.categories,
+		statuses:      cfg.statuses,
 		autosaveEvery: time.Duration(cfg.autosave) * time.Second,
 	}
 	m.resort()

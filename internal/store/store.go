@@ -15,7 +15,7 @@ import (
 
 var (
 	lineRE = regexp.MustCompile(`^- \[([ xX])\] (?:\(([HMLhml])\) )?(.*)$`)
-	metaRE = regexp.MustCompile(`^  (created|completed|defer|note|category|due|link): (.*)$`)
+	metaRE = regexp.MustCompile(`^  (created|completed|defer|note|category|due|link|status): (.*)$`)
 )
 
 // projectRE is the allowed project-name slug. Anchored and free of path
@@ -197,6 +197,8 @@ func Load(path string) []todo.Item {
 				last.Link = m[2]
 			case "note":
 				last.Note = m[2]
+			case "status":
+				last.Status = strings.ToLower(m[2])
 			}
 		}
 	}
@@ -230,6 +232,9 @@ func Serialize(items []todo.Item) string {
 		}
 		if it.Category != "" {
 			fmt.Fprintf(&b, "  category: %s\n", it.Category)
+		}
+		if !it.Done && it.Status != "" {
+			fmt.Fprintf(&b, "  status: %s\n", it.Status)
 		}
 		if it.Link != "" {
 			fmt.Fprintf(&b, "  link: %s\n", strings.ReplaceAll(it.Link, "\n", " "))

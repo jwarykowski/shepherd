@@ -42,6 +42,30 @@ func TestRoundTrip(t *testing.T) {
 	}
 }
 
+func TestStatusRoundTrip(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "todo.md")
+	src := "- [ ] wip\n  status: in-progress\n- [x] fin\n"
+	if err := os.WriteFile(p, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	items := Load(p)
+	if items[0].Status != "in-progress" {
+		t.Fatalf("status not parsed: %+v", items[0])
+	}
+	if err := Save(p, items); err != nil {
+		t.Fatal(err)
+	}
+	if string(mustRead(t, p)) != src {
+		t.Fatalf("status round-trip mismatch:\n%s", mustRead(t, p))
+	}
+
+	// A done item never serializes a status line even if the field is set.
+	done := []todo.Item{{Done: true, Status: "in-progress", Text: "x"}}
+	if strings.Contains(Serialize(done), "status:") {
+		t.Fatalf("done item leaked status line:\n%s", Serialize(done))
+	}
+}
+
 // TestRoundTripMetadata covers the added fields (completed, defer, link) parse
 // back and re-serialize in the fixed field order.
 func TestRoundTripMetadata(t *testing.T) {
