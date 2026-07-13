@@ -261,7 +261,7 @@ func (m model) headerWith(context string, done, total int) string {
 	}
 
 	return left + strings.Repeat(" ", gap) + right + "\n" +
-		dimStyle.Render(strings.Repeat("─", w))
+		ruleStyle.Render(strings.Repeat("┈", w))
 }
 
 // Version is the running build's version, set by main from the embedded
