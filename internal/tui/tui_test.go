@@ -238,6 +238,7 @@ func TestAutosaveAndManualSave(t *testing.T) {
 	// Debounced autosave: a mutation marks dirty; a tick before the idle gap
 	// elapses does NOT save; a tick after it does.
 	m := model{path: p, items: store.Load(p), input: textinput.New(), autosaveEvery: time.Minute}
+	m.markSaved()
 	m = drive(m, "x") // delete "alpha" → dirty
 	if !m.dirty {
 		t.Fatal("mutation did not mark dirty")
@@ -259,6 +260,7 @@ func TestAutosaveAndManualSave(t *testing.T) {
 
 	// autosave = 0 disables the tick save; only manual w / quit persist.
 	m2 := model{path: p, items: store.Load(p), input: textinput.New(), autosaveEvery: 0}
+	m2.markSaved()
 	m2 = drive(m2, "x") // delete the last item → dirty, 0 items in memory
 	m2.lastEdit = m2.lastEdit.Add(-2 * time.Minute)
 	nm, _ = m2.Update(tickMsg{})
@@ -272,6 +274,36 @@ func TestAutosaveAndManualSave(t *testing.T) {
 	}
 	if got := len(store.Load(p)); got != 0 {
 		t.Fatalf("manual save wrote wrong contents: %d items", got)
+	}
+}
+
+// TestDirtyUndoRedo covers the regression: undo/redo back to the on-disk
+// content must clear the saved indicator, and a view switch must never dirty it.
+func TestDirtyUndoRedo(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "todo.md")
+	_ = os.WriteFile(p, []byte("- [ ] alpha\n- [ ] beta\n"), 0o644)
+	m := model{path: p, items: store.Load(p), input: textinput.New()}
+	m.resort()
+	m.markSaved()
+	if m.dirty {
+		t.Fatal("freshly loaded board should be clean")
+	}
+	m = drive(m, " ") // toggle alpha done
+	if !m.dirty {
+		t.Fatal("edit should mark dirty")
+	}
+	m = drive(m, "U") // undo back to the saved content
+	if m.dirty {
+		t.Fatal("undo to saved state should be clean")
+	}
+	m = drive(m, "ctrl+r") // redo away from saved content
+	if !m.dirty {
+		t.Fatal("redo away from saved state should be dirty")
+	}
+	m = drive(m, "U") // undo again → clean
+	m = drive(m, "v") // view switch reorders items but changes nothing
+	if m.dirty {
+		t.Fatal("view switch should not mark dirty")
 	}
 }
 

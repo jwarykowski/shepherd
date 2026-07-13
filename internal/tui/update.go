@@ -23,7 +23,6 @@ func (m *model) beforeMutate() {
 		m.past = m.past[len(m.past)-histCap:]
 	}
 	m.future = nil
-	m.dirty = true
 	m.lastEdit = time.Now()
 }
 
@@ -156,7 +155,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.resort()
 		m.clamp()
 		m.lastMod = store.FileModTime(m.path)
-		m.dirty = false
+		m.markSaved()
 		return m, nil
 	case tickMsg:
 		// only auto-reload external edits when we have no pending in-memory
@@ -167,13 +166,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.resort()
 				m.clamp()
 				m.lastMod = mt
+				m.markSaved()
 			}
 		} else if m.dirty {
 			// debounced autosave: flush once the user has paused editing.
 			if m.autosaveEvery > 0 && time.Since(m.lastEdit) >= m.autosaveEvery {
 				_ = store.Save(m.path, m.items)
-				m.dirty = false
 				m.lastMod = store.FileModTime(m.path)
+				m.markSaved()
 			}
 		} else {
 			if mt := store.FileModTime(m.path); mt.After(m.lastMod) {
@@ -182,23 +182,32 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.resort()
 				m.clamp()
 				m.lastMod = mt
+				m.markSaved()
 			}
 		}
 		return m, tick()
 	case tea.KeyMsg:
+		var res tea.Model
+		var cmd tea.Cmd
 		switch m.mode {
 		case modeAdd, modeEdit, modeNote, modeCategory, modeDue, modeDefer, modeLink, modeFilter:
-			return m.updateInput(msg)
+			res, cmd = m.updateInput(msg)
 		case modeDetail:
-			return m.updateDetail(msg)
+			res, cmd = m.updateDetail(msg)
 		case modeHelp:
-			return m.updateHelp(msg)
+			res, cmd = m.updateHelp(msg)
 		default:
 			if m.global {
-				return m.updateGlobal(msg)
+				res, cmd = m.updateGlobal(msg)
+			} else {
+				res, cmd = m.updateList(msg)
 			}
-			return m.updateList(msg)
 		}
+		if nm, ok := res.(model); ok {
+			nm.refreshDirty() // one compare per event, not per render
+			return nm, cmd
+		}
+		return res, cmd
 	}
 	return m, nil
 }
@@ -276,7 +285,7 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case "w":
 		_ = store.Save(m.path, m.items)
-		m.dirty = false
+		m.markSaved()
 		m.lastMod = store.FileModTime(m.path)
 		return m, nil
 	case "j", "down":
@@ -323,7 +332,6 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.future = append(m.future, append([]todo.Item(nil), m.items...))
 			m.items = m.past[n-1]
 			m.past = m.past[:n-1]
-			m.dirty = true
 			m.lastEdit = time.Now()
 			m.clamp()
 		}
@@ -332,7 +340,6 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.past = append(m.past, append([]todo.Item(nil), m.items...))
 			m.items = m.future[n-1]
 			m.future = m.future[:n-1]
-			m.dirty = true
 			m.lastEdit = time.Now()
 			m.clamp()
 		}
