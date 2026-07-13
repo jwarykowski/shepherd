@@ -153,6 +153,9 @@ you add while it's active inherit that category — so a task added on a
 still overrides; a filter that isn't a category leaves new items uncategorized.
 The two combine: `shepherd --project web --filter '!h'`.
 
+`shepherd --stats` prints board stats and exits — the launch-flag form of
+`shepherd stats` (below); combine with `--all` or `--project <name>`.
+
 `shepherd --version` prints the version and exits.
 
 ## command api
@@ -165,6 +168,7 @@ always valid. Indexes are 1-based and match `list` order.
 ```sh
 shepherd list [--json]              # show items with their index
 shepherd list --all [--json]        # aggregate across every board (read-only)
+shepherd stats [--json] [--all]     # board metrics as charts (--json = numbers)
 shepherd add "buy milk @home !h due:tomorrow"
 shepherd done 2                     # mark item 2 done
 shepherd undone 2                   # mark item 2 not done
@@ -185,11 +189,17 @@ priority, `due:<today|tomorrow|+3d|15-07-2026>`. Agents should read with
 board picks up the change within ~2s. `list --all --json` adds a `project`
 field per item so you can tell which board each came from.
 
+`stats` summarises a board as terminal charts — completion, due/urgency,
+priority load, throughput and backlog trend (drawn with
+[ntcharts](https://github.com/NimbleMarkets/ntcharts)). Done-based counts include
+the archive. `--all` aggregates every board and adds a by-project breakdown;
+`--json` emits the raw numbers (no charts) for scripts.
+
 ```json
 [
   { "index": 1, "done": false, "priority": "H", "text": "buy milk",
     "category": "home", "created": "10-07-2026 13:40", "defer": "2026-07-11",
-    "due": "2026-07-15", "link": "https://…", "completed": "" }
+    "due": "2026-07-15", "link": "https://…", "note": "", "completed": "" }
 ]
 ```
 

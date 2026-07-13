@@ -35,15 +35,28 @@ func main() {
 		os.Exit(cli.Run(os.Args[1], os.Args[2:]))
 	}
 
+	flag.Usage = func() { fmt.Fprintln(os.Stderr, cli.Usage()) }
 	filter := flag.String("filter", os.Getenv("SHEPHERD_FILTER"), "start with this filter applied (matches text/note/category/due)")
 	project := flag.String("project", "", "open this project's board (else $SHEPHERD_PROJECT, else the default)")
 	all := flag.Bool("all", false, "open the read-only global view across all boards")
+	stats := flag.Bool("stats", false, "print board stats and exit")
 	ver := flag.Bool("version", false, "print the version and exit")
 	flag.Parse()
 
 	if *ver {
 		fmt.Println("shepherd", version())
 		return
+	}
+
+	if *stats {
+		var a []string
+		if *all {
+			a = append(a, "--all")
+		}
+		if *project != "" {
+			a = append(a, "--project", *project)
+		}
+		os.Exit(cli.Run("stats", a))
 	}
 	tui.Version = version()
 
