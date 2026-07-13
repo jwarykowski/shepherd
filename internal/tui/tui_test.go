@@ -205,10 +205,10 @@ func TestView(t *testing.T) {
 	if !strings.Contains(v, appSubtitle) {
 		t.Fatal("subtitle missing")
 	}
-	if !strings.Contains(v, strings.Repeat("─", 46)) { // 50 - 2*padX
+	if !strings.Contains(v, strings.Repeat("┈", 46)) { // 50 - 2*padX
 		t.Fatal("divider not inner width")
 	}
-	for _, want := range []string{"work", "uncategorized", "0/2", "move   j/k", "cat    g", "arch   c", "editor ^e"} {
+	for _, want := range []string{"work", "uncategorized", "0/2", "move", "edit", "fields", "board", "space toggle", "^e editor"} {
 		if !strings.Contains(v, want) {
 			t.Fatalf("view missing %q", want)
 		}

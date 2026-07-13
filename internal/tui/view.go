@@ -20,6 +20,7 @@ var (
 	catStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("6"))
 	countStyle  = lipgloss.NewStyle().Faint(true)
 	warnStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
+	ruleStyle   = lipgloss.NewStyle().Faint(true).Foreground(lipgloss.Color("240"))
 	prioStyles  = map[byte]lipgloss.Style{
 		'H': lipgloss.NewStyle().Foreground(lipgloss.Color("1")),
 		'M': lipgloss.NewStyle().Foreground(lipgloss.Color("3")),
@@ -260,13 +261,40 @@ func (m model) headerWith(context string, done, total int) string {
 	}
 
 	return left + strings.Repeat(" ", gap) + right + "\n" +
-		dimStyle.Render(strings.Repeat("─", w))
+		ruleStyle.Render(strings.Repeat("┈", w))
+}
+
+// Version is the running build's version, set by main from the embedded
+// manifest so the footer and `--version` agree. "dev" until wired.
+var Version = "dev"
+
+const (
+	repoName = "jwarykowski/shepherd"
+	repoURL  = "https://github.com/jwarykowski/shepherd"
+)
+
+// osc8 wraps text in a terminal hyperlink (OSC 8); terminals without support
+// just render the text.
+func osc8(text, url string) string {
+	return "\x1b]8;;" + url + "\x1b\\" + text + "\x1b]8;;\x1b\\"
+}
+
+// bottomBar is the very last footer line: linked repo name flush-left, version
+// flush-right, filling the full width.
+func (m model) bottomBar() string {
+	left := dimStyle.Render(repoName)
+	right := dimStyle.Render("v" + Version)
+	gap := m.width() - lipgloss.Width(left) - lipgloss.Width(right)
+	if gap < 1 {
+		gap = 1
+	}
+	return osc8(left, repoURL) + strings.Repeat(" ", gap) + right
 }
 
 // listFooter: a full-width rule, then either the active input line or the
-// grouped multi-line key help.
+// grouped multi-line key help, and always the repo/version line at the bottom.
 func (m model) listFooter() string {
-	rule := dimStyle.Render(strings.Repeat("─", m.width()))
+	rule := ruleStyle.Render(strings.Repeat("┈", m.width()))
 	switch m.mode {
 	case modeFilter:
 		return rule + "\n" + m.input.View() + "  " + dimStyle.Render("(filter: enter=apply esc=clear)")
@@ -274,30 +302,84 @@ func (m model) listFooter() string {
 		verb := map[mode]string{modeAdd: "add", modeEdit: "edit", modeCategory: "category", modeDue: "due", modeDefer: "defer", modeLink: "link"}[m.mode]
 		return rule + "\n" + m.input.View() + "  " + dimStyle.Render("("+verb+": enter=save esc=cancel)")
 	default:
-		return rule + "\n" + m.helpGrid()
+		return rule + "\n" + m.helpGrid() + "\n" + rule + "\n" + m.bottomBar()
 	}
 }
 
-// helpGrid renders the key hints as an aligned 3-column table.
+// helpGrid renders the key hints as labelled sections spread across the full
+// width: one column per section, each a header over "key label" rows, with the
+// leftover width shared as gaps so the block spans the whole pane.
 func (m model) helpGrid() string {
-	cells := [][2]string{
-		{"move", "j/k"}, {"toggle", "space"}, {"detail", "d"},
-		{"add", "a"}, {"edit", "u"}, {"filter", "/"},
-		{"prio", "h/m/l"}, {"due", "t"}, {"cat", "g"},
-		{"defer", "s"}, {"link", "L"}, {"open", "o"},
-		{"view", "v"}, {"undo", "U"}, {"redo", "^r"},
-		{"del", "x"}, {"arch", "c"}, {"editor", "^e"},
-		{"save", "w"}, {"global", "A"}, {"help", "?"},
-		{"quit", "q"},
+	type entry struct{ key, label string }
+	cols := []struct {
+		head    string
+		entries []entry
+	}{
+		{"move", []entry{{"j/k", "move"}, {"space", "toggle"}, {"d", "detail"}, {"v", "view"}, {"/", "filter"}, {"A", "global"}}},
+		{"edit", []entry{{"a", "add"}, {"u", "edit"}, {"x", "del"}, {"c", "arch"}}},
+		{"fields", []entry{{"h/m/l", "prio"}, {"g", "cat"}, {"t", "due"}, {"s", "defer"}, {"L", "link"}, {"o", "open"}}},
+		{"board", []entry{{"w", "save"}, {"^e", "editor"}, {"U", "undo"}, {"^r", "redo"}, {"?", "help"}, {"q", "quit"}}},
 	}
+
+	// In the read-only global view most actions are inert; dim them so only the
+	// keys that do something (navigate / inspect / leave) read as live.
+	globalActive := map[string]bool{"j/k": true, "d": true, "v": true, "/": true, "A": true, "o": true, "?": true, "q": true}
+
+	rows := 0
+	rendered := make([][]string, len(cols))
+	widths := make([]int, len(cols))
+	for i, c := range cols {
+		keyW := 0
+		for _, e := range c.entries {
+			if len(e.key) > keyW {
+				keyW = len(e.key)
+			}
+		}
+		lines := []string{catStyle.Render(c.head)}
+		w := lipgloss.Width(lines[0])
+		for _, e := range c.entries {
+			key := fmt.Sprintf("%-*s", keyW, e.key)
+			if m.global && !globalActive[e.key] {
+				key = dimStyle.Render(key)
+			}
+			line := key + " " + dimStyle.Render(e.label)
+			if lw := lipgloss.Width(line); lw > w {
+				w = lw
+			}
+			lines = append(lines, line)
+		}
+		rendered[i], widths[i] = lines, w
+		if len(lines) > rows {
+			rows = len(lines)
+		}
+	}
+
+	total := 0
+	for _, w := range widths {
+		total += w
+	}
+	gap := 2
+	if extra := m.width() - total; extra > gap*(len(cols)-1) {
+		gap = extra / (len(cols) - 1)
+	}
+
 	var b strings.Builder
-	for i, c := range cells {
-		fmt.Fprintf(&b, "%-7s%-7s", c[0], c[1])
-		if i%3 == 2 && i != len(cells)-1 {
+	for r := 0; r < rows; r++ {
+		for i := range cols {
+			cell := ""
+			if r < len(rendered[i]) {
+				cell = rendered[i][r]
+			}
+			b.WriteString(cell + strings.Repeat(" ", widths[i]-lipgloss.Width(cell)))
+			if i < len(cols)-1 {
+				b.WriteString(strings.Repeat(" ", gap))
+			}
+		}
+		if r < rows-1 {
 			b.WriteByte('\n')
 		}
 	}
-	return dimStyle.Render(b.String())
+	return b.String()
 }
 
 // tableView renders the flat bubbles/table view. Nav still comes from our own
@@ -400,6 +482,7 @@ func (m model) helpBody() []string {
 	sec("view & find")
 	line("v — cycle view: category / priority / table")
 	line("/ — filter text, note, category, due (also greps the archive)")
+	line("A — toggle the read-only global view across all boards (esc/A to leave)")
 	line("d — detail view · ? — this help")
 	blank()
 	sec("history & files")

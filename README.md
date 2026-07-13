@@ -153,6 +153,8 @@ you add while it's active inherit that category — so a task added on a
 still overrides; a filter that isn't a category leaves new items uncategorized.
 The two combine: `shepherd --project web --filter '!h'`.
 
+`shepherd --version` prints the version and exits.
+
 ## command api
 
 For scripts and agentic tools that can't drive the TUI. A leading non-flag

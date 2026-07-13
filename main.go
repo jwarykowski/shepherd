@@ -3,6 +3,7 @@
 package main
 
 import (
+	_ "embed"
 	"flag"
 	"fmt"
 	"os"
@@ -12,6 +13,20 @@ import (
 	"shepherd/internal/store"
 	"shepherd/internal/tui"
 )
+
+//go:embed herdr-plugin.toml
+var pluginManifest string
+
+// version reads `version = "x.y.z"` out of the embedded manifest so the binary
+// and the plugin manifest never drift.
+func version() string {
+	for _, ln := range strings.Split(pluginManifest, "\n") {
+		if k, v, ok := strings.Cut(ln, "="); ok && strings.TrimSpace(k) == "version" {
+			return strings.Trim(strings.TrimSpace(v), `"`)
+		}
+	}
+	return "unknown"
+}
 
 func main() {
 	// A leading non-flag arg switches to the command API; bare `shepherd` and
@@ -23,7 +38,14 @@ func main() {
 	filter := flag.String("filter", os.Getenv("SHEPHERD_FILTER"), "start with this filter applied (matches text/note/category/due)")
 	project := flag.String("project", "", "open this project's board (else $SHEPHERD_PROJECT, else the default)")
 	all := flag.Bool("all", false, "open the read-only global view across all boards")
+	ver := flag.Bool("version", false, "print the version and exit")
 	flag.Parse()
+
+	if *ver {
+		fmt.Println("shepherd", version())
+		return
+	}
+	tui.Version = version()
 
 	name, err := store.ResolveProject(*project)
 	if err != nil {
