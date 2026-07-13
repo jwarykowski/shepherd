@@ -1,6 +1,6 @@
 # Contributing
 
-Single-package Go plugin. No frameworks.
+Go plugin, split into `internal/` packages (`cli`, `store`, `todo`, `tui`). No frameworks.
 
 ```sh
 go build -o bin/shepherd .   # build the shepherd binary

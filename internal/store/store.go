@@ -133,6 +133,25 @@ func LoadAll() []todo.Item {
 	return all
 }
 
+// LoadArchive parses the archive sibling of a todo file (done items moved out
+// of the live board). Empty if there's no archive.
+func LoadArchive(todoFile string) []todo.Item {
+	return Load(ArchivePath(todoFile))
+}
+
+// LoadAllArchives returns every board's archived items with Source set to the
+// board name — the done-item history behind the aggregate stats view.
+func LoadAllArchives() []todo.Item {
+	var all []todo.Item
+	for _, b := range Boards() {
+		for _, it := range LoadArchive(b.Path) {
+			it.Source = b.Name
+			all = append(all, it)
+		}
+	}
+	return all
+}
+
 // BoardsLatestMod is the newest mtime across all boards; it drives the global
 // view's reload check (a brand-new board file bumps the max).
 func BoardsLatestMod() time.Time {

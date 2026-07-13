@@ -20,6 +20,7 @@ const cliUsage = `shepherd — todo board
 Usage:
   shepherd                      open the interactive board
   shepherd list [--json] [--all] list items (--all aggregates every board)
+  shepherd stats [--json] [--all] show board metrics as charts (--all aggregates)
   shepherd add "<text>"         add an item (@category !h/!m/!l due: defer: link:)
   shepherd done <n>             mark item n done
   shepherd undone <n>           mark item n not done
@@ -28,7 +29,18 @@ Usage:
 Flags go after the verb. --project <name> (or $SHEPHERD_PROJECT) selects a
 project board (else the default): e.g. shepherd list --project web.
 
+Board flags (bare shepherd, the interactive board):
+  --project <name>  open a project's board
+  --filter <text>   start pre-filtered (text/note/category/due)
+  --all             read-only global view across all boards
+  --stats           print board stats and exit
+  --version         print the version and exit
+
 Indexes are 1-based and match the order shown by 'list'.`
+
+// Usage returns the full command + flag reference, shared by `shepherd help`
+// and the flag package's -h/--help handler so the two never diverge.
+func Usage() string { return cliUsage }
 
 // Run handles one command-API invocation and returns a process exit code.
 //
@@ -52,6 +64,8 @@ func Run(verb string, args []string) int {
 	switch verb {
 	case "list":
 		return cmdList(rest, project, os.Stdout)
+	case "stats":
+		return cmdStats(rest, project, os.Stdout)
 	case "add":
 		return cmdAdd(rest, project, os.Stdout)
 	case "done":

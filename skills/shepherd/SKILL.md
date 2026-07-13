@@ -21,6 +21,7 @@ Run `shepherd help` for the authoritative command list. Summary:
 | --- | --- |
 | `shepherd list --json` | read all items (machine shape — prefer this) |
 | `shepherd list --all --json` | read across every board; adds a `project` field |
+| `shepherd stats --json [--all]` | board metrics (JSON numbers; drop `--json` for charts) |
 | `shepherd add "<text>"` | add an item |
 | `shepherd done <n>` / `undone <n>` | (un)complete item n |
 | `shepherd rm <n>` | remove item n |

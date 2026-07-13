@@ -6,6 +6,7 @@ format.
 
 - `shepherd list --json` — read all items (machine-readable; prefer this)
 - `shepherd list --all --json` — read across every board; adds a `project` field per item
+- `shepherd stats [--json] [--all]` — board metrics (charts, or `--json` numbers)
 - `shepherd add "buy milk @home !h due:tomorrow"` — add an item
 - `shepherd done <n>` / `shepherd undone <n>` — (un)complete item n
 - `shepherd rm <n>` — remove item n

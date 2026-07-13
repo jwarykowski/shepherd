@@ -19,6 +19,16 @@ var (
 	Today = func() string { return time.Now().Format(dateFormat) }
 )
 
+// ParseTime parses a created/completed stamp (tsFormat "02-01-2006 15:04").
+// ok is false if the string is empty or malformed.
+func ParseTime(ts string) (time.Time, bool) {
+	if ts == "" {
+		return time.Time{}, false
+	}
+	t, err := time.Parse(tsFormat, ts)
+	return t, err == nil
+}
+
 // DisplayDate renders an ISO date as day-month-year DD-MM-YYYY; raw if unparseable.
 func DisplayDate(iso string) string {
 	if t, err := time.Parse(dateFormat, iso); err == nil {
