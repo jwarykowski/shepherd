@@ -119,9 +119,11 @@ shows a `done/total` badge:
 - On a subtask row every per-item key works as it does on a parent: `space`
   toggle, `tab` status, `u` text, `h`/`m`/`l` priority, `t` due, `s` defer,
   `L` link, `o` open link, `x` delete. Overdue/defer labels show on the row.
+- `d` opens the subtask's detail view — its own fields plus a `parent` line
+  naming the task it belongs to; edit its note there with `e`, same as a parent.
 - `g` (category) is the one exception — it's parent-only, since a subtask shares
-  its parent's board; it's dimmed in the footer on a subtask row. `note` is also
-  parent-only. Set a subtask's fields at creation from the CLI too:
+  its parent's board; it's dimmed in the footer on a subtask row. Set a
+  subtask's fields at creation from the CLI too:
   `shepherd sub <n> "text @home !h due:tomorrow defer:1w link:https://…"`.
 
 **Completion cascades both ways:** completing a parent completes all its
