@@ -145,7 +145,7 @@ func hbar(rows []barRow, width int) string {
 	if len(rows) == 0 {
 		return faintStyle.Render("(none)")
 	}
-	const maxLabel = 16 // clip longer category/project names so bars keep room
+	const maxLabel = 24 // clip longer category/project names so bars keep room
 	labelW, valW, max := 0, 1, 0
 	labels := make([]string, len(rows))
 	for i, r := range rows {
