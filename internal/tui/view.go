@@ -36,6 +36,8 @@ func (m model) View() string {
 	switch {
 	case m.mode == modeHelp:
 		content = m.helpView()
+	case m.mode == modeArchive:
+		content = m.archiveView()
 	case m.mode == modeDetail || m.mode == modeNote:
 		content = m.detailView()
 	case m.view == viewTable:
@@ -285,6 +287,33 @@ func (m model) windowRows(rows []string, cursorLine, footLines int) []string {
 	return rows[off : off+vh]
 }
 
+// archiveView renders the read-only archive browser: the board's archived items
+// (or every board's, in the global view), windowed on the cursor.
+func (m model) archiveView() string {
+	w := m.width()
+	var out []string
+	cursorLine := 0
+	if len(m.arcRows) == 0 {
+		out = append(out, dimStyle.Render("no archived items"))
+	}
+	for i, it := range m.arcRows {
+		row := "  " + doneStyle.Render("✓ "+it.Text)
+		if m.global && it.Source != "" {
+			row = "  " + catStyle.Render("["+it.Source+"] ") + doneStyle.Render("✓ "+it.Text)
+		}
+		if i == m.arcCur {
+			cursorLine = len(out)
+			row = cursorStyle.Width(w).Render(ansi.Strip(row))
+		}
+		out = append(out, row)
+	}
+	footer := ruleStyle.Render(strings.Repeat("┈", w)) + "\n" +
+		dimStyle.Render("browse archive · j/k scroll · esc back · q quit")
+	out = m.windowRows(out, cursorLine, lines(footer))
+	body := m.headerWith("archive", len(m.arcRows), len(m.arcRows)) + "\n" + strings.Join(out, "\n")
+	return m.frame(body, footer)
+}
+
 // count returns the done and total item counts across the whole board.
 func (m model) count() (done, total int) {
 	for _, it := range m.items {
@@ -383,7 +412,7 @@ func (m model) helpGrid() string {
 		head    string
 		entries []entry
 	}{
-		{"move", []entry{{"j/k", "move"}, {"space", "toggle"}, {"d", "detail"}, {"v", "view"}, {"/", "filter"}, {"A", "global"}}},
+		{"move", []entry{{"j/k", "move"}, {"space", "toggle"}, {"d", "detail"}, {"v", "view"}, {"/", "filter"}, {"A", "global"}, {"e", "archive"}}},
 		{"edit", []entry{{"a", "add"}, {"S", "sub"}, {"u", "edit"}, {"tab", "status"}, {"x", "del"}, {"c", "arch"}}},
 		{"fields", []entry{{"h/m/l", "prio"}, {"g", "cat"}, {"t", "due"}, {"s", "defer"}, {"L", "link"}, {"o", "open"}}},
 		{"board", []entry{{"w", "save"}, {"^e", "editor"}, {"U", "undo"}, {"^r", "redo"}, {"?", "help"}, {"q", "quit"}}},
@@ -391,7 +420,7 @@ func (m model) helpGrid() string {
 
 	// In the read-only global view most actions are inert; dim them so only the
 	// keys that do something (navigate / inspect / leave) read as live.
-	globalActive := map[string]bool{"j/k": true, "d": true, "v": true, "/": true, "A": true, "o": true, "?": true, "q": true}
+	globalActive := map[string]bool{"j/k": true, "d": true, "v": true, "/": true, "A": true, "e": true, "o": true, "?": true, "q": true}
 
 	// On a subtask row category is parent-only (subs share the parent's board);
 	// dim it. Due / defer / link / status all work on subtasks. `o` opens the
@@ -571,6 +600,7 @@ func (m model) helpBody() []string {
 	line("v — cycle view: category / priority / table")
 	line("/ — filter text, note, category, due (also greps the archive)")
 	line("A — toggle the read-only global view across all boards (esc/A to leave)")
+	line("e — browse the archive (read-only; all boards in the global view; esc to leave)")
 	line("d — detail view · ? — this help")
 	blank()
 	sec("history & files")

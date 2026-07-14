@@ -512,6 +512,31 @@ func TestArchiveSearch(t *testing.T) {
 	}
 }
 
+// TestArchiveBrowse checks e opens the read-only archive browser over the
+// board's archived items, j/k move the cursor, and esc returns to the board.
+func TestArchiveBrowse(t *testing.T) {
+	m := model{input: textinput.New(),
+		items:    []todo.Item{{Text: "active task"}},
+		archived: []todo.Item{{Text: "done one", Done: true}, {Text: "done two", Done: true}},
+		w:        80, height: 24}
+
+	m = drive(m, "e")
+	if m.mode != modeArchive || len(m.arcRows) != 2 {
+		t.Fatalf("e should open archive with 2 rows: mode=%d rows=%d", m.mode, len(m.arcRows))
+	}
+	if !strings.Contains(m.archiveView(), "done one") {
+		t.Fatalf("archive view missing item: %q", m.archiveView())
+	}
+	m = drive(m, "j")
+	if m.arcCur != 1 {
+		t.Fatalf("j should move cursor to 1, got %d", m.arcCur)
+	}
+	m = drive(m, "esc")
+	if m.mode != modeList {
+		t.Fatalf("esc should return to list, mode=%d", m.mode)
+	}
+}
+
 func TestLoadConfig(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "config.toml")
