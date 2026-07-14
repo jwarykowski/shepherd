@@ -19,10 +19,11 @@ const cliUsage = `shepherd — todo board
 
 Usage:
   shepherd                      open the interactive board
-  shepherd list [--json] [--all] list items (--all aggregates every board)
+  shepherd list [--json] [--all] [--filter <text>] list items (--all aggregates; --filter matches text/note/category/due/defer/link)
   shepherd stats [--json] [--all] show board metrics as charts (--all aggregates)
   shepherd add "<text>"         add an item (@category !h/!m/!l due: defer: link:)
   shepherd sub <n> "<text>"     add a subtask to item n (same @/!/due: syntax)
+  shepherd edit <n[.m]> "<tokens>" update item n (or subtask m): sets only the @category !prio due: defer: link: and text given
   shepherd done <n[.m]>         mark item n (or its subtask m) done
   shepherd undone <n[.m]>       mark item n (or its subtask m) not done
   shepherd status <n[.m]> <name> set item (or subtask m)'s status (e.g. in-progress; done|open recognised)
@@ -75,6 +76,8 @@ func Run(verb string, args []string) int {
 		return cmdAdd(rest, project, os.Stdout)
 	case "sub":
 		return cmdSub(rest, project, os.Stdout)
+	case "edit":
+		return cmdEdit(rest, project, os.Stdout)
 	case "done":
 		return cmdToggle(rest, project, true, os.Stdout)
 	case "undone":
@@ -151,6 +154,7 @@ func cmdList(args []string, project string, w io.Writer) int {
 	fs := flag.NewFlagSet("list", flag.ContinueOnError)
 	asJSON := fs.Bool("json", false, "machine-readable JSON output")
 	all := fs.Bool("all", false, "aggregate items across every board (read-only)")
+	filter := fs.String("filter", "", "only items matching this text (text/note/category/due/defer/link)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -160,11 +164,17 @@ func cmdList(args []string, project string, w io.Writer) int {
 	} else {
 		items = store.Load(store.TodoPathFor(project))
 	}
+	// Match after loading so the printed index stays the item's real position
+	// on the board — the one done/rm expect. q is lowercased for todo.Match.
+	q := strings.ToLower(strings.TrimSpace(*filter))
 
 	if *asJSON {
-		out := make([]itemJSON, len(items))
+		out := make([]itemJSON, 0, len(items))
 		for i, it := range items {
-			out[i] = toJSON(it, i+1)
+			if !todo.Match(it, q) {
+				continue
+			}
+			out = append(out, toJSON(it, i+1))
 		}
 		b, err := json.MarshalIndent(out, "", "  ")
 		if err != nil {
@@ -179,11 +189,19 @@ func cmdList(args []string, project string, w io.Writer) int {
 		emit(w, "(no items)")
 		return 0
 	}
+	shown := 0
 	for i, it := range items {
+		if !todo.Match(it, q) {
+			continue
+		}
+		shown++
 		emit(w, formatLine(i+1, it))
 		for si, sub := range it.Subs {
 			emit(w, formatSub(i+1, si+1, sub))
 		}
+	}
+	if shown == 0 {
+		emit(w, "(no matches)")
 	}
 	return 0
 }
@@ -237,6 +255,38 @@ func cmdSub(args []string, project string, w io.Writer) int {
 		return 1
 	}
 	emit(w, formatSub(idx, len(parent.Subs), sub))
+	return 0
+}
+
+// cmdEdit merges quick-add tokens onto an existing item n (or subtask m):
+// shepherd edit <n[.m]> "<tokens>". Only the fields present in the tokens
+// change; text is replaced only when plain words are given (see todo.ApplyEdit).
+func cmdEdit(args []string, project string, w io.Writer) int {
+	path := store.TodoPathFor(project)
+	items := store.Load(path)
+	p, s, ok := parseRef(args, items)
+	if !ok {
+		return 1
+	}
+	text := strings.TrimSpace(strings.Join(args[1:], " "))
+	if text == "" {
+		fmt.Fprintln(os.Stderr, `shepherd: edit needs tokens, e.g. shepherd edit 2 "@home !h due:tomorrow"`)
+		return 2
+	}
+	if s == 0 {
+		todo.ApplyEdit(&items[p-1], text)
+	} else {
+		todo.ApplyEdit(&items[p-1].Subs[s-1], text)
+	}
+	if err := store.Save(path, items); err != nil {
+		fmt.Fprintln(os.Stderr, "shepherd:", err)
+		return 1
+	}
+	if s == 0 {
+		emit(w, formatLine(p, items[p-1]))
+	} else {
+		emit(w, formatSub(p, s, items[p-1].Subs[s-1]))
+	}
 	return 0
 }
 

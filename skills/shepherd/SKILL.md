@@ -21,9 +21,11 @@ Run `shepherd help` for the authoritative command list. Summary:
 | --- | --- |
 | `shepherd list --json` | read all items (machine shape — prefer this) |
 | `shepherd list --all --json` | read across every board; adds a `project` field |
+| `shepherd list --filter <q> [--json]` | list only matching items; real indexes kept |
 | `shepherd stats --json [--all]` | board metrics (JSON numbers; drop `--json` for charts) |
 | `shepherd add "<text>"` | add an item |
 | `shepherd sub <n> "<text>"` | add a subtask to item n |
+| `shepherd edit <n[.m]> "<tokens>"` | merge @category/!prio/due:/defer:/link:/text onto item n (or subtask m) |
 | `shepherd done <n[.m]>` / `undone <n[.m]>` | (un)complete item n, or its subtask m |
 | `shepherd status <n[.m]> <name>` | set item n's (or subtask m's) status (`in-progress`; `done`/`open` recognised) |
 | `shepherd rm <n[.m]>` | remove item n, or just its subtask m |

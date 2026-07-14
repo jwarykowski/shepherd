@@ -73,7 +73,7 @@ herdr plugin install jwarykowski/shepherd
 | `d` | open detail view (shows every field) |
 | `v` | cycle view: category / priority / table |
 | `A` | toggle the [global view](#global-view) across all boards |
-| `/` | filter (text, note, category, due — also greps `archive.md`) |
+| `/` | filter (text/note/category/due/defer/link — also greps `archive.md`) |
 | `U` / `ctrl+r` | undo / redo (multi-level) |
 | `w` | save now (the header shows `● unsaved` / `● saved`) |
 | `ctrl+e` | open the markdown file in `$EDITOR` |
@@ -82,7 +82,7 @@ herdr plugin install jwarykowski/shepherd
 | `?` | full help page |
 | `q` | save + quit |
 
-In the detail view: `e` edit note · `space` toggle · `d`/`esc`/`q` back.
+In the detail view: `e` edit note · `space` toggle · `o` open link · `d`/`esc`/`q` back.
 
 **Inline quick-add** — `a`, then one line:
 `deploy api @work !h due:tomorrow defer:1w link:https://…`. `@word` sets
@@ -186,7 +186,7 @@ The command API mirrors it: `shepherd list --all` (see [command api](#command-ap
 ## launch filter
 
 `--project` gives a project its own file; `--filter` is a saved *view* over one
-board — start it pre-filtered by text/note/category/due:
+board — start it pre-filtered by text/note/category/due/defer/link:
 
 ```sh
 ./bin/shepherd --filter work      # or: SHEPHERD_FILTER=work ./bin/shepherd
@@ -213,9 +213,11 @@ always valid. Indexes are 1-based and match `list` order.
 ```sh
 shepherd list [--json]              # show items with their index
 shepherd list --all [--json]        # aggregate across every board (read-only)
+shepherd list --filter home         # only items matching the query, real indexes kept
 shepherd stats [--json] [--all]     # board metrics as charts (--json = numbers)
 shepherd add "buy milk @home !h due:tomorrow"
 shepherd sub 2 "chop onions !m"     # add a subtask to item 2
+shepherd edit 2 "@work !h due:friday" # merge tokens onto item 2 (2.1 edits a subtask)
 shepherd done 2                     # mark item 2 done (cascades to its subtasks)
 shepherd done 2.1                   # mark subtask 1 of item 2 done
 shepherd undone 2.1                 # reopen subtask 1 (also reopens the parent)
@@ -223,8 +225,14 @@ shepherd status 2 in-progress       # set item 2's status (done|open recognised)
 shepherd rm 2                       # remove item 2 (rm 2.1 removes just the subtask)
 ```
 
-`done`/`undone`/`rm` take a dotted `n.m` reference for subtask `m` of item `n`;
-see [subtasks](#subtasks) for the cascade rules.
+`done`/`undone`/`rm`/`edit` take a dotted `n.m` reference for subtask `m` of
+item `n`; see [subtasks](#subtasks) for the cascade rules.
+
+`edit <n[.m]> "<tokens>"` sets only the fields the tokens carry — `@category`,
+`!h`/`!m`/`!l`, `due:`, `defer:`, `link:` — leaving the rest untouched; the text
+is replaced only when the tokens include plain words. `list --filter <q>`
+matches text/note/category/due/defer/link and keeps each item's real board
+index, so `done`/`rm` on a filtered listing still hit the right item.
 
 Flags go **after** the verb. Add `--project <name>` (or set `$SHEPHERD_PROJECT`)
 to target a project board instead of the default:
@@ -299,12 +307,10 @@ herdr pane placement (`placement` / `direction`) lives in the same file — see
 
 ## storage
 
-Everything lives under `~/.config/shepherd`: the default board `todo.md`, a
-shared `config.toml`, and one file per project at `projects/<name>.md`. Pick a
-project with `--project <name>` (or `$SHEPHERD_PROJECT`); unset uses the default
-board. `config.toml` is shared across every board. Point at an exact file with
-`$SHEPHERD_TODO_FILE` if you need to. In the command API, flags follow the
-verb: `shepherd add "…" --project web`, `shepherd list --project web`.
+Layout is the table at the top: the default `todo.md`, a shared `config.toml`,
+and one `projects/<name>.md` per project (selected with
+`--project`/`$SHEPHERD_PROJECT`). Override the exact board file with
+`$SHEPHERD_TODO_FILE`.
 
 Dates are stored ISO (`YYYY-MM-DD`) so they sort correctly, but shown and
 entered day-month-year / DMY (`DD-MM-YYYY`). Metadata rides as indented
