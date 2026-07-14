@@ -215,3 +215,19 @@ func TestQuickAdd(t *testing.T) {
 		t.Fatalf("bad token should stay: %q", it.Text)
 	}
 }
+
+func TestApplyEdit(t *testing.T) {
+	pinToday(t, "2026-07-10")
+	it := Item{Text: "original", Prio: 'L'}
+	ApplyEdit(&it, "!h due:tomorrow @home") // token-only: text preserved
+	if it.Text != "original" || it.Prio != 'H' || it.Category != "home" || it.Due != "2026-07-11" {
+		t.Fatalf("token-only edit wrong: %+v", it)
+	}
+	ApplyEdit(&it, "new text") // plain words replace text, other fields untouched
+	if it.Text != "new text" || it.Prio != 'H' || it.Category != "home" {
+		t.Fatalf("text edit wrong: %+v", it)
+	}
+	if !Match(it, "home") || Match(it, "zzz") {
+		t.Fatal("Match wrong on category")
+	}
+}

@@ -28,11 +28,12 @@ type Item struct {
 	Subs []Item
 }
 
-// ParseQuickAdd splits an add line into text plus @category, !h/!m/!l priority,
-// due:<preset>, defer:<preset>, and link:<url> tokens. Unrecognized tokens stay
-// part of the text.
-func ParseQuickAdd(s string) Item {
-	it := Item{Created: Now()}
+// ApplyEdit applies quick-add tokens onto an existing item, touching only the
+// fields present in s: @category, !h/!m/!l priority, due:<preset>,
+// defer:<preset>, link:<url>. Text is replaced only when s carries plain
+// (non-token) words, so a token-only edit leaves the text alone. Unrecognized
+// tokens count as plain words.
+func ApplyEdit(it *Item, s string) {
 	var words []string
 	for _, tok := range strings.Fields(s) {
 		switch {
@@ -50,6 +51,31 @@ func ParseQuickAdd(s string) Item {
 			words = append(words, tok)
 		}
 	}
-	it.Text = strings.Join(words, " ")
+	if len(words) > 0 {
+		it.Text = strings.Join(words, " ")
+	}
+}
+
+// ParseQuickAdd builds a new item from an add line, splitting text from
+// @category, !h/!m/!l priority, due:/defer:/link: tokens. Unrecognized tokens
+// stay part of the text.
+func ParseQuickAdd(s string) Item {
+	it := Item{Created: Now()}
+	ApplyEdit(&it, s)
 	return it
+}
+
+// Match reports whether an item matches filter query q, which the caller has
+// already lowercased. Empty q matches everything. Searches text, note,
+// category, due, defer, and link.
+func Match(it Item, q string) bool {
+	if q == "" {
+		return true
+	}
+	return strings.Contains(strings.ToLower(it.Text), q) ||
+		strings.Contains(strings.ToLower(it.Note), q) ||
+		strings.Contains(strings.ToLower(it.Category), q) ||
+		strings.Contains(strings.ToLower(it.Due), q) ||
+		strings.Contains(strings.ToLower(it.Defer), q) ||
+		strings.Contains(strings.ToLower(it.Link), q)
 }
