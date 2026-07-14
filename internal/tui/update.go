@@ -558,28 +558,37 @@ func (m model) updateHelp(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) updateDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	idx := m.sel()
+	ref := m.selRef()
+	if ref.item < 0 {
+		if s := msg.String(); s == "esc" || s == "q" || s == "d" {
+			m.mode = modeList
+		}
+		return m, nil
+	}
+	p := m.rowPtr(ref)
 	switch msg.String() {
 	case "esc", "q", "d":
 		m.mode = modeList
 	case "e", "n":
-		if idx >= 0 && !m.global {
+		if !m.global {
 			m.mode = modeNote
 			m.noteEditing = false
 			m.note.SetWidth(m.width())
 			m.note.SetHeight(noteHeight)
-			m.note.SetValue(m.items[idx].Note)
+			m.note.SetValue(p.Note)
 			m.note.Focus()
 		}
 	case "space", " ":
-		if idx >= 0 && !m.global {
+		if !m.global {
 			m.beforeMutate()
-			todo.SetDone(&m.items[idx], !m.items[idx].Done)
+			if ref.sub == -1 {
+				todo.SetParentDone(&m.items[ref.item], !m.items[ref.item].Done)
+			} else {
+				todo.SetSubDone(&m.items[ref.item], ref.sub, !m.items[ref.item].Subs[ref.sub].Done)
+			}
 		}
 	case "o":
-		if idx >= 0 {
-			return m, openLink(m.items[idx].Link)
-		}
+		return m, openLink(p.Link)
 	}
 	return m, nil
 }
@@ -588,7 +597,6 @@ func (m model) updateDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // textarea owns it); edits save live to the item, so esc just closes. One undo
 // snapshot is taken on the first change, giving a single entry per edit session.
 func (m model) updateNote(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	idx := m.sel()
 	if msg.String() == "esc" {
 		m.note.Blur()
 		m.noteEditing = false
@@ -597,13 +605,14 @@ func (m model) updateNote(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	var cmd tea.Cmd
 	m.note, cmd = m.note.Update(msg)
-	if idx >= 0 {
-		if v := m.note.Value(); v != m.items[idx].Note { // empty clears
+	if ref := m.selRef(); ref.item >= 0 {
+		p := m.rowPtr(ref)
+		if v := m.note.Value(); v != p.Note { // empty clears
 			if !m.noteEditing {
 				m.beforeMutate()
 				m.noteEditing = true
 			}
-			m.items[idx].Note = v
+			p.Note = v
 		}
 	}
 	return m, cmd

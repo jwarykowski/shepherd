@@ -622,11 +622,11 @@ func (m model) frame(body, footer string) string {
 }
 
 func (m model) detailView() string {
-	idx := m.sel()
-	if idx < 0 {
+	ref := m.selRef()
+	if ref.item < 0 {
 		return "no item"
 	}
-	it := m.items[idx]
+	it := m.rowItem(ref)
 	// count reflects the item's own category, not the whole board
 	cdone, ctotal := 0, 0
 	for _, x := range m.items {
@@ -665,6 +665,9 @@ func (m model) detailView() string {
 		category = catStyle.Render(category)
 	}
 	b.WriteString(field("task", it.Text))
+	if ref.sub >= 0 {
+		b.WriteString(field("parent", m.items[ref.item].Text))
+	}
 	b.WriteString(field("status", status))
 	b.WriteString(field("priority", prio))
 	b.WriteString(field("category", category))

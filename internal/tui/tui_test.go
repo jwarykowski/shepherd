@@ -274,6 +274,19 @@ func TestDetailNote(t *testing.T) {
 	}
 }
 
+func TestSubtaskDetail(t *testing.T) {
+	m := model{input: textinput.New(), note: textarea.New(), w: 50, height: 24,
+		mode: modeDetail, cursor: 1,
+		items: []todo.Item{{Text: "parent task", Subs: []todo.Item{{Text: "child step"}}}}}
+	out := m.detailView()
+	if !strings.Contains(out, "child step") {
+		t.Fatal("detail did not show the subtask text")
+	}
+	if !strings.Contains(out, "parent task") {
+		t.Fatal("subtask detail did not show the parent name")
+	}
+}
+
 func TestDetailNoteWraps(t *testing.T) {
 	long := "this is a long note that should wrap onto several lines in detail"
 	m := model{input: textinput.New(), w: 30, height: 24, mode: modeDetail,
