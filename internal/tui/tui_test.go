@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -25,6 +26,8 @@ func key(s string) tea.KeyMsg {
 		return tea.KeyMsg{Type: tea.KeyEsc}
 	case "tab":
 		return tea.KeyMsg{Type: tea.KeyTab}
+	case "ctrl+s":
+		return tea.KeyMsg{Type: tea.KeyCtrlS}
 	}
 	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}
 }
@@ -179,20 +182,40 @@ func lastByText(m model, text string) todo.Item {
 }
 
 func TestDetailNote(t *testing.T) {
-	m := model{input: textinput.New(), items: []todo.Item{{Text: "task"}}}
+	m := model{input: textinput.New(), note: textarea.New(), items: []todo.Item{{Text: "task"}}}
 	m = drive(m, "d")
 	if m.mode != modeDetail {
 		t.Fatal("d did not open detail")
 	}
 	m = drive(m, "e")
-	m.input.SetValue("some note")
-	m = drive(m, "enter")
-	if m.items[0].Note != "some note" || m.mode != modeDetail {
-		t.Fatalf("note save failed: %+v mode=%d", m.items[0], m.mode)
+	if m.mode != modeNote {
+		t.Fatal("e did not open the note editor")
+	}
+	// typing saves live; enter inserts a newline (multi-line note)
+	m = drive(m, "a", "b", "enter", "c")
+	if m.items[0].Note != "ab\nc" {
+		t.Fatalf("note did not save live: %q", m.items[0].Note)
+	}
+	m = drive(m, "esc")
+	if m.mode != modeDetail || m.items[0].Note != "ab\nc" {
+		t.Fatalf("esc should close keeping the saved note: %q mode=%d", m.items[0].Note, m.mode)
 	}
 	m = drive(m, "q")
 	if m.mode != modeList {
 		t.Fatal("q did not return to list")
+	}
+}
+
+func TestDetailNoteWraps(t *testing.T) {
+	long := "this is a long note that should wrap onto several lines in detail"
+	m := model{input: textinput.New(), w: 30, height: 24, mode: modeDetail,
+		items: []todo.Item{{Text: "task", Note: long}}}
+	wrapped := lipgloss.NewStyle().Width(m.width()).Render(long)
+	if !strings.Contains(wrapped, "\n") {
+		t.Fatalf("test setup: note should wrap at width %d", m.width())
+	}
+	if !strings.Contains(m.detailView(), wrapped) {
+		t.Fatal("detail view did not wrap the note")
 	}
 }
 

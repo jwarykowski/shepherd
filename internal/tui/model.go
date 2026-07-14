@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -20,6 +21,7 @@ const (
 	appSubtitle = "your todos herded"
 	padX        = 2
 	padY        = 1
+	noteHeight  = 5 // visible rows in the note textarea editor
 )
 
 type config struct {
@@ -167,6 +169,8 @@ type model struct {
 	mode          mode
 	view          viewMode
 	input         textinput.Model
+	note          textarea.Model // multi-line editor for the note field (modeNote)
+	noteEditing   bool           // a change was captured this note session (one undo snapshot)
 	w             int
 	height        int
 	past          [][]todo.Item // undo stack (snapshots before each mutation)
@@ -221,6 +225,10 @@ const histCap = 100
 func newModel(project string) model {
 	ti := textinput.New()
 	ti.Prompt = "› "
+	na := textarea.New()
+	na.ShowLineNumbers = false
+	na.Prompt = ""
+	na.CharLimit = 0 // notes can be long
 	p := store.TodoPathFor(project)
 	cfg := loadConfig(store.ConfigPath())
 	m := model{
@@ -229,6 +237,7 @@ func newModel(project string) model {
 		items:         store.Load(p),
 		archived:      store.Load(store.ArchivePath(p)),
 		input:         ti,
+		note:          na,
 		lastMod:       store.FileModTime(p),
 		view:          cfg.view,
 		density:       cfg.density,
