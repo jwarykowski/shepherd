@@ -73,7 +73,7 @@ herdr plugin install jwarykowski/shepherd
 | `d` | open detail view (shows every field) |
 | `v` | cycle view: category / priority / table |
 | `A` | toggle the [global view](#global-view) across all boards |
-| `/` | filter (text, note, category, due — also greps `archive.md`) |
+| `/` | filter (text/note/category/due/defer/link — also greps `archive.md`) |
 | `U` / `ctrl+r` | undo / redo (multi-level) |
 | `w` | save now (the header shows `● unsaved` / `● saved`) |
 | `ctrl+e` | open the markdown file in `$EDITOR` |
@@ -82,7 +82,7 @@ herdr plugin install jwarykowski/shepherd
 | `?` | full help page |
 | `q` | save + quit |
 
-In the detail view: `e` edit note · `space` toggle · `d`/`esc`/`q` back.
+In the detail view: `e` edit note · `space` toggle · `o` open link · `d`/`esc`/`q` back.
 
 **Inline quick-add** — `a`, then one line:
 `deploy api @work !h due:tomorrow defer:1w link:https://…`. `@word` sets
@@ -186,7 +186,7 @@ The command API mirrors it: `shepherd list --all` (see [command api](#command-ap
 ## launch filter
 
 `--project` gives a project its own file; `--filter` is a saved *view* over one
-board — start it pre-filtered by text/note/category/due:
+board — start it pre-filtered by text/note/category/due/defer/link:
 
 ```sh
 ./bin/shepherd --filter work      # or: SHEPHERD_FILTER=work ./bin/shepherd
@@ -307,12 +307,10 @@ herdr pane placement (`placement` / `direction`) lives in the same file — see
 
 ## storage
 
-Everything lives under `~/.config/shepherd`: the default board `todo.md`, a
-shared `config.toml`, and one file per project at `projects/<name>.md`. Pick a
-project with `--project <name>` (or `$SHEPHERD_PROJECT`); unset uses the default
-board. `config.toml` is shared across every board. Point at an exact file with
-`$SHEPHERD_TODO_FILE` if you need to. In the command API, flags follow the
-verb: `shepherd add "…" --project web`, `shepherd list --project web`.
+Layout is the table at the top: the default `todo.md`, a shared `config.toml`,
+and one `projects/<name>.md` per project (selected with
+`--project`/`$SHEPHERD_PROJECT`). Override the exact board file with
+`$SHEPHERD_TODO_FILE`.
 
 Dates are stored ISO (`YYYY-MM-DD`) so they sort correctly, but shown and
 entered day-month-year / DMY (`DD-MM-YYYY`). Metadata rides as indented
