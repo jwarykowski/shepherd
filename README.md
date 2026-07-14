@@ -222,6 +222,7 @@ shepherd done 2                     # mark item 2 done (cascades to its subtasks
 shepherd done 2.1                   # mark subtask 1 of item 2 done
 shepherd undone 2.1                 # reopen subtask 1 (also reopens the parent)
 shepherd status 2 in-progress       # set item 2's status (done|open recognised)
+shepherd note 2 "waiting on infra"  # set item 2's note (note 2 "" clears it)
 shepherd rm 2                       # remove item 2 (rm 2.1 removes just the subtask)
 ```
 

@@ -28,6 +28,7 @@ Run `shepherd help` for the authoritative command list. Summary:
 | `shepherd edit <n[.m]> "<tokens>"` | merge @category/!prio/due:/defer:/link:/text onto item n (or subtask m) |
 | `shepherd done <n[.m]>` / `undone <n[.m]>` | (un)complete item n, or its subtask m |
 | `shepherd status <n[.m]> <name>` | set item n's (or subtask m's) status (`in-progress`; `done`/`open` recognised) |
+| `shepherd note <n[.m]> "<text>"` | set item n's (or subtask m's) note (empty clears) |
 | `shepherd rm <n[.m]>` | remove item n, or just its subtask m |
 
 Indexes are 1-based and match `list` order. Read with `--json`, act by index.

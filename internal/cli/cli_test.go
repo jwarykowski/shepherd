@@ -123,6 +123,36 @@ func TestCLIListFilter(t *testing.T) {
 	}
 }
 
+// TestCLINote checks note sets a multi-word value, clears it with an empty
+// value, and can target a subtask.
+func TestCLINote(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "todo.md")
+	t.Setenv("SHEPHERD_TODO_FILE", path)
+
+	cmdAdd([]string{"write report"}, "", &bytes.Buffer{})
+	if code := cmdNote([]string{"1", "a longer note with spaces"}, "", &bytes.Buffer{}); code != 0 {
+		t.Fatalf("note exit %d", code)
+	}
+	if it := store.Load(path)[0]; it.Note != "a longer note with spaces" {
+		t.Fatalf("note not set: %q", it.Note)
+	}
+
+	if code := cmdNote([]string{"1"}, "", &bytes.Buffer{}); code != 0 {
+		t.Fatalf("note clear exit %d", code)
+	}
+	if it := store.Load(path)[0]; it.Note != "" {
+		t.Fatalf("note not cleared: %q", it.Note)
+	}
+
+	cmdSub([]string{"1", "gather data"}, "", &bytes.Buffer{})
+	if code := cmdNote([]string{"1.1", "check the archive"}, "", &bytes.Buffer{}); code != 0 {
+		t.Fatalf("note subtask exit %d", code)
+	}
+	if sub := store.Load(path)[0].Subs[0]; sub.Note != "check the archive" {
+		t.Fatalf("subtask note wrong: %q", sub.Note)
+	}
+}
+
 func TestCLISetStatus(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "todo.md")
 	t.Setenv("SHEPHERD_TODO_FILE", path)

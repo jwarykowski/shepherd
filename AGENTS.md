@@ -13,6 +13,7 @@ format.
 - `shepherd list --filter <q>` — list only matching items (text/note/category/due/defer/link), keeping their real indexes for done/rm
 - `shepherd done <n[.m]>` / `shepherd undone <n[.m]>` — (un)complete item n, or its subtask m
 - `shepherd status <n[.m]> <name>` — set item n's (or subtask m's) status (`in-progress`; `done`/`open` recognised)
+- `shepherd note <n[.m]> "<text>"` — set item n's (or subtask m's) free-text note; empty value clears it
 - `shepherd rm <n[.m]>` — remove item n, or just its subtask m
 
 Indexes are 1-based and match `list` order. Quick-add tokens: `@category`,
