@@ -203,13 +203,13 @@ func (m model) rowContent(it todo.Item, indent, badge string, isSub bool) string
 func (m model) listView() string {
 	w := m.width()
 	vis := m.visible()
-	var b strings.Builder
-	b.WriteString(m.header() + "\n")
+	var out []string // scrollable region, one entry per visual line
+	cursorLine := 0
 	if len(vis) == 0 {
 		if m.filter != "" {
-			b.WriteString(dimStyle.Render("(no matches)") + "\n")
+			out = append(out, dimStyle.Render("(no matches)"))
 		} else {
-			b.WriteString(dimStyle.Render("(empty — press a to add)") + "\n")
+			out = append(out, dimStyle.Render("(empty — press a to add)"))
 		}
 	}
 	lastGroup := "\x00" // sentinel so the first group always prints a header
@@ -220,7 +220,7 @@ func (m model) listView() string {
 			parent := m.items[r.item]
 			if gid, label := m.groupOf(parent); gid != lastGroup {
 				if lastGroup != "\x00" {
-					b.WriteString("\n") // padding below the previous group
+					out = append(out, "") // padding below the previous group
 				}
 				done, total := m.groupCount(parent)
 				cnt := countStyle.Render(fmt.Sprintf("%d/%d", done, total))
@@ -229,7 +229,7 @@ func (m model) listView() string {
 				if gap < 1 {
 					gap = 1
 				}
-				b.WriteString(left + strings.Repeat(" ", gap) + cnt + "\n")
+				out = append(out, left+strings.Repeat(" ", gap)+cnt)
 				lastGroup = gid
 			}
 			if d, t := todo.SubCount(it); t > 0 {
@@ -240,22 +240,49 @@ func (m model) listView() string {
 		}
 		row := m.rowContent(it, indent, badge, r.sub >= 0)
 		if pos == m.cursor {
+			cursorLine = len(out)
 			// full-width subtle highlight on the selected row; strip inner styles
 			// first so their ANSI resets don't punch holes in the background.
 			row = cursorStyle.Width(w).Render(ansi.Strip(row))
 		}
-		b.WriteString(row + "\n")
+		out = append(out, row)
 		if m.density == comfort {
-			b.WriteString("\n") // roomier rows
+			out = append(out, "") // roomier rows
 		}
 	}
 	if am := m.archivedMatches(); len(am) > 0 {
-		b.WriteString("\n" + dimStyle.Render(fmt.Sprintf("archive · %d match", len(am))) + "\n")
+		out = append(out, "", dimStyle.Render(fmt.Sprintf("archive · %d match", len(am))))
 		for _, it := range am {
-			b.WriteString("  " + doneStyle.Render(it.Text) + "\n")
+			out = append(out, "  "+doneStyle.Render(it.Text))
 		}
 	}
-	return m.frame(b.String(), m.listFooter())
+
+	footer := m.listFooter()
+	out = m.windowRows(out, cursorLine, lines(footer))
+	body := m.header() + "\n" + strings.Join(out, "\n")
+	return m.frame(body, footer)
+}
+
+// windowRows clips the list body to what fits between the header and footer,
+// keeping the cursor line centered in the viewport (clamped at both ends). It
+// returns rows unchanged when the terminal size is unknown or everything fits.
+func (m model) windowRows(rows []string, cursorLine, footLines int) []string {
+	ih := m.innerHeight()
+	if ih == 0 {
+		return rows // unknown size: let the terminal handle it
+	}
+	vh := ih - footLines - 2 // header line + frame's minimum pad line
+	if vh < 1 || len(rows) <= vh {
+		return rows
+	}
+	off := cursorLine - vh/2
+	if off < 0 {
+		off = 0
+	}
+	if off > len(rows)-vh {
+		off = len(rows) - vh
+	}
+	return rows[off : off+vh]
 }
 
 // count returns the done and total item counts across the whole board.
