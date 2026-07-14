@@ -49,7 +49,7 @@ func Usage() string { return cliUsage }
 
 // Run handles one command-API invocation and returns a process exit code.
 //
-// ponytail: last-writer-wins on the file (load, mutate, save; no lock). Fine
+// last-writer-wins on the file (load, mutate, save; no lock). Fine
 // for a single-user local todo; add locking only if concurrent writers appear.
 func Run(verb string, args []string) int {
 	if verb == "help" {

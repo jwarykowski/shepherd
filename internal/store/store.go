@@ -59,7 +59,7 @@ func ResolveProject(flag string) (string, error) {
 // wins; else an empty project is the default todo.md and a named project is
 // projects/<name>.md — both under BaseDir.
 //
-// ponytail: a future "global view" would glob BaseDir()/projects/*.md
+// a future "global view" would glob BaseDir()/projects/*.md
 // (skipping *-archive.md).
 func TodoPathFor(project string) string {
 	if p := todoFileOverride(); p != "" {
@@ -194,7 +194,7 @@ func applyMeta(it *todo.Item, key, val string) {
 	case "link":
 		it.Link = val
 	case "note":
-		// ponytail: each physical line is its own note: line, appended on load;
+		// each physical line is its own note: line, appended on load;
 		// a leading blank line is the one lost edge, not worth it.
 		if it.Note == "" {
 			it.Note = val
