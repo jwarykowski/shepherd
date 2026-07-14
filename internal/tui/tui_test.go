@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -321,6 +322,24 @@ func TestView(t *testing.T) {
 	}
 	if got := strings.Count(v, "\n") + 1; got != 20 {
 		t.Fatalf("frame not pinned to height: %d rows", got)
+	}
+}
+
+func TestListScroll(t *testing.T) {
+	items := make([]todo.Item, 40)
+	for i := range items {
+		items[i] = todo.Item{Text: fmt.Sprintf("item-%02d", i), Category: "work"}
+	}
+	m := model{input: textinput.New(), w: 50, height: 20, items: items, cursor: 30}
+	v := m.View()
+	if !strings.Contains(v, "item-30") {
+		t.Fatal("cursor row scrolled out of view")
+	}
+	if strings.Contains(v, "item-00") {
+		t.Fatal("distant top row should be windowed out")
+	}
+	if got := strings.Count(v, "\n") + 1; got != 20 {
+		t.Fatalf("windowed view should still fill height 20, got %d", got)
 	}
 }
 
