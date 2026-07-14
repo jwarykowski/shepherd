@@ -147,6 +147,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.w, m.height = msg.Width, msg.Height
+		if m.mode == modeNote {
+			m.note.SetWidth(m.width()) // keep the note editor sized while open
+		}
 		return m, nil
 	case editorDoneMsg:
 		// Reload from disk — the file may have changed under us.
@@ -190,8 +193,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var res tea.Model
 		var cmd tea.Cmd
 		switch m.mode {
-		case modeAdd, modeEdit, modeNote, modeCategory, modeDue, modeDefer, modeLink, modeFilter:
+		case modeAdd, modeEdit, modeCategory, modeDue, modeDefer, modeLink, modeFilter:
 			res, cmd = m.updateInput(msg)
+		case modeNote:
+			res, cmd = m.updateNote(msg)
 		case modeDetail:
 			res, cmd = m.updateDetail(msg)
 		case modeHelp:
@@ -469,9 +474,11 @@ func (m model) updateDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "e", "n":
 		if idx >= 0 && !m.global {
 			m.mode = modeNote
-			m.input.SetValue(m.items[idx].Note)
-			m.input.Placeholder = "note"
-			m.input.Focus()
+			m.noteEditing = false
+			m.note.SetWidth(m.width())
+			m.note.SetHeight(noteHeight)
+			m.note.SetValue(m.items[idx].Note)
+			m.note.Focus()
 		}
 	case "space", " ":
 		if idx >= 0 && !m.global {
@@ -486,6 +493,31 @@ func (m model) updateDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// updateNote drives the multi-line note editor. enter inserts a newline (the
+// textarea owns it); edits save live to the item, so esc just closes. One undo
+// snapshot is taken on the first change, giving a single entry per edit session.
+func (m model) updateNote(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	idx := m.sel()
+	if msg.String() == "esc" {
+		m.note.Blur()
+		m.noteEditing = false
+		m.mode = modeDetail
+		return m, nil
+	}
+	var cmd tea.Cmd
+	m.note, cmd = m.note.Update(msg)
+	if idx >= 0 {
+		if v := m.note.Value(); v != m.items[idx].Note { // empty clears
+			if !m.noteEditing {
+				m.beforeMutate()
+				m.noteEditing = true
+			}
+			m.items[idx].Note = v
+		}
+	}
+	return m, cmd
+}
+
 func (m model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	idx := m.sel()
 	if msg.String() == "tab" && m.mode == modeCategory && len(m.categories) > 0 {
@@ -498,8 +530,6 @@ func (m model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "esc":
 		m.input.Blur()
 		switch m.mode {
-		case modeNote:
-			m.mode = modeDetail
 		case modeFilter:
 			m.filter = ""
 			m.clamp()
@@ -528,12 +558,6 @@ func (m model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.items[idx].Text = v
 			}
 			m.mode = modeList
-		case modeNote:
-			if idx >= 0 {
-				m.beforeMutate()
-				m.items[idx].Note = v // empty clears
-			}
-			m.mode = modeDetail
 		case modeCategory:
 			if idx >= 0 {
 				m.beforeMutate()

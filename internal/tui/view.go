@@ -651,9 +651,9 @@ func (m model) detailView() string {
 	}
 	b.WriteString("\n" + dimStyle.Render("note") + "\n")
 	if m.mode == modeNote {
-		b.WriteString(m.input.View() + "\n")
+		b.WriteString(m.note.View() + "\n")
 	} else if it.Note != "" {
-		b.WriteString(it.Note + "\n")
+		b.WriteString(lipgloss.NewStyle().Width(m.width()).Render(it.Note) + "\n")
 	} else {
 		b.WriteString(dimStyle.Render("(none — press e to add)") + "\n")
 	}
@@ -661,7 +661,7 @@ func (m model) detailView() string {
 	rule := dimStyle.Render(strings.Repeat("─", m.width()))
 	var help string
 	if m.mode == modeNote {
-		help = rule + "\n" + dimStyle.Render("note: enter=save · esc=cancel")
+		help = rule + "\n" + dimStyle.Render("note: enter newline · esc done (saves as you type)")
 	} else {
 		help = rule + "\n" + dimStyle.Render("e edit note   space toggle   o open link   d/esc/q back")
 	}

@@ -196,7 +196,13 @@ func Load(path string) []todo.Item {
 			case "link":
 				last.Link = m[2]
 			case "note":
-				last.Note = m[2]
+				// ponytail: each physical line is its own note: line, appended
+				// on load; a leading blank line is the one lost edge, not worth it.
+				if last.Note == "" {
+					last.Note = m[2]
+				} else {
+					last.Note += "\n" + m[2]
+				}
 			case "status":
 				last.Status = strings.ToLower(m[2])
 			}
@@ -240,7 +246,9 @@ func Serialize(items []todo.Item) string {
 			fmt.Fprintf(&b, "  link: %s\n", strings.ReplaceAll(it.Link, "\n", " "))
 		}
 		if it.Note != "" {
-			fmt.Fprintf(&b, "  note: %s\n", strings.ReplaceAll(it.Note, "\n", " "))
+			for _, ln := range strings.Split(it.Note, "\n") {
+				fmt.Fprintf(&b, "  note: %s\n", ln)
+			}
 		}
 	}
 	return b.String()
