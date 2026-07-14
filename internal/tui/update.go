@@ -18,7 +18,7 @@ func (m model) Init() tea.Cmd { return tick() }
 // beforeMutate pushes the current state onto the undo stack, clears the redo
 // stack (a fresh edit invalidates the redo future), and marks the model dirty.
 func (m *model) beforeMutate() {
-	m.past = append(m.past, append([]todo.Item(nil), m.items...))
+	m.past = append(m.past, todo.Clone(m.items))
 	if len(m.past) > histCap {
 		m.past = m.past[len(m.past)-histCap:]
 	}
@@ -95,6 +95,68 @@ func (m model) visible() []int {
 	return idx
 }
 
+// rowRef identifies a navigable row: a parent item (sub == -1) or one of its
+// subtasks (sub is an index into m.items[item].Subs).
+type rowRef struct {
+	item int
+	sub  int
+}
+
+// rows is the flat, cursor-indexed list of visible rows: each visible parent
+// followed by its subtasks. The cursor is an index into this slice.
+func (m model) rows() []rowRef {
+	rs := make([]rowRef, 0, len(m.items))
+	for _, i := range m.visible() {
+		rs = append(rs, rowRef{i, -1})
+		for s := range m.items[i].Subs {
+			rs = append(rs, rowRef{i, s})
+		}
+	}
+	return rs
+}
+
+// selRef is the row under the cursor, or {-1,-1} when there are no rows.
+func (m model) selRef() rowRef {
+	rs := m.rows()
+	if len(rs) == 0 {
+		return rowRef{-1, -1}
+	}
+	if m.cursor >= len(rs) {
+		return rs[len(rs)-1]
+	}
+	return rs[m.cursor]
+}
+
+// rowItem returns the item a row points at: the parent, or the subtask.
+func (m model) rowItem(r rowRef) todo.Item {
+	if r.item < 0 {
+		return todo.Item{}
+	}
+	if r.sub == -1 {
+		return m.items[r.item]
+	}
+	return m.items[r.item].Subs[r.sub]
+}
+
+// rowText is the display text for a row (parent or subtask).
+func (m model) rowText(r rowRef) string { return m.rowItem(r).Text }
+
+// rowPtr returns a pointer to the item a row points at, for in-place mutation.
+func (m *model) rowPtr(r rowRef) *todo.Item {
+	if r.sub == -1 {
+		return &m.items[r.item]
+	}
+	return &m.items[r.item].Subs[r.sub]
+}
+
+// sameItem matches two items by their (near-unique) identity fields, ignoring
+// Subs/order, so the cursor can be re-placed after a resort. Item has a slice
+// field and is not comparable, so == can't be used.
+func sameItem(a, b todo.Item) bool {
+	return a.Text == b.Text && a.Created == b.Created && a.Category == b.Category &&
+		a.Prio == b.Prio && a.Due == b.Due && a.Done == b.Done
+}
+
 // archivedMatches returns archived items matching the active filter (read-only).
 func (m model) archivedMatches() []todo.Item {
 	if m.filter == "" {
@@ -110,20 +172,15 @@ func (m model) archivedMatches() []todo.Item {
 	return out
 }
 
-// sel is the real items index under the cursor, or -1 if the visible list is empty.
+// sel is the real items index of the parent under the cursor, or -1 if there
+// are no rows. Detail/note/field editors act on this parent; list-level sub
+// operations use selRef instead.
 func (m model) sel() int {
-	v := m.visible()
-	if len(v) == 0 {
-		return -1
-	}
-	if m.cursor >= len(v) {
-		return v[len(v)-1]
-	}
-	return v[m.cursor]
+	return m.selRef().item
 }
 
 func (m *model) clamp() {
-	n := len(m.visible())
+	n := len(m.rows())
 	if m.cursor >= n {
 		m.cursor = n - 1
 	}
@@ -132,11 +189,11 @@ func (m *model) clamp() {
 	}
 }
 
-// place moves the cursor onto the visible position of a given item value
-// (used after a sort re-orders the list).
+// place moves the cursor onto the parent row for a given item value (used after
+// a sort re-orders the list). Lands on the parent row, not a subtask.
 func (m *model) place(target todo.Item) {
-	for p, i := range m.visible() {
-		if m.items[i] == target {
+	for p, r := range m.rows() {
+		if r.sub == -1 && sameItem(m.items[r.item], target) {
 			m.cursor = p
 			return
 		}
@@ -193,7 +250,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var res tea.Model
 		var cmd tea.Cmd
 		switch m.mode {
-		case modeAdd, modeEdit, modeCategory, modeDue, modeDefer, modeLink, modeFilter:
+		case modeAdd, modeAddSub, modeEdit, modeCategory, modeDue, modeDefer, modeLink, modeFilter:
 			res, cmd = m.updateInput(msg)
 		case modeNote:
 			res, cmd = m.updateNote(msg)
@@ -221,14 +278,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // no mutation cases — read-only is structural here, not a per-case guard — and
 // never saves the aggregate to disk.
 func (m model) updateGlobal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	vis := m.visible()
+	rows := m.rows()
 	switch msg.String() {
 	case "q", "ctrl+c":
 		return m, tea.Quit // no save: the aggregate must never be written back
 	case "A", "esc":
 		m.toggleGlobal()
 	case "j", "down":
-		if m.cursor < len(vis)-1 {
+		if m.cursor < len(rows)-1 {
 			m.cursor++
 		}
 	case "k", "up":
@@ -282,8 +339,9 @@ func openLink(url string) tea.Cmd {
 }
 
 func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	vis := m.visible()
-	idx := m.sel()
+	rows := m.rows()
+	ref := m.selRef()
+	idx := ref.item
 	switch msg.String() {
 	case "q", "ctrl+c":
 		_ = store.Save(m.path, m.items)
@@ -294,7 +352,7 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.lastMod = store.FileModTime(m.path)
 		return m, nil
 	case "j", "down":
-		if m.cursor < len(vis)-1 {
+		if m.cursor < len(rows)-1 {
 			m.cursor++
 		}
 	case "k", "up":
@@ -304,21 +362,44 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case " ", "enter":
 		if idx >= 0 {
 			m.beforeMutate()
-			todo.SetDone(&m.items[idx], !m.items[idx].Done)
+			if ref.sub == -1 {
+				todo.SetParentDone(&m.items[idx], !m.items[idx].Done)
+			} else {
+				todo.SetSubDone(&m.items[idx], ref.sub, !m.items[idx].Subs[ref.sub].Done)
+			}
 		}
 	case "tab":
 		if idx >= 0 {
 			m.beforeMutate()
-			todo.CycleStatus(&m.items[idx], m.statuses)
+			if ref.sub == -1 {
+				todo.CycleStatus(&m.items[idx], m.statuses)
+			} else {
+				todo.CycleSubStatus(&m.items[idx], ref.sub, m.statuses)
+			}
 		}
 	case "d":
 		if idx >= 0 {
 			m.mode = modeDetail
 		}
+	case "S":
+		if idx >= 0 {
+			m.mode = modeAddSub
+			m.input.SetValue("")
+			m.input.Placeholder = "subtask text  !h|!m|!l  due:tomorrow"
+			m.input.Focus()
+		}
 	case "x":
 		if idx >= 0 {
 			m.beforeMutate()
-			m.items = append(m.items[:idx], m.items[idx+1:]...)
+			if ref.sub == -1 {
+				m.items = append(m.items[:idx], m.items[idx+1:]...)
+			} else {
+				p := &m.items[idx]
+				p.Subs = append(p.Subs[:ref.sub], p.Subs[ref.sub+1:]...)
+				if len(p.Subs) > 0 {
+					todo.SetDone(p, todo.AllSubsDone(p))
+				}
+			}
 			m.clamp()
 		}
 	case "c":
@@ -339,7 +420,7 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "U":
 		if n := len(m.past); n > 0 {
-			m.future = append(m.future, append([]todo.Item(nil), m.items...))
+			m.future = append(m.future, todo.Clone(m.items))
 			m.items = m.past[n-1]
 			m.past = m.past[:n-1]
 			m.lastEdit = time.Now()
@@ -347,7 +428,7 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "ctrl+r":
 		if n := len(m.future); n > 0 {
-			m.past = append(m.past, append([]todo.Item(nil), m.items...))
+			m.past = append(m.past, todo.Clone(m.items))
 			m.items = m.future[n-1]
 			m.future = m.future[:n-1]
 			m.lastEdit = time.Now()
@@ -355,9 +436,19 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "h", "m", "l":
 		if idx >= 0 {
+			p := strings.ToUpper(msg.String())[0]
+			if ref.sub >= 0 { // subtask priority: set in place, no resort
+				m.beforeMutate()
+				sub := &m.items[idx].Subs[ref.sub]
+				if sub.Prio == p {
+					sub.Prio = 0
+				} else {
+					sub.Prio = p
+				}
+				break
+			}
 			m.beforeMutate()
 			cur := m.items[idx]
-			p := strings.ToUpper(msg.String())[0]
 			if cur.Prio == p { // same priority again clears it
 				cur.Prio = 0
 			} else {
@@ -399,12 +490,12 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "u":
 		if idx >= 0 {
 			m.mode = modeEdit
-			m.input.SetValue(m.items[idx].Text)
+			m.input.SetValue(m.rowText(ref))
 			m.input.Placeholder = ""
 			m.input.Focus()
 		}
 	case "g":
-		if idx >= 0 {
+		if idx >= 0 && ref.sub == -1 { // field editors are parent-level
 			m.mode = modeCategory
 			m.input.SetValue(m.items[idx].Category)
 			m.input.Placeholder = "category"
@@ -417,27 +508,27 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "t":
 		if idx >= 0 {
 			m.mode = modeDue
-			m.input.SetValue(m.items[idx].Due)
+			m.input.SetValue(m.rowItem(ref).Due)
 			m.input.Placeholder = "today · tomorrow · 3d · 2w · 5m · 1y · DD-MM-YYYY"
 			m.input.Focus()
 		}
 	case "s":
 		if idx >= 0 {
 			m.mode = modeDefer
-			m.input.SetValue(m.items[idx].Defer)
+			m.input.SetValue(m.rowItem(ref).Defer)
 			m.input.Placeholder = "start/defer: today · tomorrow · 3d · 2w · DD-MM-YYYY"
 			m.input.Focus()
 		}
 	case "L":
 		if idx >= 0 {
 			m.mode = modeLink
-			m.input.SetValue(m.items[idx].Link)
+			m.input.SetValue(m.rowItem(ref).Link)
 			m.input.Placeholder = "link (url)"
 			m.input.Focus()
 		}
 	case "o":
 		if idx >= 0 {
-			return m, openLink(m.items[idx].Link)
+			return m, openLink(m.rowItem(ref).Link)
 		}
 	case "ctrl+e":
 		return m, m.openEditor()
@@ -519,7 +610,8 @@ func (m model) updateNote(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	idx := m.sel()
+	ref := m.selRef()
+	idx := ref.item
 	if msg.String() == "tab" && m.mode == modeCategory && len(m.categories) > 0 {
 		m.input.SetValue(m.categories[m.catIdx])
 		m.input.CursorEnd()
@@ -552,10 +644,23 @@ func (m model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.place(it)
 			}
 			m.mode = modeList
+		case modeAddSub:
+			if it := todo.ParseQuickAdd(v); it.Text != "" && idx >= 0 {
+				m.beforeMutate()
+				p := &m.items[idx]
+				p.Subs = append(p.Subs, it)
+				todo.SetDone(p, todo.AllSubsDone(p)) // an open sub reopens the parent
+				m.clamp()
+			}
+			m.mode = modeList
 		case modeEdit:
 			if v != "" && idx >= 0 {
 				m.beforeMutate()
-				m.items[idx].Text = v
+				if ref.sub == -1 {
+					m.items[idx].Text = v
+				} else {
+					m.items[idx].Subs[ref.sub].Text = v
+				}
 			}
 			m.mode = modeList
 		case modeCategory:
@@ -571,23 +676,27 @@ func (m model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case modeDue:
 			if idx >= 0 {
 				m.beforeMutate()
-				cur := m.items[idx]
-				cur.Due = todo.ParseDue(v) // presets/relative resolved; empty clears
-				m.items[idx] = cur
-				m.resort()
-				m.place(cur)
+				if ref.sub == -1 { // parent due affects sort order; subs keep file order
+					cur := m.items[idx]
+					cur.Due = todo.ParseDue(v) // presets/relative resolved; empty clears
+					m.items[idx] = cur
+					m.resort()
+					m.place(cur)
+				} else {
+					m.rowPtr(ref).Due = todo.ParseDue(v)
+				}
 			}
 			m.mode = modeList
 		case modeDefer:
 			if idx >= 0 {
 				m.beforeMutate()
-				m.items[idx].Defer = todo.ParseDue(v) // presets/relative resolved; empty clears
+				m.rowPtr(ref).Defer = todo.ParseDue(v) // presets/relative resolved; empty clears
 			}
 			m.mode = modeList
 		case modeLink:
 			if idx >= 0 {
 				m.beforeMutate()
-				m.items[idx].Link = v // empty clears
+				m.rowPtr(ref).Link = v // empty clears
 			}
 			m.mode = modeList
 		case modeFilter:

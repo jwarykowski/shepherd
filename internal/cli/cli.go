@@ -22,13 +22,17 @@ Usage:
   shepherd list [--json] [--all] list items (--all aggregates every board)
   shepherd stats [--json] [--all] show board metrics as charts (--all aggregates)
   shepherd add "<text>"         add an item (@category !h/!m/!l due: defer: link:)
-  shepherd done <n>             mark item n done
-  shepherd undone <n>           mark item n not done
-  shepherd status <n> <name>    set item n's status (e.g. in-progress; done|open recognised)
-  shepherd rm <n>               remove item n
+  shepherd sub <n> "<text>"     add a subtask to item n (same @/!/due: syntax)
+  shepherd done <n[.m]>         mark item n (or its subtask m) done
+  shepherd undone <n[.m]>       mark item n (or its subtask m) not done
+  shepherd status <n[.m]> <name> set item (or subtask m)'s status (e.g. in-progress; done|open recognised)
+  shepherd rm <n[.m]>           remove item n (or just its subtask m)
 
 Flags go after the verb. --project <name> (or $SHEPHERD_PROJECT) selects a
 project board (else the default): e.g. shepherd list --project web.
+
+Completing a parent completes its subtasks; completing the last subtask
+completes the parent (n.m indexes match the order shown by 'list').
 
 Board flags (bare shepherd, the interactive board):
   --project <name>  open a project's board
@@ -69,6 +73,8 @@ func Run(verb string, args []string) int {
 		return cmdStats(rest, project, os.Stdout)
 	case "add":
 		return cmdAdd(rest, project, os.Stdout)
+	case "sub":
+		return cmdSub(rest, project, os.Stdout)
 	case "done":
 		return cmdToggle(rest, project, true, os.Stdout)
 	case "undone":
@@ -110,25 +116,29 @@ func extractProject(args []string) (string, []string, error) {
 
 // itemJSON is the machine-readable view agents read via `list --json`.
 type itemJSON struct {
-	Index     int    `json:"index"`
-	Done      bool   `json:"done"`
-	Status    string `json:"status,omitempty"`   // named non-terminal status; empty when open or done
-	Priority  string `json:"priority,omitempty"` // "H"/"M"/"L"
-	Text      string `json:"text"`
-	Category  string `json:"category,omitempty"`
-	Created   string `json:"created,omitempty"`
-	Completed string `json:"completed,omitempty"`
-	Defer     string `json:"defer,omitempty"` // ISO YYYY-MM-DD
-	Due       string `json:"due,omitempty"`   // ISO YYYY-MM-DD
-	Link      string `json:"link,omitempty"`
-	Note      string `json:"note,omitempty"`
-	Project   string `json:"project,omitempty"` // board name, only in --all
+	Index     int        `json:"index"`
+	Done      bool       `json:"done"`
+	Status    string     `json:"status,omitempty"`   // named non-terminal status; empty when open or done
+	Priority  string     `json:"priority,omitempty"` // "H"/"M"/"L"
+	Text      string     `json:"text"`
+	Category  string     `json:"category,omitempty"`
+	Created   string     `json:"created,omitempty"`
+	Completed string     `json:"completed,omitempty"`
+	Defer     string     `json:"defer,omitempty"` // ISO YYYY-MM-DD
+	Due       string     `json:"due,omitempty"`   // ISO YYYY-MM-DD
+	Link      string     `json:"link,omitempty"`
+	Note      string     `json:"note,omitempty"`
+	Project   string     `json:"project,omitempty"`  // board name, only in --all
+	Subtasks  []itemJSON `json:"subtasks,omitempty"` // Index is the 1-based position under the parent (n.m)
 }
 
 func toJSON(it todo.Item, idx int) itemJSON {
 	j := itemJSON{Index: idx, Done: it.Done, Status: it.Status, Text: it.Text, Category: it.Category, Created: it.Created, Completed: it.Completed, Defer: it.Defer, Due: it.Due, Link: it.Link, Note: it.Note, Project: it.Source}
 	if it.Prio != 0 {
 		j.Priority = string(it.Prio)
+	}
+	for si, sub := range it.Subs {
+		j.Subtasks = append(j.Subtasks, toJSON(sub, si+1))
 	}
 	return j
 }
@@ -171,6 +181,9 @@ func cmdList(args []string, project string, w io.Writer) int {
 	}
 	for i, it := range items {
 		emit(w, formatLine(i+1, it))
+		for si, sub := range it.Subs {
+			emit(w, formatSub(i+1, si+1, sub))
+		}
 	}
 	return 0
 }
@@ -196,26 +209,64 @@ func cmdAdd(args []string, project string, w io.Writer) int {
 	return 0
 }
 
-func cmdToggle(args []string, project string, done bool, w io.Writer) int {
+// cmdSub adds a subtask to item n: shepherd sub <n> "<text>". The text takes
+// the same quick-add tokens as `add`. Adding an open subtask reopens the parent
+// (it's no longer all-done).
+func cmdSub(args []string, project string, w io.Writer) int {
 	path := store.TodoPathFor(project)
 	items := store.Load(path)
 	idx, ok := parseIndex(args, len(items))
 	if !ok {
 		return 1
 	}
-	todo.SetDone(&items[idx-1], done)
+	text := strings.TrimSpace(strings.Join(args[1:], " "))
+	if text == "" {
+		fmt.Fprintln(os.Stderr, `shepherd: sub needs text, e.g. shepherd sub 1 "parse tokens"`)
+		return 2
+	}
+	sub := todo.ParseQuickAdd(text)
+	if sub.Text == "" {
+		fmt.Fprintln(os.Stderr, "shepherd: nothing to add after parsing tokens")
+		return 2
+	}
+	parent := &items[idx-1]
+	parent.Subs = append(parent.Subs, sub)
+	todo.SetDone(parent, todo.AllSubsDone(parent))
 	if err := store.Save(path, items); err != nil {
 		fmt.Fprintln(os.Stderr, "shepherd:", err)
 		return 1
 	}
-	emit(w, formatLine(idx, items[idx-1]))
+	emit(w, formatSub(idx, len(parent.Subs), sub))
+	return 0
+}
+
+func cmdToggle(args []string, project string, done bool, w io.Writer) int {
+	path := store.TodoPathFor(project)
+	items := store.Load(path)
+	p, s, ok := parseRef(args, items)
+	if !ok {
+		return 1
+	}
+	if s == 0 {
+		todo.SetParentDone(&items[p-1], done)
+	} else {
+		todo.SetSubDone(&items[p-1], s-1, done)
+	}
+	if err := store.Save(path, items); err != nil {
+		fmt.Fprintln(os.Stderr, "shepherd:", err)
+		return 1
+	}
+	emit(w, formatLine(p, items[p-1]))
+	if s > 0 {
+		emit(w, formatSub(p, s, items[p-1].Subs[s-1]))
+	}
 	return 0
 }
 
 func cmdSetStatus(args []string, project string, w io.Writer) int {
 	path := store.TodoPathFor(project)
 	items := store.Load(path)
-	idx, ok := parseIndex(args, len(items))
+	p, s, ok := parseRef(args, items)
 	if !ok {
 		return 1
 	}
@@ -224,30 +275,75 @@ func cmdSetStatus(args []string, project string, w io.Writer) int {
 		return 2
 	}
 	name := strings.ToLower(strings.TrimSpace(args[1]))
-	todo.SetStatus(&items[idx-1], name)
+	if s == 0 {
+		todo.SetStatus(&items[p-1], name)
+	} else {
+		todo.SetSubStatus(&items[p-1], s-1, name)
+	}
 	if err := store.Save(path, items); err != nil {
 		fmt.Fprintln(os.Stderr, "shepherd:", err)
 		return 1
 	}
-	emit(w, formatLine(idx, items[idx-1]))
+	emit(w, formatLine(p, items[p-1]))
+	if s > 0 {
+		emit(w, formatSub(p, s, items[p-1].Subs[s-1]))
+	}
 	return 0
 }
 
 func cmdRemove(args []string, project string, w io.Writer) int {
 	path := store.TodoPathFor(project)
 	items := store.Load(path)
-	idx, ok := parseIndex(args, len(items))
+	p, s, ok := parseRef(args, items)
 	if !ok {
 		return 1
 	}
-	removed := items[idx-1]
-	items = append(items[:idx-1], items[idx:]...)
+	var removed string
+	if s == 0 {
+		removed = items[p-1].Text
+		items = append(items[:p-1], items[p:]...)
+	} else {
+		parent := &items[p-1]
+		removed = parent.Subs[s-1].Text
+		parent.Subs = append(parent.Subs[:s-1], parent.Subs[s:]...)
+		// dropping a sub can complete the parent (all remaining subs done).
+		if len(parent.Subs) > 0 {
+			todo.SetDone(parent, todo.AllSubsDone(parent))
+		}
+	}
 	if err := store.Save(path, items); err != nil {
 		fmt.Fprintln(os.Stderr, "shepherd:", err)
 		return 1
 	}
-	emit(w, fmt.Sprintf("removed %q", removed.Text))
+	emit(w, fmt.Sprintf("removed %q", removed))
 	return 0
+}
+
+// parseRef reads a 1-based item ref from args: "n" for a parent, or "n.m" for
+// subtask m of item n. Returns (parent, sub, ok) with sub==0 meaning the parent
+// itself. Prints the reason to stderr and returns ok=false on any problem.
+func parseRef(args []string, items []todo.Item) (int, int, bool) {
+	if len(args) == 0 {
+		fmt.Fprintln(os.Stderr, "shepherd: need an item number")
+		return 0, 0, false
+	}
+	tok := args[0]
+	pStr, sStr, dotted := strings.Cut(tok, ".")
+	p, err := strconv.Atoi(pStr)
+	if err != nil || p < 1 || p > len(items) {
+		fmt.Fprintf(os.Stderr, "shepherd: invalid item number %q (have %d items)\n", tok, len(items))
+		return 0, 0, false
+	}
+	if !dotted {
+		return p, 0, true
+	}
+	subs := len(items[p-1].Subs)
+	s, err := strconv.Atoi(sStr)
+	if err != nil || s < 1 || s > subs {
+		fmt.Fprintf(os.Stderr, "shepherd: invalid subtask number %q (item %d has %d subtasks)\n", tok, p, subs)
+		return 0, 0, false
+	}
+	return p, s, true
 }
 
 // parseIndex reads a 1-based item number from args and bounds-checks it against
@@ -285,6 +381,30 @@ func formatLine(idx int, it todo.Item) string {
 	}
 	if it.Category != "" {
 		fmt.Fprintf(&b, "  @%s", it.Category)
+	}
+	if it.Due != "" {
+		fmt.Fprintf(&b, "  due %s", it.Due)
+	}
+	if d, total := todo.SubCount(it); total > 0 {
+		fmt.Fprintf(&b, "  %d/%d", d, total)
+	}
+	return b.String()
+}
+
+// formatSub renders a subtask as an indented, dotted-index line under its parent.
+func formatSub(parent, sub int, it todo.Item) string {
+	box := " "
+	if it.Done {
+		box = "x"
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "  %d.%d\t[%s]", parent, sub, box)
+	if it.Prio != 0 {
+		fmt.Fprintf(&b, " (%c)", it.Prio)
+	}
+	fmt.Fprintf(&b, " %s", it.Text)
+	if !it.Done && it.Status != "" {
+		fmt.Fprintf(&b, "  ~%s", it.Status)
 	}
 	if it.Due != "" {
 		fmt.Fprintf(&b, "  due %s", it.Due)

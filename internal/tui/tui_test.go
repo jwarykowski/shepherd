@@ -80,6 +80,74 @@ func TestModelActions(t *testing.T) {
 	}
 }
 
+func TestSubtasks(t *testing.T) {
+	m := model{input: textinput.New(), statuses: []string{"open", "in-progress", "done"},
+		items: []todo.Item{{Text: "parent"}}}
+
+	// S adds a subtask to the selected parent
+	m = drive(m, "S")
+	m.input.SetValue("step one")
+	m = drive(m, "enter")
+	m = drive(m, "S")
+	m.input.SetValue("step two")
+	m = drive(m, "enter")
+	if len(m.items[0].Subs) != 2 {
+		t.Fatalf("want 2 subs, got %d", len(m.items[0].Subs))
+	}
+	if got := len(m.rows()); got != 3 { // parent + 2 subs
+		t.Fatalf("want 3 rows, got %d", got)
+	}
+
+	// navigate onto the first sub, toggle it: parent stays open
+	m = drive(m, "j", " ")
+	if !m.items[0].Subs[0].Done {
+		t.Fatal("space did not toggle the subtask")
+	}
+	if m.items[0].Done {
+		t.Fatal("parent went done with one sub still open")
+	}
+	// toggle the last sub: parent auto-completes
+	m = drive(m, "j", " ")
+	if !m.items[0].Done {
+		t.Fatalf("all subs done should complete parent: %+v", m.items[0])
+	}
+
+	// undo restores the prior sub state (deep-copy snapshot, not shared slice)
+	m = drive(m, "U")
+	if m.items[0].Done || m.items[0].Subs[1].Done {
+		t.Fatalf("undo did not restore sub state: %+v", m.items[0])
+	}
+
+	// cursor sits on the still-open second subtask; tab cycles its status
+	ref := m.selRef()
+	if ref.sub < 0 || m.items[0].Subs[ref.sub].Done {
+		t.Fatalf("expected cursor on an open subtask row: %+v", ref)
+	}
+	m = drive(m, "tab")
+	if m.items[0].Subs[ref.sub].Status != "in-progress" {
+		t.Fatalf("tab did not set subtask status: %+v", m.items[0].Subs[ref.sub])
+	}
+
+	// category (g) stays parent-only: a no-op on a sub row
+	if got := drive(m, "g"); got.mode != modeList {
+		t.Fatalf("g on a subtask row should be a no-op, entered mode %d", got.mode)
+	}
+	// due/defer/link DO work on a sub: set a due date via t
+	m = drive(m, "t")
+	m.input.SetValue("tomorrow")
+	m = drive(m, "enter")
+	if m.items[0].Subs[ref.sub].Due == "" {
+		t.Fatalf("t on a subtask row did not set its due date: %+v", m.items[0].Subs[ref.sub])
+	}
+
+	// x on a sub row removes just that subtask
+	before := len(m.items[0].Subs)
+	m = drive(m, "x")
+	if len(m.items[0].Subs) != before-1 {
+		t.Fatalf("x did not delete the subtask: %d subs", len(m.items[0].Subs))
+	}
+}
+
 func TestPriorityToggleOff(t *testing.T) {
 	m := model{input: textinput.New(), items: []todo.Item{{Text: "a"}}}
 	m = drive(m, "h")

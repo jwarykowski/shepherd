@@ -115,6 +115,7 @@ type mode int
 const (
 	modeList mode = iota
 	modeAdd
+	modeAddSub
 	modeEdit
 	modeNote
 	modeCategory

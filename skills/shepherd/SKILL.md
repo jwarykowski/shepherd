@@ -23,11 +23,21 @@ Run `shepherd help` for the authoritative command list. Summary:
 | `shepherd list --all --json` | read across every board; adds a `project` field |
 | `shepherd stats --json [--all]` | board metrics (JSON numbers; drop `--json` for charts) |
 | `shepherd add "<text>"` | add an item |
-| `shepherd done <n>` / `undone <n>` | (un)complete item n |
-| `shepherd status <n> <name>` | set item n's status (`in-progress`; `done`/`open` recognised) |
-| `shepherd rm <n>` | remove item n |
+| `shepherd sub <n> "<text>"` | add a subtask to item n |
+| `shepherd done <n[.m]>` / `undone <n[.m]>` | (un)complete item n, or its subtask m |
+| `shepherd status <n[.m]> <name>` | set item n's (or subtask m's) status (`in-progress`; `done`/`open` recognised) |
+| `shepherd rm <n[.m]>` | remove item n, or just its subtask m |
 
 Indexes are 1-based and match `list` order. Read with `--json`, act by index.
+
+## Subtasks
+
+Items can hold one level of subtasks. `shepherd sub <n> "<text>"` adds one
+(same quick-add tokens as `add`). Address a subtask as `n.m` (subtask `m` of
+item `n`) in `done`/`undone`/`rm`. Completion cascades both ways: completing a
+parent completes its subtasks, and completing the last subtask completes the
+parent. `list --json` nests them under each item's `subtasks` array (each with
+a 1-based `index` within the parent). `stats` counts top-level items only.
 
 ## Projects
 

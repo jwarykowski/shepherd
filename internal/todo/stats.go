@@ -72,6 +72,9 @@ type Stats struct {
 }
 
 // Compute buckets the full item set (open + done, incl. archived) into Stats.
+// Subtasks are decomposition of their parent, not standalone board work, so
+// they're deliberately excluded: this counts only top-level items (their Subs
+// ride along on the parent but never enter the loop).
 func Compute(items []Item) Stats {
 	today, err := time.Parse(dateFormat, Today())
 	if err != nil {
