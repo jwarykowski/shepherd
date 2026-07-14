@@ -16,6 +16,11 @@ import (
 var (
 	lineRE = regexp.MustCompile(`^- \[([ xX])\] (?:\(([HMLhml])\) )?(.*)$`)
 	metaRE = regexp.MustCompile(`^  (created|completed|defer|note|category|due|link|status): (.*)$`)
+	// subtask lines are the same checklist syntax indented two spaces, with
+	// their own meta indented four. They never collide with metaRE (which needs
+	// a bare `word:` at two spaces, never `- [`).
+	subLineRE = regexp.MustCompile(`^  - \[([ xX])\] (?:\(([HMLhml])\) )?(.*)$`)
+	subMetaRE = regexp.MustCompile(`^    (created|completed|defer|note|category|due|link|status): (.*)$`)
 )
 
 // projectRE is the allowed project-name slug. Anchored and free of path
@@ -54,7 +59,7 @@ func ResolveProject(flag string) (string, error) {
 // wins; else an empty project is the default todo.md and a named project is
 // projects/<name>.md — both under BaseDir.
 //
-// ponytail: a future "global view" would glob BaseDir()/projects/*.md
+// a future "global view" would glob BaseDir()/projects/*.md
 // (skipping *-archive.md).
 func TodoPathFor(project string) string {
 	if p := todoFileOverride(); p != "" {
@@ -164,91 +169,128 @@ func BoardsLatestMod() time.Time {
 	return latest
 }
 
+// parseCheck builds an Item from a checklist-line regexp match (done, prio, text).
+func parseCheck(m []string) todo.Item {
+	it := todo.Item{Done: m[1] != " ", Text: m[3]}
+	if m[2] != "" {
+		it.Prio = strings.ToUpper(m[2])[0]
+	}
+	return it
+}
+
+// applyMeta sets one metadata field on an item from a meta-line key/value.
+func applyMeta(it *todo.Item, key, val string) {
+	switch key {
+	case "created":
+		it.Created = val
+	case "completed":
+		it.Completed = val
+	case "defer":
+		it.Defer = val
+	case "category":
+		it.Category = strings.ToLower(val)
+	case "due":
+		it.Due = val
+	case "link":
+		it.Link = val
+	case "note":
+		// each physical line is its own note: line, appended on load;
+		// a leading blank line is the one lost edge, not worth it.
+		if it.Note == "" {
+			it.Note = val
+		} else {
+			it.Note += "\n" + val
+		}
+	case "status":
+		it.Status = strings.ToLower(val)
+	}
+}
+
 // Load parses the markdown checklist at path into items (nil if unreadable).
+// A column-0 checklist line starts a parent; a two-space checklist line is a
+// subtask of that parent; two/four-space meta lines attach to the parent/sub.
 func Load(path string) []todo.Item {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil
 	}
 	var items []todo.Item
+	curSub := -1 // index into the last parent's Subs, or -1 for the parent itself
 	for _, ln := range strings.Split(string(data), "\n") {
 		if m := lineRE.FindStringSubmatch(ln); m != nil {
-			it := todo.Item{Done: m[1] != " ", Text: m[3]}
-			if m[2] != "" {
-				it.Prio = strings.ToUpper(m[2])[0]
+			items = append(items, parseCheck(m))
+			curSub = -1
+			continue
+		}
+		if m := subLineRE.FindStringSubmatch(ln); m != nil && len(items) > 0 {
+			parent := &items[len(items)-1]
+			parent.Subs = append(parent.Subs, parseCheck(m))
+			curSub = len(parent.Subs) - 1
+			continue
+		}
+		if m := subMetaRE.FindStringSubmatch(ln); m != nil && len(items) > 0 {
+			parent := &items[len(items)-1]
+			if curSub >= 0 && curSub < len(parent.Subs) {
+				applyMeta(&parent.Subs[curSub], m[1], m[2])
 			}
-			items = append(items, it)
 			continue
 		}
 		if m := metaRE.FindStringSubmatch(ln); m != nil && len(items) > 0 {
-			last := &items[len(items)-1]
-			switch m[1] {
-			case "created":
-				last.Created = m[2]
-			case "completed":
-				last.Completed = m[2]
-			case "defer":
-				last.Defer = m[2]
-			case "category":
-				last.Category = strings.ToLower(m[2])
-			case "due":
-				last.Due = m[2]
-			case "link":
-				last.Link = m[2]
-			case "note":
-				// ponytail: each physical line is its own note: line, appended
-				// on load; a leading blank line is the one lost edge, not worth it.
-				if last.Note == "" {
-					last.Note = m[2]
-				} else {
-					last.Note += "\n" + m[2]
-				}
-			case "status":
-				last.Status = strings.ToLower(m[2])
-			}
+			applyMeta(&items[len(items)-1], m[1], m[2])
 		}
 	}
 	return items
 }
 
-// Serialize renders items as the on-disk markdown format.
+// writeItem renders one item's checklist line and meta at the given indent
+// (parent: "", meta at "  "; subtask: "  ", meta at "    ").
+func writeItem(b *strings.Builder, it todo.Item, indent string) {
+	box := " "
+	if it.Done {
+		box = "x"
+	}
+	tag := ""
+	if it.Prio != 0 {
+		tag = fmt.Sprintf("(%c) ", it.Prio)
+	}
+	fmt.Fprintf(b, "%s- [%s] %s%s\n", indent, box, tag, it.Text)
+	meta := indent + "  "
+	if it.Created != "" {
+		fmt.Fprintf(b, "%screated: %s\n", meta, it.Created)
+	}
+	if it.Completed != "" {
+		fmt.Fprintf(b, "%scompleted: %s\n", meta, it.Completed)
+	}
+	if it.Defer != "" {
+		fmt.Fprintf(b, "%sdefer: %s\n", meta, it.Defer)
+	}
+	if it.Due != "" {
+		fmt.Fprintf(b, "%sdue: %s\n", meta, it.Due)
+	}
+	if it.Category != "" {
+		fmt.Fprintf(b, "%scategory: %s\n", meta, it.Category)
+	}
+	if !it.Done && it.Status != "" {
+		fmt.Fprintf(b, "%sstatus: %s\n", meta, it.Status)
+	}
+	if it.Link != "" {
+		fmt.Fprintf(b, "%slink: %s\n", meta, strings.ReplaceAll(it.Link, "\n", " "))
+	}
+	if it.Note != "" {
+		for _, ln := range strings.Split(it.Note, "\n") {
+			fmt.Fprintf(b, "%snote: %s\n", meta, ln)
+		}
+	}
+}
+
+// Serialize renders items as the on-disk markdown format. Each parent's meta is
+// written before its subtasks; subtask Subs are never recursed into (one level).
 func Serialize(items []todo.Item) string {
 	var b strings.Builder
 	for _, it := range items {
-		box := " "
-		if it.Done {
-			box = "x"
-		}
-		tag := ""
-		if it.Prio != 0 {
-			tag = fmt.Sprintf("(%c) ", it.Prio)
-		}
-		fmt.Fprintf(&b, "- [%s] %s%s\n", box, tag, it.Text)
-		if it.Created != "" {
-			fmt.Fprintf(&b, "  created: %s\n", it.Created)
-		}
-		if it.Completed != "" {
-			fmt.Fprintf(&b, "  completed: %s\n", it.Completed)
-		}
-		if it.Defer != "" {
-			fmt.Fprintf(&b, "  defer: %s\n", it.Defer)
-		}
-		if it.Due != "" {
-			fmt.Fprintf(&b, "  due: %s\n", it.Due)
-		}
-		if it.Category != "" {
-			fmt.Fprintf(&b, "  category: %s\n", it.Category)
-		}
-		if !it.Done && it.Status != "" {
-			fmt.Fprintf(&b, "  status: %s\n", it.Status)
-		}
-		if it.Link != "" {
-			fmt.Fprintf(&b, "  link: %s\n", strings.ReplaceAll(it.Link, "\n", " "))
-		}
-		if it.Note != "" {
-			for _, ln := range strings.Split(it.Note, "\n") {
-				fmt.Fprintf(&b, "  note: %s\n", ln)
-			}
+		writeItem(&b, it, "")
+		for _, sub := range it.Subs {
+			writeItem(&b, sub, "  ")
 		}
 	}
 	return b.String()

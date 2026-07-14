@@ -21,6 +21,11 @@ type Item struct {
 	// Source is the board an item came from in an aggregated (global) view,
 	// e.g. "web" or "default". Derived from the filename; never serialized.
 	Source string
+	// Subs are one level of nested subtasks. A subtask is a full Item, but its
+	// own Subs and Source are never serialized — subtasks don't nest, and they
+	// inherit the parent's board. A slice field makes Item non-comparable; use
+	// Clone/positional lookups, never == or reflect.DeepEqual on Item.
+	Subs []Item
 }
 
 // ParseQuickAdd splits an add line into text plus @category, !h/!m/!l priority,

@@ -109,6 +109,36 @@ func TestRoundTripMetadata(t *testing.T) {
 	}
 }
 
+// TestSubtaskRoundTrip covers nested subtasks: a two-space checklist line is a
+// child, its four-space meta attaches to the child, and the whole thing
+// re-serializes byte-identically with parent meta before the subs.
+func TestSubtaskRoundTrip(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "todo.md")
+	src := "- [ ] (H) parent\n  created: 2026-07-10 13:40\n  - [ ] first step\n  - [x] (M) second step\n    due: 2026-07-15\n- [ ] loner\n"
+	if err := os.WriteFile(p, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	items := Load(p)
+	if len(items) != 2 {
+		t.Fatalf("want 2 parents, got %d: %+v", len(items), items)
+	}
+	if len(items[0].Subs) != 2 {
+		t.Fatalf("want 2 subs on parent, got %d", len(items[0].Subs))
+	}
+	if items[0].Subs[1].Text != "second step" || !items[0].Subs[1].Done || items[0].Subs[1].Prio != 'M' || items[0].Subs[1].Due != "2026-07-15" {
+		t.Fatalf("second sub parsed wrong: %+v", items[0].Subs[1])
+	}
+	if len(items[1].Subs) != 0 {
+		t.Fatalf("loner should have no subs")
+	}
+	if err := Save(p, items); err != nil {
+		t.Fatal(err)
+	}
+	if got := string(mustRead(t, p)); got != src {
+		t.Fatalf("subtask round-trip mismatch:\nwant %q\ngot  %q", src, got)
+	}
+}
+
 func TestAppendArchive(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "todo.md")
 	done := []todo.Item{{Text: "done one", Done: true}}

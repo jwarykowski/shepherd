@@ -8,14 +8,21 @@ format.
 - `shepherd list --all --json` — read across every board; adds a `project` field per item
 - `shepherd stats [--json] [--all]` — board metrics (charts, or `--json` numbers)
 - `shepherd add "buy milk @home !h due:tomorrow"` — add an item
-- `shepherd done <n>` / `shepherd undone <n>` — (un)complete item n
-- `shepherd status <n> <name>` — set item n's status (`in-progress`; `done`/`open` recognised)
-- `shepherd rm <n>` — remove item n
+- `shepherd sub <n> "<text>"` — add a subtask to item n (same quick-add tokens)
+- `shepherd done <n[.m]>` / `shepherd undone <n[.m]>` — (un)complete item n, or its subtask m
+- `shepherd status <n[.m]> <name>` — set item n's (or subtask m's) status (`in-progress`; `done`/`open` recognised)
+- `shepherd rm <n[.m]>` — remove item n, or just its subtask m
 
 Indexes are 1-based and match `list` order. Quick-add tokens: `@category`,
 `!h`/`!m`/`!l` priority, `due:<today|tomorrow|+3d|15-07-2026>`,
 `defer:<same date forms>` (start/defer date), `link:<url>`. `list --json`
 reports `completed` (done timestamp), `defer`, `link`, and `status` per item.
+
+Subtasks nest one level under an item. `list --json` puts them in each item's
+`subtasks` array (1-based within the parent); address them as `n.m`. Completion
+cascades both ways: completing a parent completes all its subtasks, and
+completing the last subtask completes the parent. Stats count top-level items
+only — subtasks are decomposition, not separate board work.
 
 Items have a status: `done` is terminal; between open and done there can be
 named intermediate statuses (e.g. `in-progress`), configured as an ordered

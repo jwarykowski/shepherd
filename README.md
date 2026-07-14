@@ -19,6 +19,7 @@ file). See [storage](#storage).
 
 - [install](#install)
 - [usage](#usage)
+- [subtasks](#subtasks)
 - [projects](#projects)
 - [global view](#global-view)
 - [launch filter](#launch-filter)
@@ -58,7 +59,7 @@ herdr plugin install jwarykowski/shepherd
 | key | action |
 |-----|--------|
 | `j` / `↓`, `k` / `↑` | move |
-| `space` / `enter` | toggle done |
+| `space` / `enter` | toggle done (on a parent, cascades to its subtasks; the last subtask done completes the parent) |
 | `tab` | cycle status (open → in-progress → done → open); see `statuses` config |
 | `h` / `m` / `l` | set priority high / medium / low |
 | `g` | set category |
@@ -67,7 +68,8 @@ herdr plugin install jwarykowski/shepherd
 | `L` | set a reference link (url) |
 | `o` | open the selected item's link in the browser |
 | `a` | add item (inline syntax below) |
-| `u` | edit item text |
+| `S` | add a subtask to the selected item |
+| `u` | edit item (or subtask) text |
 | `d` | open detail view (shows every field) |
 | `v` | cycle view: category / priority / table |
 | `A` | toggle the [global view](#global-view) across all boards |
@@ -96,6 +98,48 @@ idle pause (`autosave` seconds, default 60; `0` disables), or on demand with
 `w`; the header shows `● unsaved` / `● saved`. The board reloads on-disk changes
 automatically when you have no unsaved edits, so external edits (or a dotfile
 sync) show up on their own.
+
+## subtasks
+
+Any item can hold **one level** of subtasks — the steps that make up a task.
+Each subtask is a full item (its own done state, priority, due date, …); it just
+lives nested under its parent.
+
+On the board, subtasks render indented beneath their parent, and the parent
+shows a `done/total` badge:
+
+```
+○ ship cli edit                    1/3   high
+    ○ parse tokens                     medium
+    ✓ wire into Run
+    ○ update usage
+```
+
+- `S` — add a subtask to the selected item (same quick-add syntax as `a`).
+- On a subtask row every per-item key works as it does on a parent: `space`
+  toggle, `tab` status, `u` text, `h`/`m`/`l` priority, `t` due, `s` defer,
+  `L` link, `o` open link, `x` delete. Overdue/defer labels show on the row.
+- `d` opens the subtask's detail view — its own fields plus a `parent` line
+  naming the task it belongs to; edit its note there with `e`, same as a parent.
+- `g` (category) is the one exception — it's parent-only, since a subtask shares
+  its parent's board; it's dimmed in the footer on a subtask row. Set a
+  subtask's fields at creation from the CLI too:
+  `shepherd sub <n> "text @home !h due:tomorrow defer:1w link:https://…"`.
+
+**Completion cascades both ways:** completing a parent completes all its
+subtasks, and completing the last open subtask completes the parent (reopening
+one reopens the parent). From the CLI:
+
+```sh
+shepherd sub 2 "chop onions !m"   # add subtask to item 2
+shepherd done 2.1                 # complete subtask 1 of item 2
+shepherd done 2                   # complete item 2 and all its subtasks
+shepherd rm 2.1                   # remove just that subtask
+```
+
+`list --json` nests them under each item's `subtasks` array (each with a 1-based
+`index` within the parent). `stats` counts top-level items only — subtasks are
+decomposition, not separate board work.
 
 ## projects
 
@@ -171,11 +215,16 @@ shepherd list [--json]              # show items with their index
 shepherd list --all [--json]        # aggregate across every board (read-only)
 shepherd stats [--json] [--all]     # board metrics as charts (--json = numbers)
 shepherd add "buy milk @home !h due:tomorrow"
-shepherd done 2                     # mark item 2 done
-shepherd undone 2                   # mark item 2 not done
+shepherd sub 2 "chop onions !m"     # add a subtask to item 2
+shepherd done 2                     # mark item 2 done (cascades to its subtasks)
+shepherd done 2.1                   # mark subtask 1 of item 2 done
+shepherd undone 2.1                 # reopen subtask 1 (also reopens the parent)
 shepherd status 2 in-progress       # set item 2's status (done|open recognised)
-shepherd rm 2                       # remove item 2
+shepherd rm 2                       # remove item 2 (rm 2.1 removes just the subtask)
 ```
+
+`done`/`undone`/`rm` take a dotted `n.m` reference for subtask `m` of item `n`;
+see [subtasks](#subtasks) for the cascade rules.
 
 Flags go **after** the verb. Add `--project <name>` (or set `$SHEPHERD_PROJECT`)
 to target a project board instead of the default:
@@ -274,6 +323,18 @@ sub-lines:
 
 `completed` (a timestamp) is added automatically when an item is marked done and
 cleared if it's reopened.
+
+[Subtasks](#subtasks) nest as further-indented checklist lines — two spaces for
+the `- [ ]`, four for their own metadata — written after the parent's metadata:
+
+```markdown
+- [ ] (H) ship cli edit
+  created: 10-07-2026 13:40
+  category: shepherd
+  - [ ] (M) parse tokens
+  - [x] wire into Run
+    due: 2026-07-15
+```
 
 `status` is the named intermediate status (`tab` cycles it — see the `statuses`
 config). It rides as a sub-line only on non-done items with a status past the
