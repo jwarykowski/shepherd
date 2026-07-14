@@ -6,6 +6,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/table"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"shepherd/internal/todo"
 )
@@ -14,7 +15,7 @@ import (
 var (
 	dimStyle    = lipgloss.NewStyle().Faint(true)
 	doneStyle   = lipgloss.NewStyle().Faint(true).Strikethrough(true)
-	cursorStyle = lipgloss.NewStyle().Reverse(true)
+	cursorStyle = lipgloss.NewStyle().Background(lipgloss.AdaptiveColor{Light: "254", Dark: "236"})
 	boxStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
 	progStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("4"))
 	matchStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("4"))
@@ -179,9 +180,6 @@ func (m model) listView() string {
 			text += " " + dimStyle.Render("["+it.Source+"]")
 		}
 		mark := " "
-		if pos == m.cursor {
-			mark = cursorStyle.Render(" ")
-		}
 		// right cluster: due (left) then priority label flush far-right.
 		// Overdue rows live under the ⚠ overdue group, so don't repeat "overdue" on the line.
 		label := ""
@@ -216,7 +214,13 @@ func (m model) listView() string {
 		if gap < 1 {
 			gap = 1
 		}
-		b.WriteString(left + strings.Repeat(" ", gap) + label + "\n")
+		row := left + strings.Repeat(" ", gap) + label
+		if pos == m.cursor {
+			// full-width subtle highlight on the selected row; strip inner styles
+			// first so their ANSI resets don't punch holes in the background.
+			row = cursorStyle.Width(w).Render(ansi.Strip(row))
+		}
+		b.WriteString(row + "\n")
 		if m.density == comfort {
 			b.WriteString("\n") // roomier rows
 		}
