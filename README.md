@@ -19,6 +19,7 @@ file). See [storage](#storage).
 
 - [install](#install)
 - [usage](#usage)
+- [subtasks](#subtasks)
 - [projects](#projects)
 - [global view](#global-view)
 - [launch filter](#launch-filter)
