@@ -213,9 +213,11 @@ always valid. Indexes are 1-based and match `list` order.
 ```sh
 shepherd list [--json]              # show items with their index
 shepherd list --all [--json]        # aggregate across every board (read-only)
+shepherd list --filter home         # only items matching the query, real indexes kept
 shepherd stats [--json] [--all]     # board metrics as charts (--json = numbers)
 shepherd add "buy milk @home !h due:tomorrow"
 shepherd sub 2 "chop onions !m"     # add a subtask to item 2
+shepherd edit 2 "@work !h due:friday" # merge tokens onto item 2 (2.1 edits a subtask)
 shepherd done 2                     # mark item 2 done (cascades to its subtasks)
 shepherd done 2.1                   # mark subtask 1 of item 2 done
 shepherd undone 2.1                 # reopen subtask 1 (also reopens the parent)
@@ -223,8 +225,14 @@ shepherd status 2 in-progress       # set item 2's status (done|open recognised)
 shepherd rm 2                       # remove item 2 (rm 2.1 removes just the subtask)
 ```
 
-`done`/`undone`/`rm` take a dotted `n.m` reference for subtask `m` of item `n`;
-see [subtasks](#subtasks) for the cascade rules.
+`done`/`undone`/`rm`/`edit` take a dotted `n.m` reference for subtask `m` of
+item `n`; see [subtasks](#subtasks) for the cascade rules.
+
+`edit <n[.m]> "<tokens>"` sets only the fields the tokens carry — `@category`,
+`!h`/`!m`/`!l`, `due:`, `defer:`, `link:` — leaving the rest untouched; the text
+is replaced only when the tokens include plain words. `list --filter <q>`
+matches text/note/category/due/defer/link and keeps each item's real board
+index, so `done`/`rm` on a filtered listing still hit the right item.
 
 Flags go **after** the verb. Add `--project <name>` (or set `$SHEPHERD_PROJECT`)
 to target a project board instead of the default:

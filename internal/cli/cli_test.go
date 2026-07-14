@@ -59,6 +59,70 @@ func TestCLIRoundTrip(t *testing.T) {
 	}
 }
 
+// TestCLIEdit checks that edit merges tokens onto an item (text preserved on a
+// token-only edit, replaced when plain words are given) and can target a subtask.
+func TestCLIEdit(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "todo.md")
+	t.Setenv("SHEPHERD_TODO_FILE", path)
+
+	cmdAdd([]string{"write report"}, "", &bytes.Buffer{})
+	if code := cmdEdit([]string{"1", "@work !h due:2026-07-20"}, "", &bytes.Buffer{}); code != 0 {
+		t.Fatalf("edit exit %d", code)
+	}
+	it := store.Load(path)[0]
+	if it.Text != "write report" || it.Category != "work" || it.Prio != 'H' || it.Due != "2026-07-20" {
+		t.Fatalf("token-only edit wrong: %+v", it)
+	}
+	if code := cmdEdit([]string{"1", "final report"}, "", &bytes.Buffer{}); code != 0 {
+		t.Fatalf("edit text exit %d", code)
+	}
+	if it := store.Load(path)[0]; it.Text != "final report" || it.Prio != 'H' {
+		t.Fatalf("text edit wrong: %+v", it)
+	}
+
+	cmdSub([]string{"1", "gather data"}, "", &bytes.Buffer{})
+	if code := cmdEdit([]string{"1.1", "!m due:2026-07-18"}, "", &bytes.Buffer{}); code != 0 {
+		t.Fatalf("edit subtask exit %d", code)
+	}
+	if sub := store.Load(path)[0].Subs[0]; sub.Text != "gather data" || sub.Prio != 'M' || sub.Due != "2026-07-18" {
+		t.Fatalf("subtask edit wrong: %+v", sub)
+	}
+
+	if code := cmdEdit([]string{"1"}, "", &bytes.Buffer{}); code == 0 {
+		t.Fatal("edit with no tokens should error")
+	}
+}
+
+// TestCLIListFilter checks --filter narrows the output while keeping each item's
+// real board index (so done/rm by that index still work) and reports no matches.
+func TestCLIListFilter(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "todo.md")
+	t.Setenv("SHEPHERD_TODO_FILE", path)
+
+	cmdAdd([]string{"alpha task @work"}, "", &bytes.Buffer{})
+	cmdAdd([]string{"beta task @home"}, "", &bytes.Buffer{})
+
+	var buf bytes.Buffer
+	if code := cmdList([]string{"--filter", "home", "--json"}, "", &buf); code != 0 {
+		t.Fatalf("list --filter exit %d", code)
+	}
+	var got []itemJSON
+	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+		t.Fatalf("json: %v", err)
+	}
+	if len(got) != 1 || got[0].Index != 2 || got[0].Category != "home" {
+		t.Fatalf("filter should return only item 2 with its real index: %+v", got)
+	}
+
+	buf.Reset()
+	if code := cmdList([]string{"--filter", "zzz"}, "", &buf); code != 0 {
+		t.Fatalf("list --filter miss exit %d", code)
+	}
+	if buf.String() != "(no matches)\n" {
+		t.Fatalf("no-match output wrong: %q", buf.String())
+	}
+}
+
 func TestCLISetStatus(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "todo.md")
 	t.Setenv("SHEPHERD_TODO_FILE", path)
