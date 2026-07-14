@@ -24,6 +24,7 @@ Run `shepherd help` for the authoritative command list. Summary:
 | `shepherd stats --json [--all]` | board metrics (JSON numbers; drop `--json` for charts) |
 | `shepherd add "<text>"` | add an item |
 | `shepherd done <n>` / `undone <n>` | (un)complete item n |
+| `shepherd status <n> <name>` | set item n's status (`in-progress`; `done`/`open` recognised) |
 | `shepherd rm <n>` | remove item n |
 
 Indexes are 1-based and match `list` order. Read with `--json`, act by index.
@@ -50,7 +51,22 @@ found via `--all`, re-list that board (`list --project <name> --json`) and use
   until then) · `link:<url>` — a reference URL
 
 `list --json` includes `completed` (timestamp set when an item is marked done),
-`defer`, and `link` per item.
+`defer`, `link`, and `status` per item.
+
+## Statuses
+
+Items carry a status. `done` is terminal (`done`/`undone`, or `[x]` on disk).
+Between open and done there can be named intermediate statuses (e.g.
+`in-progress`), configured as an ordered `statuses` list in `config.toml` with
+`done` always last. `list --json` reports the current one in the `status` field
+— empty when the item is plain open or done, else the named status (e.g.
+`"in-progress"`). On disk an intermediate status is a `status:` line under the
+item; open and done items carry none.
+
+Set a status with `shepherd status <n> <name>` — any name is accepted (like a
+free-form `@category`); `done` marks the item done and `open` clears it back to
+plain open. `done`/`undone` are shorthands for the two terminal ends. In the
+interactive board, `tab` cycles through the configured list.
 
 ## Notes
 

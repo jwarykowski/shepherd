@@ -24,6 +24,7 @@ Usage:
   shepherd add "<text>"         add an item (@category !h/!m/!l due: defer: link:)
   shepherd done <n>             mark item n done
   shepherd undone <n>           mark item n not done
+  shepherd status <n> <name>    set item n's status (e.g. in-progress; done|open recognised)
   shepherd rm <n>               remove item n
 
 Flags go after the verb. --project <name> (or $SHEPHERD_PROJECT) selects a
@@ -72,6 +73,8 @@ func Run(verb string, args []string) int {
 		return cmdToggle(rest, project, true, os.Stdout)
 	case "undone":
 		return cmdToggle(rest, project, false, os.Stdout)
+	case "status":
+		return cmdSetStatus(rest, project, os.Stdout)
 	case "rm":
 		return cmdRemove(rest, project, os.Stdout)
 	default:
@@ -109,6 +112,7 @@ func extractProject(args []string) (string, []string, error) {
 type itemJSON struct {
 	Index     int    `json:"index"`
 	Done      bool   `json:"done"`
+	Status    string `json:"status,omitempty"`   // named non-terminal status; empty when open or done
 	Priority  string `json:"priority,omitempty"` // "H"/"M"/"L"
 	Text      string `json:"text"`
 	Category  string `json:"category,omitempty"`
@@ -122,7 +126,7 @@ type itemJSON struct {
 }
 
 func toJSON(it todo.Item, idx int) itemJSON {
-	j := itemJSON{Index: idx, Done: it.Done, Text: it.Text, Category: it.Category, Created: it.Created, Completed: it.Completed, Defer: it.Defer, Due: it.Due, Link: it.Link, Note: it.Note, Project: it.Source}
+	j := itemJSON{Index: idx, Done: it.Done, Status: it.Status, Text: it.Text, Category: it.Category, Created: it.Created, Completed: it.Completed, Defer: it.Defer, Due: it.Due, Link: it.Link, Note: it.Note, Project: it.Source}
 	if it.Prio != 0 {
 		j.Priority = string(it.Prio)
 	}
@@ -208,6 +212,27 @@ func cmdToggle(args []string, project string, done bool, w io.Writer) int {
 	return 0
 }
 
+func cmdSetStatus(args []string, project string, w io.Writer) int {
+	path := store.TodoPathFor(project)
+	items := store.Load(path)
+	idx, ok := parseIndex(args, len(items))
+	if !ok {
+		return 1
+	}
+	if len(args) < 2 {
+		fmt.Fprintln(os.Stderr, `shepherd: status needs a name, e.g. shepherd status 2 in-progress`)
+		return 2
+	}
+	name := strings.ToLower(strings.TrimSpace(args[1]))
+	todo.SetStatus(&items[idx-1], name)
+	if err := store.Save(path, items); err != nil {
+		fmt.Fprintln(os.Stderr, "shepherd:", err)
+		return 1
+	}
+	emit(w, formatLine(idx, items[idx-1]))
+	return 0
+}
+
 func cmdRemove(args []string, project string, w io.Writer) int {
 	path := store.TodoPathFor(project)
 	items := store.Load(path)
@@ -252,6 +277,9 @@ func formatLine(idx int, it todo.Item) string {
 		fmt.Fprintf(&b, " (%c)", it.Prio)
 	}
 	fmt.Fprintf(&b, " %s", it.Text)
+	if !it.Done && it.Status != "" {
+		fmt.Fprintf(&b, "  ~%s", it.Status)
+	}
 	if it.Source != "" {
 		fmt.Fprintf(&b, "  [%s]", it.Source)
 	}

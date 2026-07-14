@@ -301,6 +301,11 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.beforeMutate()
 			todo.SetDone(&m.items[idx], !m.items[idx].Done)
 		}
+	case "tab":
+		if idx >= 0 {
+			m.beforeMutate()
+			todo.CycleStatus(&m.items[idx], m.statuses)
+		}
 	case "d":
 		if idx >= 0 {
 			m.mode = modeDetail

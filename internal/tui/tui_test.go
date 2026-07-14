@@ -23,6 +23,8 @@ func key(s string) tea.KeyMsg {
 		return tea.KeyMsg{Type: tea.KeyEnter}
 	case "esc":
 		return tea.KeyMsg{Type: tea.KeyEsc}
+	case "tab":
+		return tea.KeyMsg{Type: tea.KeyTab}
 	}
 	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}
 }
@@ -404,6 +406,40 @@ func TestLoadConfig(t *testing.T) {
 	d := loadConfig(filepath.Join(dir, "nope.toml"))
 	if d.view != viewCategory || d.density != compact || d.categories != nil {
 		t.Fatalf("defaults wrong: %+v", d)
+	}
+}
+
+func TestTabCyclesStatus(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "todo.md")
+	_ = os.WriteFile(p, []byte("- [ ] alpha\n"), 0o644)
+	m := model{path: p, items: store.Load(p), input: textinput.New(),
+		statuses: []string{"open", "in-progress", "done"}}
+
+	m = drive(m, "tab")
+	if m.items[0].Done || m.items[0].Status != "in-progress" {
+		t.Fatalf("tab did not set in-progress: %+v", m.items[0])
+	}
+	m = drive(m, "tab")
+	if !m.items[0].Done || m.items[0].Status != "" {
+		t.Fatalf("tab did not advance to done: %+v", m.items[0])
+	}
+}
+
+func TestLoadConfigStatuses(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "config.toml")
+	// "done" given out of order + duplicated: normalize dedups and forces it last.
+	_ = os.WriteFile(p, []byte("statuses = [\"open\", \"done\", \"in-progress\", \"open\"]\n"), 0o644)
+	c := loadConfig(p)
+	got := strings.Join(c.statuses, ",")
+	if got != "open,in-progress,done" {
+		t.Fatalf("statuses not normalized: %q", got)
+	}
+
+	// Unset: default two-state open/done.
+	d := loadConfig(filepath.Join(dir, "nope.toml"))
+	if strings.Join(d.statuses, ",") != "open,done" {
+		t.Fatalf("default statuses wrong: %+v", d.statuses)
 	}
 }
 

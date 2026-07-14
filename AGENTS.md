@@ -9,12 +9,20 @@ format.
 - `shepherd stats [--json] [--all]` — board metrics (charts, or `--json` numbers)
 - `shepherd add "buy milk @home !h due:tomorrow"` — add an item
 - `shepherd done <n>` / `shepherd undone <n>` — (un)complete item n
+- `shepherd status <n> <name>` — set item n's status (`in-progress`; `done`/`open` recognised)
 - `shepherd rm <n>` — remove item n
 
 Indexes are 1-based and match `list` order. Quick-add tokens: `@category`,
 `!h`/`!m`/`!l` priority, `due:<today|tomorrow|+3d|15-07-2026>`,
 `defer:<same date forms>` (start/defer date), `link:<url>`. `list --json`
-reports `completed` (done timestamp), `defer`, and `link` per item.
+reports `completed` (done timestamp), `defer`, `link`, and `status` per item.
+
+Items have a status: `done` is terminal; between open and done there can be
+named intermediate statuses (e.g. `in-progress`), configured as an ordered
+`statuses` list in `config.toml` (`done` always last). `list --json`'s `status`
+field is empty for a plain open or done item, else the named status. Set it with
+`shepherd status <n> <name>` (any name accepted; `done`/`open` recognised as the
+terminal/default ends); `tab` cycles the configured list in the interactive board.
 
 Boards are per-project: add `--project <name>` after the verb to target a
 project's board (`shepherd list --project web`, `shepherd add "…" --project web`,

@@ -16,6 +16,7 @@ var (
 	doneStyle   = lipgloss.NewStyle().Faint(true).Strikethrough(true)
 	cursorStyle = lipgloss.NewStyle().Reverse(true)
 	boxStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
+	progStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("4"))
 	matchStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("4"))
 	catStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("6"))
 	countStyle  = lipgloss.NewStyle().Faint(true)
@@ -162,11 +163,15 @@ func (m model) listView() string {
 			lastGroup = gid
 		}
 		box := "○"
+		boxSt := boxStyle
 		text := it.Text
 		deferred := todo.Deferred(it)
 		if it.Done {
 			box = "✓"
 			text = doneStyle.Render(text)
+		} else if it.Status != "" {
+			box = "◐"
+			boxSt = progStyle
 		} else if deferred {
 			text = dimStyle.Render(text) // not started yet
 		}
@@ -198,7 +203,15 @@ func (m model) listView() string {
 			}
 			label += prioStyles[it.Prio].Render(lbl)
 		}
-		left := fmt.Sprintf("%s  %s %s", mark, boxStyle.Render(box), text) // 2-space indent under header
+		if it.Status != "" { // intermediate status, flush-right ahead of due/prio
+			s := progStyle.Render(it.Status)
+			if label != "" {
+				label = s + "  " + label
+			} else {
+				label = s
+			}
+		}
+		left := fmt.Sprintf("%s  %s %s", mark, boxSt.Render(box), text) // 2-space indent under header
 		gap := w - lipgloss.Width(left) - lipgloss.Width(label)
 		if gap < 1 {
 			gap = 1
@@ -316,7 +329,7 @@ func (m model) helpGrid() string {
 		entries []entry
 	}{
 		{"move", []entry{{"j/k", "move"}, {"space", "toggle"}, {"d", "detail"}, {"v", "view"}, {"/", "filter"}, {"A", "global"}}},
-		{"edit", []entry{{"a", "add"}, {"u", "edit"}, {"x", "del"}, {"c", "arch"}}},
+		{"edit", []entry{{"a", "add"}, {"u", "edit"}, {"tab", "status"}, {"x", "del"}, {"c", "arch"}}},
 		{"fields", []entry{{"h/m/l", "prio"}, {"g", "cat"}, {"t", "due"}, {"s", "defer"}, {"L", "link"}, {"o", "open"}}},
 		{"board", []entry{{"w", "save"}, {"^e", "editor"}, {"U", "undo"}, {"^r", "redo"}, {"?", "help"}, {"q", "quit"}}},
 	}
@@ -413,6 +426,8 @@ func (m model) tableView() string {
 		box := "○"
 		if it.Done {
 			box = "✓"
+		} else if it.Status != "" {
+			box = "◐"
 		}
 		p := " "
 		if it.Prio != 0 {
@@ -474,7 +489,7 @@ func (m model) helpBody() []string {
 	line("h/m/l — set priority high/medium/low (same key again clears)")
 	line("g — set category · t — set due date · s — set defer/start date")
 	line("L — set link · o — open the link in the browser")
-	line("space — toggle done · x — delete · c — archive done")
+	line("space — toggle done · tab — cycle status · x — delete · c — archive done")
 	blank()
 	sec("due dates")
 	line("today · tomorrow · Nd/Nw/Nm/Ny (e.g. 3d, 2w) · DD-MM-YYYY. Anything unrecognised clears the date. Overdue items are pinned to a group at the top.")
@@ -582,6 +597,8 @@ func (m model) detailView() string {
 	status := "open"
 	if it.Done {
 		status = "done"
+	} else if it.Status != "" {
+		status = it.Status
 	}
 	prio := "none"
 	if lbl, ok := prioLabel[it.Prio]; ok {

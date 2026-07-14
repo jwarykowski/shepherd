@@ -78,13 +78,26 @@ func renderStats(s todo.Stats, title string, width int) string {
 	for _, c := range s.ByCategory {
 		catRows = append(catRows, barRow{c.Name, c.Open, colInfo})
 	}
-	cat := panel("open by category", hbar(catRows, innerW(width)), width)
+	cat := panel("open by category", hbar(catRows, innerW(colW)), colW)
+
+	statusRows := make([]barRow, 0, len(s.ByStatus))
+	for _, st := range s.ByStatus {
+		c := colInfo
+		switch st.Name {
+		case "done":
+			c = colOK
+		case "open":
+			c = colDim
+		}
+		statusRows = append(statusRows, barRow{st.Name, st.Count, c})
+	}
+	status := panel("by status", hbar(statusRows, innerW(colW)), colW)
 
 	thr := panel(fmt.Sprintf("done/day 30d · 7d:%d 30d:%d", s.Done7, s.Done30),
 		spark(s.DonePerDay, innerW(width)), width)
 
 	b.WriteString(grid(twoUp, due, prio) + "\n")
-	b.WriteString(cat + "\n")
+	b.WriteString(grid(twoUp, cat, status) + "\n")
 	b.WriteString(thr + "\n")
 
 	if len(s.ByProject) > 1 {
