@@ -48,19 +48,6 @@ func (m model) openEditor() tea.Cmd {
 	return tea.ExecProcess(c, func(error) tea.Msg { return editorDoneMsg{} })
 }
 
-// matchItem reports whether an item matches a lowercased filter query.
-func matchItem(it todo.Item, q string) bool {
-	if q == "" {
-		return true
-	}
-	return strings.Contains(strings.ToLower(it.Text), q) ||
-		strings.Contains(strings.ToLower(it.Note), q) ||
-		strings.Contains(strings.ToLower(it.Category), q) ||
-		strings.Contains(strings.ToLower(it.Due), q) ||
-		strings.Contains(strings.ToLower(it.Defer), q) ||
-		strings.Contains(strings.ToLower(it.Link), q)
-}
-
 // filterCategory returns the active filter when it exactly names a known
 // category (configured or already in use), so a new item added under a
 // category filter inherits it and stays visible. Empty for a non-category
@@ -88,7 +75,7 @@ func (m model) visible() []int {
 	idx := make([]int, 0, len(m.items))
 	q := strings.ToLower(m.filter)
 	for i, it := range m.items {
-		if matchItem(it, q) {
+		if todo.Match(it, q) {
 			idx = append(idx, i)
 		}
 	}
@@ -165,7 +152,7 @@ func (m model) archivedMatches() []todo.Item {
 	q := strings.ToLower(m.filter)
 	var out []todo.Item
 	for _, it := range m.archived {
-		if matchItem(it, q) {
+		if todo.Match(it, q) {
 			out = append(out, it)
 		}
 	}
