@@ -23,7 +23,7 @@ Usage:
   shepherd stats [--json] [--all] show board metrics as charts (--all aggregates)
   shepherd add "<text>"         add an item (@category !h/!m/!l due: defer: link:)
   shepherd sub <n> "<text>"     add a subtask to item n (same @/!/due: syntax)
-  shepherd edit <n[.m]> "<tokens>" update item n (or subtask m): sets only the @category !prio due: defer: link: and text given
+  shepherd edit <n[.m]> "<tokens>" update item n (or subtask m): @category !prio due: defer: link: status: note: and text (bare key clears; note: takes the rest)
   shepherd done <n[.m]>         mark item n (or its subtask m) done
   shepherd undone <n[.m]>       mark item n (or its subtask m) not done
   shepherd status <n[.m]> <name> set item (or subtask m)'s status (e.g. in-progress; done|open recognised)
@@ -263,7 +263,8 @@ func cmdSub(args []string, project string, w io.Writer) int {
 
 // cmdEdit merges quick-add tokens onto an existing item n (or subtask m):
 // shepherd edit <n[.m]> "<tokens>". Only the fields present in the tokens
-// change; text is replaced only when plain words are given (see todo.ApplyEdit).
+// change; a bare key token clears its field, note: takes the rest of the line,
+// and text is replaced only when plain words are given (see todo.ApplyEdit).
 func cmdEdit(args []string, project string, w io.Writer) int {
 	path := store.TodoPathFor(project)
 	items := store.Load(path)

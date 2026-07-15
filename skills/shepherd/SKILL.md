@@ -25,7 +25,7 @@ Run `shepherd help` for the authoritative command list. Summary:
 | `shepherd stats --json [--all]` | board metrics (JSON numbers; drop `--json` for charts) |
 | `shepherd add "<text>"` | add an item |
 | `shepherd sub <n> "<text>"` | add a subtask to item n |
-| `shepherd edit <n[.m]> "<tokens>"` | merge @category/!prio/due:/defer:/link:/text onto item n (or subtask m) |
+| `shepherd edit <n[.m]> "<tokens>"` | merge @category/!prio/due:/defer:/link:/status:/note:/text onto item n (or subtask m); bare key clears, note: takes the rest |
 | `shepherd done <n[.m]>` / `undone <n[.m]>` | (un)complete item n, or its subtask m |
 | `shepherd status <n[.m]> <name>` | set item n's (or subtask m's) status (`in-progress`; `done`/`open` recognised) |
 | `shepherd note <n[.m]> "<text>"` | set item n's (or subtask m's) note (empty clears) |

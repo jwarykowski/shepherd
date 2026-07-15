@@ -230,10 +230,13 @@ shepherd rm 2                       # remove item 2 (rm 2.1 removes just the sub
 item `n`; see [subtasks](#subtasks) for the cascade rules.
 
 `edit <n[.m]> "<tokens>"` sets only the fields the tokens carry — `@category`,
-`!h`/`!m`/`!l`, `due:`, `defer:`, `link:` — leaving the rest untouched; the text
-is replaced only when the tokens include plain words. `list --filter <q>`
-matches text/note/category/due/defer/link and keeps each item's real board
-index, so `done`/`rm` on a filtered listing still hit the right item.
+`!h`/`!m`/`!l`, `due:`, `defer:`, `link:`, `status:`, `note:` — leaving the rest
+untouched; the text is replaced only when the tokens include plain words. A bare
+key clears its field (`edit 2 "@ due:"` clears category and due); `note:` takes
+the rest of the line (it can hold spaces), so put it last (`edit 2 "!h note:call
+the bank"`). `list --filter <q>` matches text/note/category/due/defer/link and
+keeps each item's real board index, so `done`/`rm` on a filtered listing still
+hit the right item.
 
 Flags go **after** the verb. Add `--project <name>` (or set `$SHEPHERD_PROJECT`)
 to target a project board instead of the default:

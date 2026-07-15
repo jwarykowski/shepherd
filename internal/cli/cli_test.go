@@ -91,6 +91,20 @@ func TestCLIEdit(t *testing.T) {
 	if code := cmdEdit([]string{"1"}, "", &bytes.Buffer{}); code == 0 {
 		t.Fatal("edit with no tokens should error")
 	}
+
+	// status:/note: tokens and clearing round-trip through the store.
+	if code := cmdEdit([]string{"1", "status:in-progress note:ping the vendor first"}, "", &bytes.Buffer{}); code != 0 {
+		t.Fatalf("edit status/note exit %d", code)
+	}
+	if it := store.Load(path)[0]; it.Status != "in-progress" || it.Note != "ping the vendor first" {
+		t.Fatalf("status/note not persisted: %+v", it)
+	}
+	if code := cmdEdit([]string{"1", "! note:"}, "", &bytes.Buffer{}); code != 0 {
+		t.Fatalf("edit clear exit %d", code)
+	}
+	if it := store.Load(path)[0]; it.Prio != 0 || it.Note != "" {
+		t.Fatalf("bare tokens did not clear: %+v", it)
+	}
 }
 
 // TestCLIListFilter checks --filter narrows the output while keeping each item's
