@@ -73,6 +73,7 @@ herdr plugin install jwarykowski/shepherd
 | `d` | open detail view (shows every field) |
 | `v` | cycle view: category / priority / table |
 | `A` | toggle the [global view](#global-view) across all boards |
+| `e` | browse the archive (read-only; all boards in the global view; `esc` to leave) |
 | `/` | filter (text/note/category/due/defer/link — also greps `archive.md`) |
 | `U` / `ctrl+r` | undo / redo (multi-level) |
 | `w` | save now (the header shows `● unsaved` / `● saved`) |

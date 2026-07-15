@@ -245,6 +245,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			res, cmd = m.updateDetail(msg)
 		case modeHelp:
 			res, cmd = m.updateHelp(msg)
+		case modeArchive:
+			res, cmd = m.updateArchive(msg)
 		default:
 			if m.global {
 				res, cmd = m.updateGlobal(msg)
@@ -299,6 +301,8 @@ func (m model) updateGlobal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.sel() >= 0 {
 			return m, openLink(m.items[m.sel()].Link)
 		}
+	case "e":
+		m.enterArchive()
 	case "?":
 		m.mode = modeHelp
 	case "/":
@@ -517,8 +521,45 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if idx >= 0 {
 			return m, openLink(m.rowItem(ref).Link)
 		}
+	case "e":
+		m.enterArchive()
 	case "ctrl+e":
 		return m, m.openEditor()
+	}
+	return m, nil
+}
+
+// enterArchive opens the read-only archive browser. On a project board it shows
+// that board's archive; in the global view it aggregates every board's archive.
+func (m *model) enterArchive() {
+	m.mode = modeArchive
+	m.arcCur = 0
+	if m.global {
+		m.arcRows = store.LoadAllArchives()
+	} else {
+		m.arcRows = m.archived
+	}
+}
+
+// updateArchive handles keys in the read-only archive browser: navigate, esc to
+// return to the board, q to quit. No mutations.
+func (m model) updateArchive(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "q", "ctrl+c":
+		if !m.global {
+			_ = store.Save(m.path, m.items)
+		}
+		return m, tea.Quit
+	case "esc", "e":
+		m.mode = modeList
+	case "j", "down":
+		if m.arcCur < len(m.arcRows)-1 {
+			m.arcCur++
+		}
+	case "k", "up":
+		if m.arcCur > 0 {
+			m.arcCur--
+		}
 	}
 	return m, nil
 }

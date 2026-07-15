@@ -125,6 +125,7 @@ const (
 	modeFilter
 	modeDetail
 	modeHelp
+	modeArchive
 )
 
 // density controls spacing: compact (tight, default) or comfort (roomier).
@@ -165,6 +166,8 @@ type model struct {
 	path          string
 	items         []todo.Item
 	archived      []todo.Item // loaded from archive.md, searched when filtering
+	arcRows       []todo.Item // archive browse set (modeArchive); all boards' when global
+	arcCur        int         // cursor into arcRows
 	cursor        int         // index into the VISIBLE subset, not items
 	filter        string
 	mode          mode
