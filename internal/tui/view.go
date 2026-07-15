@@ -297,9 +297,15 @@ func (m model) archiveView() string {
 		out = append(out, dimStyle.Render("no archived items"))
 	}
 	for i, it := range m.arcRows {
-		row := "  " + boxStyle.Render("✓") + " " + dimStyle.Render(it.Text)
+		left := "  " + boxStyle.Render("✓") + " " + dimStyle.Render(it.Text)
+		row := left
 		if m.global && it.Source != "" {
-			row = "  " + catStyle.Render("["+it.Source+"]") + " " + boxStyle.Render("✓") + " " + dimStyle.Render(it.Text)
+			tag := catStyle.Render("[" + it.Source + "]")
+			gap := w - lipgloss.Width(left) - lipgloss.Width(tag)
+			if gap < 1 {
+				gap = 1
+			}
+			row = left + strings.Repeat(" ", gap) + tag
 		}
 		if i == m.arcCur {
 			cursorLine = len(out)
