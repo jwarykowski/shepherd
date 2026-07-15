@@ -43,11 +43,6 @@ func renderStats(s todo.Stats, title string, width int) string {
 	if width < 20 {
 		width = 20
 	}
-	twoUp := width >= 72
-	colW := width
-	if twoUp {
-		colW = (width - 1) / 2
-	}
 
 	var b strings.Builder
 	left := titleStyle.Render(title)
@@ -65,20 +60,20 @@ func renderStats(s todo.Stats, title string, width int) string {
 		{"this week", s.DueWeek, colOK},
 		{"no date", s.NoDue, colDim},
 		{"deferred", s.Deferred, colInfo},
-	}, innerW(colW)), colW)
+	}, innerW(width)), width)
 
 	prio := panel("open by priority", hbar([]barRow{
 		{"!H", s.Prio.H, colHigh},
 		{"!M", s.Prio.M, colMed},
 		{"!L", s.Prio.L, colLow},
 		{"none", s.Prio.None, colDim},
-	}, innerW(colW)), colW)
+	}, innerW(width)), width)
 
 	catRows := make([]barRow, 0, len(s.ByCategory))
 	for _, c := range s.ByCategory {
 		catRows = append(catRows, barRow{c.Name, c.Open, colInfo})
 	}
-	cat := panel("open by category", hbar(catRows, innerW(colW)), colW)
+	cat := panel("open by category", hbar(catRows, innerW(width)), width)
 
 	statusRows := make([]barRow, 0, len(s.ByStatus))
 	for _, st := range s.ByStatus {
@@ -91,13 +86,15 @@ func renderStats(s todo.Stats, title string, width int) string {
 		}
 		statusRows = append(statusRows, barRow{st.Name, st.Count, c})
 	}
-	status := panel("by status", hbar(statusRows, innerW(colW)), colW)
+	status := panel("by status", hbar(statusRows, innerW(width)), width)
 
 	thr := panel(fmt.Sprintf("done/day 30d · 7d:%d 30d:%d", s.Done7, s.Done30),
 		spark(s.DonePerDay, innerW(width)), width)
 
-	b.WriteString(grid(twoUp, due, prio) + "\n")
-	b.WriteString(grid(twoUp, cat, status) + "\n")
+	b.WriteString(due + "\n")
+	b.WriteString(prio + "\n")
+	b.WriteString(cat + "\n")
+	b.WriteString(status + "\n")
 	b.WriteString(thr + "\n")
 
 	if len(s.ByProject) > 1 {
@@ -124,14 +121,6 @@ func innerW(panelW int) int {
 	return w
 }
 
-// grid places two panels side by side (or stacked when narrow).
-func grid(twoUp bool, left, right string) string {
-	if twoUp {
-		return lipgloss.JoinHorizontal(lipgloss.Top, left, " ", right)
-	}
-	return left + "\n" + right
-}
-
 func panel(title, body string, width int) string {
 	inner := titleStyle.Render(title) + "\n" + body
 	return panelStyle.Width(width - 2).Render(inner)
@@ -145,19 +134,28 @@ func hbar(rows []barRow, width int) string {
 	if len(rows) == 0 {
 		return faintStyle.Render("(none)")
 	}
-	const maxLabel = 24 // clip longer category/project names so bars keep room
-	labelW, valW, max := 0, 1, 0
-	labels := make([]string, len(rows))
-	for i, r := range rows {
-		labels[i] = clip(r.label, maxLabel)
-		if w := lipgloss.Width(labels[i]); w > labelW {
-			labelW = w
-		}
+	valW, max := 1, 0
+	for _, r := range rows {
 		if r.value > max {
 			max = r.value
 		}
 		if n := len(fmt.Sprint(r.value)); n > valW {
 			valW = n
+		}
+	}
+	// Grow the label column to the longest label, but reserve a readable bar so
+	// one very long name can't starve every bar down to the floor.
+	const minBar = 10
+	maxLabel := width - minBar - valW - 2
+	if maxLabel < 8 {
+		maxLabel = 8
+	}
+	labelW := 0
+	labels := make([]string, len(rows))
+	for i, r := range rows {
+		labels[i] = clip(r.label, maxLabel)
+		if w := lipgloss.Width(labels[i]); w > labelW {
+			labelW = w
 		}
 	}
 	barW := width - labelW - valW - 2
