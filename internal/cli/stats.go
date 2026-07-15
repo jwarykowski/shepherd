@@ -19,8 +19,13 @@ func cmdStats(args []string, project string, w io.Writer) int {
 	fs := flag.NewFlagSet("stats", flag.ContinueOnError)
 	asJSON := fs.Bool("json", false, "machine-readable JSON output (no charts)")
 	all := fs.Bool("all", false, "aggregate across every board")
+	legend := fs.Bool("legend", false, "explain each chart and the backlog-health numbers")
 	if err := fs.Parse(args); err != nil {
 		return 2
+	}
+	if *legend {
+		emit(w, statsLegend())
+		return 0
 	}
 
 	var items []todo.Item

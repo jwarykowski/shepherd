@@ -88,12 +88,25 @@ func renderStats(s todo.Stats, title string, width int) string {
 	}
 	status := panel("by status", hbar(statusRows, innerW(width)), width)
 
+	// Labels must line up with todo.AgeBucket's boundaries.
+	ageLabels := []string{"<1d", "1-3d", "4-7d", "8-30d", ">30d"}
+	ageRows := make([]barRow, 0, len(s.OpenAgeDist))
+	for i, c := range s.OpenAgeDist {
+		col := colInfo
+		if i == len(ageLabels)-1 {
+			col = colHigh // >30d is stale
+		}
+		ageRows = append(ageRows, barRow{ageLabels[i], c, col})
+	}
+	age := panel("open by age", hbar(ageRows, innerW(width)), width)
+
 	thr := panel(fmt.Sprintf("done/day 30d · 7d:%d 30d:%d", s.Done7, s.Done30),
 		spark(s.DonePerDay, innerW(width)), width)
 
 	b.WriteString(due + "\n")
 	b.WriteString(prio + "\n")
 	b.WriteString(cat + "\n")
+	b.WriteString(age + "\n")
 	b.WriteString(status + "\n")
 	b.WriteString(thr + "\n")
 
@@ -108,6 +121,29 @@ func renderStats(s todo.Stats, title string, width int) string {
 		" aging  oldest %dd · avg %.1fd · stale>30d %d · cycle %.1fd",
 		s.OldestOpenDays, s.AvgOpenDays, s.StaleOpen, s.AvgCycleDays)))
 	return b.String()
+}
+
+// statsLegend explains every chart and the aging line, in the order they render.
+func statsLegend() string {
+	title := titleStyle.Render("shepherd stats · legend")
+	rule := faintStyle.Render(strings.Repeat("─", lipgloss.Width("shepherd stats · legend")))
+	entry := func(name, desc string) string {
+		return titleStyle.Render(name) + "\n  " + desc
+	}
+	sections := []string{
+		title + "\n" + rule,
+		entry("header", "N/N done · % — items completed out of all items (done incl. archived)."),
+		entry("due", "open items by urgency: overdue · due today · due within 7 days · no due date · deferred (start date in the future). Not exclusive — an item can count in more than one."),
+		entry("open by priority", "open items by !H / !M / !L, or none."),
+		entry("open by category", "open items per @category; (none) is uncategorised."),
+		entry("open by age", "open items by how long ago they were created: <1d · 1-3d · 4-7d · 8-30d · >30d (>30d flagged red — the stale tail)."),
+		entry("by status", "all items by status: open, any named status (e.g. in-progress), and done."),
+		entry("done/day 30d", "sparkline of items completed per day over 30 days; 7d/30d are the totals."),
+		entry("open by project", "open items per board (only with --all)."),
+		entry("backlog · created vs done 14d", "two lines over 14 days — items created vs completed; net +/-per month is the 30-day created-minus-done balance (positive = backlog growing)."),
+		entry("aging", "oldest Nd — age of the oldest open item · avg — mean age of open items · stale>30d — open items older than 30 days · cycle — mean created→done time for finished items."),
+	}
+	return strings.Join(sections, "\n\n")
 }
 
 func pct(r float64) int { return int(r*100 + 0.5) }

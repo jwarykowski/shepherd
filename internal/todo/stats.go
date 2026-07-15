@@ -60,6 +60,7 @@ type Stats struct {
 	AvgOpenDays    float64 `json:"avg_open_days"`
 	StaleOpen      int     `json:"stale_open"` // open, created > 30d ago
 	AvgCycleDays   float64 `json:"avg_cycle_days"`
+	OpenAgeDist    []int   `json:"open_age_dist"` // open items by age bucket; see AgeBucket
 
 	// Series, oldest -> newest.
 	DonePerDay   []int `json:"done_per_day"`       // 30 days, for the sparkline
@@ -88,6 +89,7 @@ func Compute(items []Item) Stats {
 		DonePerDay:   make([]int, 30),
 		CreatedShort: make([]int, 14),
 		DoneShort:    make([]int, 14),
+		OpenAgeDist:  make([]int, ageBuckets),
 	}
 	cats := map[string]int{}
 	// ByStatus orders by count (Compute has no config), and a non-done item with
@@ -130,6 +132,7 @@ func Compute(items []Item) Stats {
 				if !it.Done {
 					sumOpenAge += float64(d)
 					openAged++
+					s.OpenAgeDist[AgeBucket(d)]++
 					if d > s.OldestOpenDays {
 						s.OldestOpenDays = d
 					}
@@ -246,6 +249,27 @@ func Compute(items []Item) Stats {
 		return s.ByStatus[i].Name < s.ByStatus[j].Name
 	})
 	return s
+}
+
+// ageBuckets is the number of open-item age buckets in OpenAgeDist; the CLI's
+// bucket labels must line up with AgeBucket's boundaries.
+const ageBuckets = 5
+
+// AgeBucket maps an item's age in days to its OpenAgeDist index:
+// 0:<1d 1:1-3d 2:4-7d 3:8-30d 4:>30d.
+func AgeBucket(days int) int {
+	switch {
+	case days < 1:
+		return 0
+	case days <= 3:
+		return 1
+	case days <= 7:
+		return 2
+	case days <= 30:
+		return 3
+	default:
+		return 4
+	}
 }
 
 // dueDays returns whole days from today until an ISO due date, or -1 if the

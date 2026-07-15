@@ -218,6 +218,7 @@ shepherd list [--json]              # show items with their index
 shepherd list --all [--json]        # aggregate across every board (read-only)
 shepherd list --filter home         # only items matching the query, real indexes kept
 shepherd stats [--json] [--all]     # board metrics as charts (--json = numbers)
+shepherd stats --legend             # explain every chart and the aging numbers
 shepherd add "buy milk @home !h due:tomorrow"
 shepherd sub 2 "chop onions !m"     # add a subtask to item 2
 shepherd edit 2 "@work !h due:friday" # merge tokens onto item 2 (2.1 edits a subtask)
