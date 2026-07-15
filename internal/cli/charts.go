@@ -118,7 +118,7 @@ func renderStats(s todo.Stats, title string, width int) string {
 		trend(s.CreatedShort, s.DoneShort, innerW(width)), width) + "\n")
 
 	b.WriteString(faintStyle.Render(fmt.Sprintf(
-		" aging  oldest %dd · avg %.1fd · stale>30d %d · cycle %.1fd",
+		" backlog health  oldest open %dd · avg open %.1fd · stale >30d %d · time to done %.1fd",
 		s.OldestOpenDays, s.AvgOpenDays, s.StaleOpen, s.AvgCycleDays)))
 	return b.String()
 }
@@ -141,7 +141,7 @@ func statsLegend() string {
 		entry("done/day 30d", "sparkline of items completed per day over 30 days; 7d/30d are the totals."),
 		entry("open by project", "open items per board (only with --all)."),
 		entry("backlog · created vs done 14d", "two lines over 14 days — items created vs completed; net +/-per month is the 30-day created-minus-done balance (positive = backlog growing)."),
-		entry("aging", "oldest Nd — age of the oldest open item · avg — mean age of open items · stale>30d — open items older than 30 days · cycle — mean created→done time for finished items."),
+		entry("backlog health", "oldest open — age of the oldest open item · avg open — mean age of open items · stale >30d — open items created over 30 days ago · time to done — mean create→complete time for finished items."),
 	}
 	return strings.Join(sections, "\n\n")
 }
