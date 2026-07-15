@@ -21,12 +21,11 @@ Usage:
   shepherd                      open the interactive board
   shepherd list [--json] [--all] [--filter <text>] list items (--all aggregates; --filter matches text/note/category/due/defer/link)
   shepherd stats [--json] [--all] show board metrics as charts (--all aggregates)
-  shepherd add "<text>"         add an item (@category !h/!m/!l due: defer: link:)
+  shepherd add "<text>"         add an item (@category !h/!m/!l due: defer: link: status: note:)
   shepherd sub <n> "<text>"     add a subtask to item n (same @/!/due: syntax)
-  shepherd edit <n[.m]> "<tokens>" update item n (or subtask m): sets only the @category !prio due: defer: link: and text given
+  shepherd edit <n[.m]> "<tokens>" update item n (or subtask m): @category !prio due: defer: link: status: note: and text (bare key clears; note: takes the rest)
   shepherd done <n[.m]>         mark item n (or its subtask m) done
   shepherd undone <n[.m]>       mark item n (or its subtask m) not done
-  shepherd status <n[.m]> <name> set item (or subtask m)'s status (e.g. in-progress; done|open recognised)
   shepherd rm <n[.m]>           remove item n (or just its subtask m)
 
 Flags go after the verb. --project <name> (or $SHEPHERD_PROJECT) selects a
@@ -82,8 +81,6 @@ func Run(verb string, args []string) int {
 		return cmdToggle(rest, project, true, os.Stdout)
 	case "undone":
 		return cmdToggle(rest, project, false, os.Stdout)
-	case "status":
-		return cmdSetStatus(rest, project, os.Stdout)
 	case "rm":
 		return cmdRemove(rest, project, os.Stdout)
 	default:
@@ -260,7 +257,8 @@ func cmdSub(args []string, project string, w io.Writer) int {
 
 // cmdEdit merges quick-add tokens onto an existing item n (or subtask m):
 // shepherd edit <n[.m]> "<tokens>". Only the fields present in the tokens
-// change; text is replaced only when plain words are given (see todo.ApplyEdit).
+// change; a bare key token clears its field, note: takes the rest of the line,
+// and text is replaced only when plain words are given (see todo.ApplyEdit).
 func cmdEdit(args []string, project string, w io.Writer) int {
 	path := store.TodoPathFor(project)
 	items := store.Load(path)
@@ -277,6 +275,9 @@ func cmdEdit(args []string, project string, w io.Writer) int {
 		todo.ApplyEdit(&items[p-1], text)
 	} else {
 		todo.ApplyEdit(&items[p-1].Subs[s-1], text)
+		// editing a sub's status/done can complete or reopen the parent, same
+		// as done/undone — ApplyEdit works on one Item, so reconcile here.
+		todo.SetDone(&items[p-1], todo.AllSubsDone(&items[p-1]))
 	}
 	if err := store.Save(path, items); err != nil {
 		fmt.Fprintln(os.Stderr, "shepherd:", err)
@@ -301,34 +302,6 @@ func cmdToggle(args []string, project string, done bool, w io.Writer) int {
 		todo.SetParentDone(&items[p-1], done)
 	} else {
 		todo.SetSubDone(&items[p-1], s-1, done)
-	}
-	if err := store.Save(path, items); err != nil {
-		fmt.Fprintln(os.Stderr, "shepherd:", err)
-		return 1
-	}
-	emit(w, formatLine(p, items[p-1]))
-	if s > 0 {
-		emit(w, formatSub(p, s, items[p-1].Subs[s-1]))
-	}
-	return 0
-}
-
-func cmdSetStatus(args []string, project string, w io.Writer) int {
-	path := store.TodoPathFor(project)
-	items := store.Load(path)
-	p, s, ok := parseRef(args, items)
-	if !ok {
-		return 1
-	}
-	if len(args) < 2 {
-		fmt.Fprintln(os.Stderr, `shepherd: status needs a name, e.g. shepherd status 2 in-progress`)
-		return 2
-	}
-	name := strings.ToLower(strings.TrimSpace(args[1]))
-	if s == 0 {
-		todo.SetStatus(&items[p-1], name)
-	} else {
-		todo.SetSubStatus(&items[p-1], s-1, name)
 	}
 	if err := store.Save(path, items); err != nil {
 		fmt.Fprintln(os.Stderr, "shepherd:", err)

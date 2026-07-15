@@ -30,23 +30,49 @@ type Item struct {
 
 // ApplyEdit applies quick-add tokens onto an existing item, touching only the
 // fields present in s: @category, !h/!m/!l priority, due:<preset>,
-// defer:<preset>, link:<url>. Text is replaced only when s carries plain
-// (non-token) words, so a token-only edit leaves the text alone. Unrecognized
-// tokens count as plain words.
+// defer:<preset>, link:<url>, status:<name>, and note:<text>. A bare key token
+// clears that field: "@", "!", "due:", "defer:", "link:", "status:" reset
+// category / priority / due / defer / link / status respectively. Text is
+// replaced only when s carries plain (non-token) words, so a token-only edit
+// leaves the text alone. Unrecognized tokens count as plain words.
+//
+// note: is special — a note may contain spaces, so once seen it consumes the
+// rest of the line as the note value (a bare trailing "note:" clears it). Put
+// note: last in the edit string.
 func ApplyEdit(it *Item, s string) {
+	// note: swallows everything after it (spaces and all); pull it out first so
+	// the remaining tokens split cleanly on whitespace.
+	if i := noteIndex(s); i >= 0 {
+		it.Note = strings.TrimSpace(s[i+len("note:"):])
+		s = strings.TrimSpace(s[:i])
+	}
 	var words []string
 	for _, tok := range strings.Fields(s) {
 		switch {
+		case tok == "@":
+			it.Category = ""
 		case strings.HasPrefix(tok, "@") && len(tok) > 1:
 			it.Category = strings.ToLower(tok[1:])
+		case tok == "!":
+			it.Prio = 0
 		case strings.HasPrefix(tok, "!") && len(tok) == 2 && strings.ContainsRune("hHmMlL", rune(tok[1])):
 			it.Prio = strings.ToUpper(tok[1:])[0]
+		case tok == "due:":
+			it.Due = ""
 		case strings.HasPrefix(tok, "due:") && len(tok) > 4:
 			it.Due = ParseDue(tok[4:])
+		case tok == "defer:":
+			it.Defer = ""
 		case strings.HasPrefix(tok, "defer:") && len(tok) > 6:
 			it.Defer = ParseDue(tok[6:])
+		case tok == "link:":
+			it.Link = ""
 		case strings.HasPrefix(tok, "link:") && len(tok) > 5:
 			it.Link = tok[5:]
+		case tok == "status:":
+			SetStatus(it, "open")
+		case strings.HasPrefix(tok, "status:") && len(tok) > 7:
+			SetStatus(it, strings.ToLower(tok[7:]))
 		default:
 			words = append(words, tok)
 		}
@@ -54,6 +80,18 @@ func ApplyEdit(it *Item, s string) {
 	if len(words) > 0 {
 		it.Text = strings.Join(words, " ")
 	}
+}
+
+// noteIndex returns the byte offset of the "note:" token in s (at the start or
+// after a space), or -1 if none. It marks where the free-text note begins.
+func noteIndex(s string) int {
+	if strings.HasPrefix(s, "note:") {
+		return 0
+	}
+	if i := strings.Index(s, " note:"); i >= 0 {
+		return i + 1
+	}
+	return -1
 }
 
 // ParseQuickAdd builds a new item from an add line, splitting text from

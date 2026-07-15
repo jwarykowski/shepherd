@@ -230,4 +230,28 @@ func TestApplyEdit(t *testing.T) {
 	if !Match(it, "home") || Match(it, "zzz") {
 		t.Fatal("Match wrong on category")
 	}
+
+	// status: and note: tokens set their fields; note swallows the rest of the line.
+	ApplyEdit(&it, "status:in-progress note:call the bank first")
+	if it.Status != "in-progress" || it.Done || it.Note != "call the bank first" {
+		t.Fatalf("status/note edit wrong: %+v", it)
+	}
+	if it.Text != "new text" {
+		t.Fatalf("note: should not have altered text: %q", it.Text)
+	}
+
+	// bare key tokens clear their fields; note: at the end clears the note.
+	ApplyEdit(&it, "@ ! due: defer: link: status: note:")
+	if it.Category != "" || it.Prio != 0 || it.Due != "" || it.Defer != "" || it.Link != "" || it.Status != "" || it.Note != "" {
+		t.Fatalf("clear tokens did not reset fields: %+v", it)
+	}
+	if it.Text != "new text" {
+		t.Fatalf("clear-only edit should preserve text: %q", it.Text)
+	}
+
+	// status:done marks the item done (terminal), like the status verb.
+	ApplyEdit(&it, "status:done")
+	if !it.Done || it.Status != "" {
+		t.Fatalf("status:done should mark done: %+v", it)
+	}
 }

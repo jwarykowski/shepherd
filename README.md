@@ -88,7 +88,9 @@ In the detail view: `e` edit note · `space` toggle · `o` open link · `d`/`esc
 **Inline quick-add** — `a`, then one line:
 `deploy api @work !h due:tomorrow defer:1w link:https://…`. `@word` sets
 category, `!h`/`!m`/`!l` priority, `due:<preset>` the due date, `defer:<preset>`
-a start/defer date, `link:<url>` a reference; everything else is the task text.
+a start/defer date, `link:<url>` a reference, `status:<name>` a status, and
+`note:<text>` a note (holds spaces, takes the rest of the line — put it last);
+everything else is the task text.
 
 Items are ordered by **category, then priority, then soonest due**, grouped
 under headers, with a colored priority label flush right. **Overdue** open
@@ -222,18 +224,23 @@ shepherd edit 2 "@work !h due:friday" # merge tokens onto item 2 (2.1 edits a su
 shepherd done 2                     # mark item 2 done (cascades to its subtasks)
 shepherd done 2.1                   # mark subtask 1 of item 2 done
 shepherd undone 2.1                 # reopen subtask 1 (also reopens the parent)
-shepherd status 2 in-progress       # set item 2's status (done|open recognised)
+shepherd edit 2 "status:in-progress" # set item 2's status (status:done|open recognised)
+shepherd edit 2 "note:waiting on infra" # set item 2's note (edit 2 "note:" clears it)
 shepherd rm 2                       # remove item 2 (rm 2.1 removes just the subtask)
 ```
 
 `done`/`undone`/`rm`/`edit` take a dotted `n.m` reference for subtask `m` of
 item `n`; see [subtasks](#subtasks) for the cascade rules.
 
-`edit <n[.m]> "<tokens>"` sets only the fields the tokens carry — `@category`,
-`!h`/`!m`/`!l`, `due:`, `defer:`, `link:` — leaving the rest untouched; the text
-is replaced only when the tokens include plain words. `list --filter <q>`
-matches text/note/category/due/defer/link and keeps each item's real board
-index, so `done`/`rm` on a filtered listing still hit the right item.
+`edit <n[.m]> "<tokens>"` sets only the fields its tokens carry — `@category`,
+`!h`/`!m`/`!l`, `due:`, `defer:`, `link:`, `status:`, `note:` — and replaces the
+text only when plain words are present. A bare key clears its field
+(`edit 2 "@ due:"`); `note:` holds spaces and takes the rest of the line, so put
+it last (`edit 2 "!h note:call the bank"`).
+
+`list --filter <q>` matches text/note/category/due/defer/link and keeps each
+item's real board index, so `done`/`rm` on a filtered listing still hit the
+right item.
 
 Flags go **after** the verb. Add `--project <name>` (or set `$SHEPHERD_PROJECT`)
 to target a project board instead of the default:
@@ -244,11 +251,13 @@ shepherd list --project web
 ```
 
 `add` accepts the same quick-add tokens as the board: `@category`, `!h`/`!m`/`!l`
-priority, `due:<today|tomorrow|+3d|15-07-2026>`. Agents should read with
-`list --json` (stable machine shape) and mutate with `add`/`done`/`status`/`rm`;
-an open board picks up the change within ~2s. `status <n> <name>` accepts any
-name (like a free-form `@category`); `done`/`open` are recognised as the
-terminal/default ends, and the `status` field appears in `list --json`.
+priority, `due:<today|tomorrow|+3d|15-07-2026>`, `defer:`, `link:`, `status:`,
+and `note:` (takes the rest of the line). Agents should read with
+`list --json` (stable machine shape) and mutate with `add`/`edit`/`done`/`rm`;
+an open board picks up the change within ~2s. `edit` is the single setter for
+every field, including `status:` (any name, like a free-form `@category`;
+`status:done`/`status:open` are the terminal/default ends, with `done`/`undone`
+as shorthands) — the `status` field appears in `list --json`.
 `list --all --json` adds a `project` field per item so you can tell which board
 each came from.
 
