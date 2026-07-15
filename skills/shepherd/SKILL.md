@@ -62,6 +62,8 @@ found via `--all`, re-list that board (`list --project <name> --json`) and use
 - `@category` · `!h`/`!m`/`!l` priority · `due:<today|tomorrow|+3d|15-07-2026>`
 - `defer:<same date forms>` — start/defer date (item shown but not "started"
   until then) · `link:<url>` — a reference URL
+- `status:<name>` — set a status · `note:<text>` — a note (holds spaces, takes
+  the rest of the line, so put it last)
 
 `list --json` includes `completed` (timestamp set when an item is marked done),
 `defer`, `link`, and `status` per item.

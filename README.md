@@ -87,7 +87,9 @@ In the detail view: `e` edit note · `space` toggle · `o` open link · `d`/`esc
 **Inline quick-add** — `a`, then one line:
 `deploy api @work !h due:tomorrow defer:1w link:https://…`. `@word` sets
 category, `!h`/`!m`/`!l` priority, `due:<preset>` the due date, `defer:<preset>`
-a start/defer date, `link:<url>` a reference; everything else is the task text.
+a start/defer date, `link:<url>` a reference, `status:<name>` a status, and
+`note:<text>` a note (holds spaces, takes the rest of the line — put it last);
+everything else is the task text.
 
 Items are ordered by **category, then priority, then soonest due**, grouped
 under headers, with a colored priority label flush right. **Overdue** open
@@ -248,7 +250,8 @@ shepherd list --project web
 ```
 
 `add` accepts the same quick-add tokens as the board: `@category`, `!h`/`!m`/`!l`
-priority, `due:<today|tomorrow|+3d|15-07-2026>`. Agents should read with
+priority, `due:<today|tomorrow|+3d|15-07-2026>`, `defer:`, `link:`, `status:`,
+and `note:` (takes the rest of the line). Agents should read with
 `list --json` (stable machine shape) and mutate with `add`/`done`/`status`/`rm`;
 an open board picks up the change within ~2s. `status <n> <name>` accepts any
 name (like a free-form `@category`); `done`/`open` are recognised as the

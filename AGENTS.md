@@ -16,10 +16,12 @@ format.
 - `shepherd note <n[.m]> "<text>"` — set item n's (or subtask m's) free-text note; empty value clears it
 - `shepherd rm <n[.m]>` — remove item n, or just its subtask m
 
-Indexes are 1-based and match `list` order. Quick-add tokens: `@category`,
-`!h`/`!m`/`!l` priority, `due:<today|tomorrow|+3d|15-07-2026>`,
-`defer:<same date forms>` (start/defer date), `link:<url>`. `list --json`
-reports `completed` (done timestamp), `defer`, `link`, and `status` per item.
+Indexes are 1-based and match `list` order. Quick-add tokens (shared by `add`,
+`sub`, `edit`): `@category`, `!h`/`!m`/`!l` priority,
+`due:<today|tomorrow|+3d|15-07-2026>`, `defer:<same date forms>` (start/defer
+date), `link:<url>`, `status:<name>`, and `note:<text>` (holds spaces, takes the
+rest of the line — put it last). `list --json` reports `completed` (done
+timestamp), `defer`, `link`, and `status` per item.
 
 Subtasks nest one level under an item. `list --json` puts them in each item's
 `subtasks` array (1-based within the parent); address them as `n.m`. Completion
