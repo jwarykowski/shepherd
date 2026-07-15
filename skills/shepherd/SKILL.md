@@ -25,10 +25,8 @@ Run `shepherd help` for the authoritative command list. Summary:
 | `shepherd stats --json [--all]` | board metrics (JSON numbers; drop `--json` for charts) |
 | `shepherd add "<text>"` | add an item |
 | `shepherd sub <n> "<text>"` | add a subtask to item n |
-| `shepherd edit <n[.m]> "<tokens>"` | merge @category/!prio/due:/defer:/link:/status:/note:/text onto item n (or subtask m); bare key clears, note: takes the rest |
-| `shepherd done <n[.m]>` / `undone <n[.m]>` | (un)complete item n, or its subtask m |
-| `shepherd status <n[.m]> <name>` | set item n's (or subtask m's) status (`in-progress`; `done`/`open` recognised) |
-| `shepherd note <n[.m]> "<text>"` | set item n's (or subtask m's) note (empty clears) |
+| `shepherd edit <n[.m]> "<tokens>"` | the single setter — merge @category/!prio/due:/defer:/link:/status:/note:/text onto item n (or subtask m); bare key clears, note: takes the rest |
+| `shepherd done <n[.m]>` / `undone <n[.m]>` | (un)complete item n, or its subtask m (shorthand for `edit … status:done`/`status:open`) |
 | `shepherd rm <n[.m]>` | remove item n, or just its subtask m |
 
 Indexes are 1-based and match `list` order. Read with `--json`, act by index.
@@ -78,10 +76,11 @@ Between open and done there can be named intermediate statuses (e.g.
 `"in-progress"`). On disk an intermediate status is a `status:` line under the
 item; open and done items carry none.
 
-Set a status with `shepherd status <n> <name>` — any name is accepted (like a
-free-form `@category`); `done` marks the item done and `open` clears it back to
-plain open. `done`/`undone` are shorthands for the two terminal ends. In the
-interactive board, `tab` cycles through the configured list.
+Set a status with `shepherd edit <n> "status:<name>"` — any name is accepted
+(like a free-form `@category`); `status:done` marks the item done and
+`status:open` clears it back to plain open. `done`/`undone` are shorthands for
+the two terminal ends. In the interactive board, `tab` cycles through the
+configured list.
 
 ## Notes
 

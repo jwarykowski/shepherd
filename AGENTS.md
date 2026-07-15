@@ -12,9 +12,12 @@ format.
 - `shepherd edit <n[.m]> "<tokens>"` — merge tokens onto item n (or subtask m); only the given fields change. Tokens: `@category`, `!prio`, `due:`, `defer:`, `link:`, `status:`, `note:`, and text. A bare key clears its field; `note:` takes the rest of the line
 - `shepherd list --filter <q>` — list only matching items (text/note/category/due/defer/link), keeping their real indexes for done/rm
 - `shepherd done <n[.m]>` / `shepherd undone <n[.m]>` — (un)complete item n, or its subtask m
-- `shepherd status <n[.m]> <name>` — set item n's (or subtask m's) status (`in-progress`; `done`/`open` recognised)
-- `shepherd note <n[.m]> "<text>"` — set item n's (or subtask m's) free-text note; empty value clears it
 - `shepherd rm <n[.m]>` — remove item n, or just its subtask m
+
+`edit` is the single setter for every field — status, note, category, priority,
+due, defer, link, and text all change through its tokens (`edit 2 "status:in-progress"`,
+`edit 2 "note:call the vendor"`); a bare `key:` clears. `done`/`undone` are the
+only shorthands, for the terminal state.
 
 Indexes are 1-based and match `list` order. Quick-add tokens (shared by `add`,
 `sub`, `edit`): `@category`, `!h`/`!m`/`!l` priority,
@@ -33,8 +36,9 @@ Items have a status: `done` is terminal; between open and done there can be
 named intermediate statuses (e.g. `in-progress`), configured as an ordered
 `statuses` list in `config.toml` (`done` always last). `list --json`'s `status`
 field is empty for a plain open or done item, else the named status. Set it with
-`shepherd status <n> <name>` (any name accepted; `done`/`open` recognised as the
-terminal/default ends); `tab` cycles the configured list in the interactive board.
+`shepherd edit <n> "status:<name>"` (any name accepted; `status:done`/`status:open`
+recognised as the terminal/default ends, and `done`/`undone` are shorthands for
+them); `tab` cycles the configured list in the interactive board.
 
 Boards are per-project: add `--project <name>` after the verb to target a
 project's board (`shepherd list --project web`, `shepherd add "…" --project web`,

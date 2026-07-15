@@ -223,8 +223,8 @@ shepherd edit 2 "@work !h due:friday" # merge tokens onto item 2 (2.1 edits a su
 shepherd done 2                     # mark item 2 done (cascades to its subtasks)
 shepherd done 2.1                   # mark subtask 1 of item 2 done
 shepherd undone 2.1                 # reopen subtask 1 (also reopens the parent)
-shepherd status 2 in-progress       # set item 2's status (done|open recognised)
-shepherd note 2 "waiting on infra"  # set item 2's note (note 2 "" clears it)
+shepherd edit 2 "status:in-progress" # set item 2's status (status:done|open recognised)
+shepherd edit 2 "note:waiting on infra" # set item 2's note (edit 2 "note:" clears it)
 shepherd rm 2                       # remove item 2 (rm 2.1 removes just the subtask)
 ```
 
@@ -252,10 +252,11 @@ shepherd list --project web
 `add` accepts the same quick-add tokens as the board: `@category`, `!h`/`!m`/`!l`
 priority, `due:<today|tomorrow|+3d|15-07-2026>`, `defer:`, `link:`, `status:`,
 and `note:` (takes the rest of the line). Agents should read with
-`list --json` (stable machine shape) and mutate with `add`/`done`/`status`/`rm`;
-an open board picks up the change within ~2s. `status <n> <name>` accepts any
-name (like a free-form `@category`); `done`/`open` are recognised as the
-terminal/default ends, and the `status` field appears in `list --json`.
+`list --json` (stable machine shape) and mutate with `add`/`edit`/`done`/`rm`;
+an open board picks up the change within ~2s. `edit` is the single setter for
+every field, including `status:` (any name, like a free-form `@category`;
+`status:done`/`status:open` are the terminal/default ends, with `done`/`undone`
+as shorthands) — the `status` field appears in `list --json`.
 `list --all --json` adds a `project` field per item so you can tell which board
 each came from.
 

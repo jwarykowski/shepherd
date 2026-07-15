@@ -26,8 +26,6 @@ Usage:
   shepherd edit <n[.m]> "<tokens>" update item n (or subtask m): @category !prio due: defer: link: status: note: and text (bare key clears; note: takes the rest)
   shepherd done <n[.m]>         mark item n (or its subtask m) done
   shepherd undone <n[.m]>       mark item n (or its subtask m) not done
-  shepherd status <n[.m]> <name> set item (or subtask m)'s status (e.g. in-progress; done|open recognised)
-  shepherd note <n[.m]> "<text>" set item (or subtask m)'s note (spaces ok; empty clears)
   shepherd rm <n[.m]>           remove item n (or just its subtask m)
 
 Flags go after the verb. --project <name> (or $SHEPHERD_PROJECT) selects a
@@ -83,10 +81,6 @@ func Run(verb string, args []string) int {
 		return cmdToggle(rest, project, true, os.Stdout)
 	case "undone":
 		return cmdToggle(rest, project, false, os.Stdout)
-	case "status":
-		return cmdSetStatus(rest, project, os.Stdout)
-	case "note":
-		return cmdNote(rest, project, os.Stdout)
 	case "rm":
 		return cmdRemove(rest, project, os.Stdout)
 	default:
@@ -281,6 +275,9 @@ func cmdEdit(args []string, project string, w io.Writer) int {
 		todo.ApplyEdit(&items[p-1], text)
 	} else {
 		todo.ApplyEdit(&items[p-1].Subs[s-1], text)
+		// editing a sub's status/done can complete or reopen the parent, same
+		// as done/undone — ApplyEdit works on one Item, so reconcile here.
+		todo.SetDone(&items[p-1], todo.AllSubsDone(&items[p-1]))
 	}
 	if err := store.Save(path, items); err != nil {
 		fmt.Fprintln(os.Stderr, "shepherd:", err)
@@ -305,61 +302,6 @@ func cmdToggle(args []string, project string, done bool, w io.Writer) int {
 		todo.SetParentDone(&items[p-1], done)
 	} else {
 		todo.SetSubDone(&items[p-1], s-1, done)
-	}
-	if err := store.Save(path, items); err != nil {
-		fmt.Fprintln(os.Stderr, "shepherd:", err)
-		return 1
-	}
-	emit(w, formatLine(p, items[p-1]))
-	if s > 0 {
-		emit(w, formatSub(p, s, items[p-1].Subs[s-1]))
-	}
-	return 0
-}
-
-func cmdSetStatus(args []string, project string, w io.Writer) int {
-	path := store.TodoPathFor(project)
-	items := store.Load(path)
-	p, s, ok := parseRef(args, items)
-	if !ok {
-		return 1
-	}
-	if len(args) < 2 {
-		fmt.Fprintln(os.Stderr, `shepherd: status needs a name, e.g. shepherd status 2 in-progress`)
-		return 2
-	}
-	name := strings.ToLower(strings.TrimSpace(args[1]))
-	if s == 0 {
-		todo.SetStatus(&items[p-1], name)
-	} else {
-		todo.SetSubStatus(&items[p-1], s-1, name)
-	}
-	if err := store.Save(path, items); err != nil {
-		fmt.Fprintln(os.Stderr, "shepherd:", err)
-		return 1
-	}
-	emit(w, formatLine(p, items[p-1]))
-	if s > 0 {
-		emit(w, formatSub(p, s, items[p-1].Subs[s-1]))
-	}
-	return 0
-}
-
-// cmdNote sets an item's free-text note. Unlike quick-add tokens the value may
-// contain spaces, so the remaining args are joined verbatim (no ParseQuickAdd);
-// an empty value clears the note (Save drops the note: lines).
-func cmdNote(args []string, project string, w io.Writer) int {
-	path := store.TodoPathFor(project)
-	items := store.Load(path)
-	p, s, ok := parseRef(args, items)
-	if !ok {
-		return 1
-	}
-	text := strings.TrimSpace(strings.Join(args[1:], " "))
-	if s == 0 {
-		items[p-1].Note = text
-	} else {
-		items[p-1].Subs[s-1].Note = text
 	}
 	if err := store.Save(path, items); err != nil {
 		fmt.Fprintln(os.Stderr, "shepherd:", err)

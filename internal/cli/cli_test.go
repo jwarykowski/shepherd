@@ -137,61 +137,28 @@ func TestCLIListFilter(t *testing.T) {
 	}
 }
 
-// TestCLINote checks note sets a multi-word value, clears it with an empty
-// value, and can target a subtask.
-func TestCLINote(t *testing.T) {
+// TestCLIEditSubStatusCascade checks that editing a subtask's status to done
+// completes the parent (last sub done), and an intermediate status reopens it —
+// the same cascade done/undone give, since edit is the only status setter now.
+func TestCLIEditSubStatusCascade(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "todo.md")
 	t.Setenv("SHEPHERD_TODO_FILE", path)
 
-	cmdAdd([]string{"write report"}, "", &bytes.Buffer{})
-	if code := cmdNote([]string{"1", "a longer note with spaces"}, "", &bytes.Buffer{}); code != 0 {
-		t.Fatalf("note exit %d", code)
+	cmdAdd([]string{"ship release"}, "", &bytes.Buffer{})
+	cmdSub([]string{"1", "cut tag"}, "", &bytes.Buffer{})
+
+	if code := cmdEdit([]string{"1.1", "status:done"}, "", &bytes.Buffer{}); code != 0 {
+		t.Fatalf("edit sub status:done exit %d", code)
 	}
-	if it := store.Load(path)[0]; it.Note != "a longer note with spaces" {
-		t.Fatalf("note not set: %q", it.Note)
+	if it := store.Load(path)[0]; !it.Done || !it.Subs[0].Done {
+		t.Fatalf("last sub done should complete parent: %+v", it)
 	}
 
-	if code := cmdNote([]string{"1"}, "", &bytes.Buffer{}); code != 0 {
-		t.Fatalf("note clear exit %d", code)
+	if code := cmdEdit([]string{"1.1", "status:in-progress"}, "", &bytes.Buffer{}); code != 0 {
+		t.Fatalf("edit sub status:in-progress exit %d", code)
 	}
-	if it := store.Load(path)[0]; it.Note != "" {
-		t.Fatalf("note not cleared: %q", it.Note)
-	}
-
-	cmdSub([]string{"1", "gather data"}, "", &bytes.Buffer{})
-	if code := cmdNote([]string{"1.1", "check the archive"}, "", &bytes.Buffer{}); code != 0 {
-		t.Fatalf("note subtask exit %d", code)
-	}
-	if sub := store.Load(path)[0].Subs[0]; sub.Note != "check the archive" {
-		t.Fatalf("subtask note wrong: %q", sub.Note)
-	}
-}
-
-func TestCLISetStatus(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "todo.md")
-	t.Setenv("SHEPHERD_TODO_FILE", path)
-	if err := os.WriteFile(path, []byte("- [ ] alpha\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	if code := cmdSetStatus([]string{"1", "in-progress"}, "", &bytes.Buffer{}); code != 0 {
-		t.Fatalf("status exit %d", code)
-	}
-	if it := store.Load(path)[0]; it.Done || it.Status != "in-progress" {
-		t.Fatalf("status not set: %+v", it)
-	}
-
-	// "done" is recognised as the terminal state, clearing any named status.
-	if code := cmdSetStatus([]string{"1", "done"}, "", &bytes.Buffer{}); code != 0 {
-		t.Fatalf("status done exit %d", code)
-	}
-	if it := store.Load(path)[0]; !it.Done || it.Status != "" {
-		t.Fatalf("status done wrong: %+v", it)
-	}
-
-	// missing name is a usage error (exit 2), not a panic.
-	if code := cmdSetStatus([]string{"1"}, "", &bytes.Buffer{}); code != 2 {
-		t.Fatalf("want exit 2 for missing name, got %d", code)
+	if it := store.Load(path)[0]; it.Done || it.Subs[0].Status != "in-progress" {
+		t.Fatalf("intermediate sub status should reopen parent: %+v", it)
 	}
 }
 
