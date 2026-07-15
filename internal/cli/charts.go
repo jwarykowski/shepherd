@@ -43,11 +43,6 @@ func renderStats(s todo.Stats, title string, width int) string {
 	if width < 20 {
 		width = 20
 	}
-	twoUp := width >= 72
-	colW := width
-	if twoUp {
-		colW = (width - 1) / 2
-	}
 
 	var b strings.Builder
 	left := titleStyle.Render(title)
@@ -65,20 +60,20 @@ func renderStats(s todo.Stats, title string, width int) string {
 		{"this week", s.DueWeek, colOK},
 		{"no date", s.NoDue, colDim},
 		{"deferred", s.Deferred, colInfo},
-	}, innerW(colW)), colW)
+	}, innerW(width)), width)
 
 	prio := panel("open by priority", hbar([]barRow{
 		{"!H", s.Prio.H, colHigh},
 		{"!M", s.Prio.M, colMed},
 		{"!L", s.Prio.L, colLow},
 		{"none", s.Prio.None, colDim},
-	}, innerW(colW)), colW)
+	}, innerW(width)), width)
 
 	catRows := make([]barRow, 0, len(s.ByCategory))
 	for _, c := range s.ByCategory {
 		catRows = append(catRows, barRow{c.Name, c.Open, colInfo})
 	}
-	cat := panel("open by category", hbar(catRows, innerW(colW)), colW)
+	cat := panel("open by category", hbar(catRows, innerW(width)), width)
 
 	statusRows := make([]barRow, 0, len(s.ByStatus))
 	for _, st := range s.ByStatus {
@@ -91,13 +86,28 @@ func renderStats(s todo.Stats, title string, width int) string {
 		}
 		statusRows = append(statusRows, barRow{st.Name, st.Count, c})
 	}
-	status := panel("by status", hbar(statusRows, innerW(colW)), colW)
+	status := panel("by status", hbar(statusRows, innerW(width)), width)
+
+	// Labels must line up with todo.AgeBucket's boundaries.
+	ageLabels := []string{"<1d", "1-3d", "4-7d", "8-30d", ">30d"}
+	ageRows := make([]barRow, 0, len(s.OpenAgeDist))
+	for i, c := range s.OpenAgeDist {
+		col := colInfo
+		if i == len(ageLabels)-1 {
+			col = colHigh // >30d is stale
+		}
+		ageRows = append(ageRows, barRow{ageLabels[i], c, col})
+	}
+	age := panel("open by age", hbar(ageRows, innerW(width)), width)
 
 	thr := panel(fmt.Sprintf("done/day 30d · 7d:%d 30d:%d", s.Done7, s.Done30),
 		spark(s.DonePerDay, innerW(width)), width)
 
-	b.WriteString(grid(twoUp, due, prio) + "\n")
-	b.WriteString(grid(twoUp, cat, status) + "\n")
+	b.WriteString(due + "\n")
+	b.WriteString(prio + "\n")
+	b.WriteString(cat + "\n")
+	b.WriteString(age + "\n")
+	b.WriteString(status + "\n")
 	b.WriteString(thr + "\n")
 
 	if len(s.ByProject) > 1 {
@@ -108,9 +118,32 @@ func renderStats(s todo.Stats, title string, width int) string {
 		trend(s.CreatedShort, s.DoneShort, innerW(width)), width) + "\n")
 
 	b.WriteString(faintStyle.Render(fmt.Sprintf(
-		" aging  oldest %dd · avg %.1fd · stale>30d %d · cycle %.1fd",
+		" backlog health  oldest open %dd · avg open %.1fd · stale >30d %d · time to done %.1fd",
 		s.OldestOpenDays, s.AvgOpenDays, s.StaleOpen, s.AvgCycleDays)))
 	return b.String()
+}
+
+// statsLegend explains every chart and the aging line, in the order they render.
+func statsLegend() string {
+	title := titleStyle.Render("shepherd stats · legend")
+	rule := faintStyle.Render(strings.Repeat("─", lipgloss.Width("shepherd stats · legend")))
+	entry := func(name, desc string) string {
+		return titleStyle.Render(name) + "\n  " + desc
+	}
+	sections := []string{
+		title + "\n" + rule,
+		entry("header", "N/N done · % — items completed out of all items (done incl. archived)."),
+		entry("due", "open items by urgency: overdue · due today · due within 7 days · no due date · deferred (start date in the future). Not exclusive — an item can count in more than one."),
+		entry("open by priority", "open items by !H / !M / !L, or none."),
+		entry("open by category", "open items per @category; (none) is uncategorised."),
+		entry("open by age", "open items by how long ago they were created: <1d · 1-3d · 4-7d · 8-30d · >30d (>30d flagged red — the stale tail)."),
+		entry("by status", "all items by status: open, any named status (e.g. in-progress), and done."),
+		entry("done/day 30d", "sparkline of items completed per day over 30 days; 7d/30d are the totals."),
+		entry("open by project", "open items per board (only with --all)."),
+		entry("backlog · created vs done 14d", "two lines over 14 days — items created vs completed; net +/-per month is the 30-day created-minus-done balance (positive = backlog growing)."),
+		entry("backlog health", "oldest open — age of the oldest open item · avg open — mean age of open items · stale >30d — open items created over 30 days ago · time to done — mean create→complete time for finished items."),
+	}
+	return strings.Join(sections, "\n\n")
 }
 
 func pct(r float64) int { return int(r*100 + 0.5) }
@@ -122,14 +155,6 @@ func innerW(panelW int) int {
 		w = 8
 	}
 	return w
-}
-
-// grid places two panels side by side (or stacked when narrow).
-func grid(twoUp bool, left, right string) string {
-	if twoUp {
-		return lipgloss.JoinHorizontal(lipgloss.Top, left, " ", right)
-	}
-	return left + "\n" + right
 }
 
 func panel(title, body string, width int) string {
@@ -145,19 +170,28 @@ func hbar(rows []barRow, width int) string {
 	if len(rows) == 0 {
 		return faintStyle.Render("(none)")
 	}
-	const maxLabel = 16 // clip longer category/project names so bars keep room
-	labelW, valW, max := 0, 1, 0
-	labels := make([]string, len(rows))
-	for i, r := range rows {
-		labels[i] = clip(r.label, maxLabel)
-		if w := lipgloss.Width(labels[i]); w > labelW {
-			labelW = w
-		}
+	valW, max := 1, 0
+	for _, r := range rows {
 		if r.value > max {
 			max = r.value
 		}
 		if n := len(fmt.Sprint(r.value)); n > valW {
 			valW = n
+		}
+	}
+	// Grow the label column to the longest label, but reserve a readable bar so
+	// one very long name can't starve every bar down to the floor.
+	const minBar = 10
+	maxLabel := width - minBar - valW - 2
+	if maxLabel < 8 {
+		maxLabel = 8
+	}
+	labelW := 0
+	labels := make([]string, len(rows))
+	for i, r := range rows {
+		labels[i] = clip(r.label, maxLabel)
+		if w := lipgloss.Width(labels[i]); w > labelW {
+			labelW = w
 		}
 	}
 	barW := width - labelW - valW - 2

@@ -51,6 +51,10 @@ func TestCompute(t *testing.T) {
 	eq("done30", s.Done30, 2)
 	eq("stale", s.StaleOpen, 1) // d, created 01-05
 	eq("oldestOpen", s.OldestOpenDays, 73)
+	// open ages: b/c/e in 1-3d, a ~23d in 8-30d, d ~73d >30d
+	if want := []int{0, 3, 0, 1, 1}; !equalInts(s.OpenAgeDist, want) {
+		t.Errorf("openAgeDist = %v, want %v", s.OpenAgeDist, want)
+	}
 	eq("net30", s.Net30, s.Created30-s.Done30)
 	// cycle: f 3d, g 5d -> avg 4
 	if s.AvgCycleDays != 4.0 {
@@ -68,6 +72,32 @@ func TestCompute(t *testing.T) {
 	// by-category: infra (1 open) present, sorted; no Source so ByProject nil
 	if len(s.ByCategory) == 0 || s.ByProject != nil {
 		t.Errorf("category/project: %+v / %v", s.ByCategory, s.ByProject)
+	}
+}
+
+func equalInts(a, b []int) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// TestAgeBucket pins the open-age bucket boundaries.
+func TestAgeBucket(t *testing.T) {
+	cases := []struct {
+		days, want int
+	}{
+		{0, 0}, {1, 1}, {3, 1}, {4, 2}, {7, 2}, {8, 3}, {30, 3}, {31, 4}, {365, 4},
+	}
+	for _, c := range cases {
+		if got := AgeBucket(c.days); got != c.want {
+			t.Errorf("AgeBucket(%d) = %d, want %d", c.days, got, c.want)
+		}
 	}
 }
 

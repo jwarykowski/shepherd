@@ -40,12 +40,18 @@ func main() {
 	project := flag.String("project", "", "open this project's board (else $SHEPHERD_PROJECT, else the default)")
 	all := flag.Bool("all", false, "open the read-only global view across all boards")
 	stats := flag.Bool("stats", false, "print board stats and exit")
+	legend := flag.Bool("legend", false, "explain each stats chart and exit")
 	ver := flag.Bool("version", false, "print the version and exit")
 	flag.Parse()
 
 	if *ver {
 		fmt.Println("shepherd", version())
 		return
+	}
+
+	// --legend is static glossary text — print it regardless of --stats/--all.
+	if *legend {
+		os.Exit(cli.Run("stats", []string{"--legend"}))
 	}
 
 	if *stats {

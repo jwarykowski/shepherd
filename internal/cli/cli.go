@@ -20,7 +20,7 @@ const cliUsage = `shepherd — todo board
 Usage:
   shepherd                      open the interactive board
   shepherd list [--json] [--all] [--filter <text>] list items (--all aggregates; --filter matches text/note/category/due/defer/link)
-  shepherd stats [--json] [--all] show board metrics as charts (--all aggregates)
+  shepherd stats [--json] [--all] [--legend] board metrics as charts (--all aggregates; --legend explains them)
   shepherd add "<text>"         add an item (@category !h/!m/!l due: defer: link: status: note:)
   shepherd sub <n> "<text>"     add a subtask to item n (same @/!/due: syntax)
   shepherd edit <n[.m]> "<tokens>" update item n (or subtask m): @category !prio due: defer: link: status: note: and text (bare key clears; note: takes the rest)
@@ -39,6 +39,7 @@ Board flags (bare shepherd, the interactive board):
   --filter <text>   start pre-filtered (text/note/category/due)
   --all             read-only global view across all boards
   --stats           print board stats and exit
+  --legend          explain each stats chart and exit
   --version         print the version and exit
 
 Indexes are 1-based and match the order shown by 'list'.`

@@ -6,7 +6,7 @@ format.
 
 - `shepherd list --json` — read all items (machine-readable; prefer this)
 - `shepherd list --all --json` — read across every board; adds a `project` field per item
-- `shepherd stats [--json] [--all]` — board metrics (charts, or `--json` numbers)
+- `shepherd stats [--json] [--all] [--legend]` — board metrics (charts, or `--json` numbers; `--legend` explains each chart)
 - `shepherd add "buy milk @home !h due:tomorrow"` — add an item
 - `shepherd sub <n> "<text>"` — add a subtask to item n (same quick-add tokens)
 - `shepherd edit <n[.m]> "<tokens>"` — merge tokens onto item n (or subtask m); only the given fields change. Tokens: `@category`, `!prio`, `due:`, `defer:`, `link:`, `status:`, `note:`, and text. A bare key clears its field; `note:` takes the rest of the line
