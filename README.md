@@ -203,6 +203,7 @@ The two combine: `shepherd --project web --filter '!h'`.
 
 `shepherd --stats` prints board stats and exits — the launch-flag form of
 `shepherd stats` (below); combine with `--all` or `--project <name>`.
+`shepherd --stats --legend` (or just `shepherd --legend`) explains the charts.
 
 `shepherd --version` prints the version and exits.
 

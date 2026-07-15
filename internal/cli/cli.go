@@ -39,6 +39,7 @@ Board flags (bare shepherd, the interactive board):
   --filter <text>   start pre-filtered (text/note/category/due)
   --all             read-only global view across all boards
   --stats           print board stats and exit
+  --legend          explain each stats chart and exit
   --version         print the version and exit
 
 Indexes are 1-based and match the order shown by 'list'.`
