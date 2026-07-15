@@ -9,7 +9,7 @@ format.
 - `shepherd stats [--json] [--all]` — board metrics (charts, or `--json` numbers)
 - `shepherd add "buy milk @home !h due:tomorrow"` — add an item
 - `shepherd sub <n> "<text>"` — add a subtask to item n (same quick-add tokens)
-- `shepherd edit <n[.m]> "<tokens>"` — merge @category/!prio/due:/defer:/link:/status:/note: (and text) onto item n or subtask m; only the fields given change (a bare key like `due:` clears it; `note:` takes the rest of the line)
+- `shepherd edit <n[.m]> "<tokens>"` — merge tokens onto item n (or subtask m); only the given fields change. Tokens: `@category`, `!prio`, `due:`, `defer:`, `link:`, `status:`, `note:`, and text. A bare key clears its field; `note:` takes the rest of the line
 - `shepherd list --filter <q>` — list only matching items (text/note/category/due/defer/link), keeping their real indexes for done/rm
 - `shepherd done <n[.m]>` / `shepherd undone <n[.m]>` — (un)complete item n, or its subtask m
 - `shepherd status <n[.m]> <name>` — set item n's (or subtask m's) status (`in-progress`; `done`/`open` recognised)
