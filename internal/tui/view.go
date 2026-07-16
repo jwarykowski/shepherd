@@ -433,7 +433,7 @@ func (m model) settingsView() string {
 	if m.mode == modeSettingEdit {
 		footer += m.input.View() + "  " + dimStyle.Render("(enter=save esc=cancel)")
 	} else {
-		footer += dimStyle.Render("settings · j/k move · tab cycle · enter edit · esc back · q quit")
+		footer += dimStyle.Render("settings · j/k move · enter change · esc back · q quit")
 	}
 	body := header + "\n" + strings.Join(out, "\n")
 	return m.frame(body, footer)
@@ -754,7 +754,7 @@ func (m model) helpBody() []string {
 	sec("view & find")
 	line("v — cycle view: category / priority / table")
 	line("/ — filter text, note, category, due (also greps the archive)")
-	line("A — toggle the read-only global view across all boards (esc/A to leave)")
+	line("A — toggle the read-only global view across all boards (esc to leave)")
 	line("e — browse the archive (read-only; all boards in the global view; esc to leave)")
 	line("d — detail view · ? — this help")
 	blank()
@@ -806,7 +806,7 @@ func (m model) helpView() string {
 	b.WriteString(m.headerWith("help", done, total) + "\n\n")
 	b.WriteString(strings.Join(body[off:end], "\n"))
 
-	hint := "enter to close"
+	hint := "esc to close"
 	if off > 0 {
 		hint = "↑ " + hint
 	}
@@ -924,7 +924,7 @@ func (m model) detailView() string {
 	if m.mode == modeNote {
 		help = rule + "\n" + dimStyle.Render("note: enter newline · esc done (saves as you type)")
 	} else {
-		help = rule + "\n" + dimStyle.Render("e edit note   space toggle   o open link   d/esc/q back")
+		help = rule + "\n" + dimStyle.Render("n edit note   space toggle   o open link   esc back   q quit")
 	}
 	return m.frame(b.String(), help)
 }

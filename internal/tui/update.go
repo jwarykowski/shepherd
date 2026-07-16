@@ -235,6 +235,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tick()
 	case tea.KeyMsg:
+		if msg.String() == "ctrl+c" { // universal abort, reaches text/detail/help/confirm too
+			return m.quit()
+		}
 		var res tea.Model
 		var cmd tea.Cmd
 		switch m.mode {
@@ -278,9 +281,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m model) updateGlobal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	rows := m.rows()
 	switch msg.String() {
-	case "q", "ctrl+c":
-		return m, tea.Quit // no save: the aggregate must never be written back
-	case "A", "esc":
+	case "q":
+		return m.quit()
+	case "esc":
 		m.toggleGlobal()
 	case "j", "down":
 		if m.cursor < len(rows)-1 {
@@ -340,14 +343,23 @@ func openLink(url string) tea.Cmd {
 	return nil
 }
 
+// quit is the single exit point for q and ctrl+c across every mode. It saves the
+// board first, except in the read-only global aggregate, which must never be
+// written back.
+func (m model) quit() (tea.Model, tea.Cmd) {
+	if !m.global && m.dirty {
+		_ = store.Save(m.path, m.items)
+	}
+	return m, tea.Quit
+}
+
 func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	rows := m.rows()
 	ref := m.selRef()
 	idx := ref.item
 	switch msg.String() {
-	case "q", "ctrl+c":
-		_ = store.Save(m.path, m.items)
-		return m, tea.Quit
+	case "q":
+		return m.quit()
 	case "w":
 		_ = store.Save(m.path, m.items)
 		m.markSaved()
@@ -361,7 +373,7 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.cursor > 0 {
 			m.cursor--
 		}
-	case " ", "enter":
+	case " ":
 		if idx >= 0 {
 			m.beforeMutate()
 			if ref.sub == -1 {
@@ -569,11 +581,8 @@ func (m *model) enterProjects() {
 // the selected board (flushing any unsaved edits first), esc to return.
 func (m model) updateProjects(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "q", "ctrl+c":
-		if !m.global && m.dirty {
-			_ = store.Save(m.path, m.items)
-		}
-		return m, tea.Quit
+	case "q":
+		return m.quit()
 	case "esc":
 		m.mode = modeList
 	case "j", "down":
@@ -720,6 +729,8 @@ func (m model) afterBoardChange(oldName, newName string) model {
 // selected board, anything else cancels back to the picker.
 func (m model) updateConfirmDelete(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
+	case "q":
+		return m.quit()
 	case "y", "Y":
 		if b := m.selectedBoard(); b != nil && b.Name != "default" {
 			if err := store.DeleteBoard(b.Name); err == nil {
@@ -744,11 +755,8 @@ func (m *model) saveSettings() { _ = saveConfig(store.ConfigPath(), m.currentCon
 // applies to the live model and is written straight to config.toml.
 func (m model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "q", "ctrl+c":
-		if !m.global && m.dirty {
-			_ = store.Save(m.path, m.items)
-		}
-		return m, tea.Quit
+	case "q":
+		return m.quit()
 	case "esc":
 		m.mode = modeList
 	case "j", "down":
@@ -759,12 +767,10 @@ func (m model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.settingsCur > 0 {
 			m.settingsCur--
 		}
-	case "tab", " ":
-		m.cycleSetting() // no-op on text rows
-	case "enter", "l", "right":
+	case "enter":
 		switch m.settingsCur {
 		case 0, 1:
-			m.cycleSetting()
+			m.cycleSetting() // enum rows cycle in place
 		default:
 			m.mode = modeSettingEdit
 			m.input.SetValue(m.settingValue(m.settingsCur))
@@ -885,12 +891,9 @@ func (m *model) enterArchive() {
 // return to the board, q to quit. No mutations.
 func (m model) updateArchive(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "q", "ctrl+c":
-		if !m.global {
-			_ = store.Save(m.path, m.items)
-		}
-		return m, tea.Quit
-	case "esc", "e":
+	case "q":
+		return m.quit()
+	case "esc":
 		m.mode = modeList
 	case "j", "down":
 		if m.arcCur < len(m.arcRows)-1 {
@@ -906,7 +909,9 @@ func (m model) updateArchive(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m model) updateHelp(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "enter":
+	case "q":
+		return m.quit()
+	case "esc":
 		m.mode = modeList
 		m.helpScroll = 0
 	case "j", "down":
@@ -928,16 +933,21 @@ func (m model) updateHelp(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m model) updateDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	ref := m.selRef()
 	if ref.item < 0 {
-		if s := msg.String(); s == "esc" || s == "q" || s == "d" {
+		switch msg.String() {
+		case "q":
+			return m.quit()
+		case "esc":
 			m.mode = modeList
 		}
 		return m, nil
 	}
 	p := m.rowPtr(ref)
 	switch msg.String() {
-	case "esc", "q", "d":
+	case "q":
+		return m.quit()
+	case "esc":
 		m.mode = modeList
-	case "e", "n":
+	case "n":
 		if !m.global {
 			m.mode = modeNote
 			m.noteEditing = false
@@ -946,7 +956,7 @@ func (m model) updateDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.note.SetValue(p.Note)
 			m.note.Focus()
 		}
-	case "space", " ":
+	case " ":
 		if !m.global {
 			m.beforeMutate()
 			if ref.sub == -1 {

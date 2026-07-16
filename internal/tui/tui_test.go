@@ -29,6 +29,8 @@ func key(s string) tea.KeyMsg {
 		return tea.KeyMsg{Type: tea.KeyTab}
 	case "ctrl+s":
 		return tea.KeyMsg{Type: tea.KeyCtrlS}
+	case "ctrl+c":
+		return tea.KeyMsg{Type: tea.KeyCtrlC}
 	}
 	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}
 }
@@ -98,11 +100,11 @@ func TestSettingsEditor(t *testing.T) {
 	if v := m.View(); !strings.Contains(v, "autosave") || !strings.Contains(v, "settings") {
 		t.Fatalf("settings screen did not render fields:\n%s", v)
 	}
-	m = drive(m, "tab") // row 0 view: category -> priority
+	m = drive(m, "enter") // row 0 view: category -> priority
 	if m.view != viewPriority {
 		t.Fatalf("view not cycled: %v", m.view)
 	}
-	m = drive(m, "j", "tab") // row 1 density -> comfort
+	m = drive(m, "j", "enter") // row 1 density -> comfort
 	if m.density != comfort {
 		t.Fatal("density not toggled")
 	}
@@ -451,9 +453,9 @@ func TestDetailNote(t *testing.T) {
 	if m.mode != modeDetail {
 		t.Fatal("d did not open detail")
 	}
-	m = drive(m, "e")
+	m = drive(m, "n")
 	if m.mode != modeNote {
-		t.Fatal("e did not open the note editor")
+		t.Fatal("n did not open the note editor")
 	}
 	// typing saves live; enter inserts a newline (multi-line note)
 	m = drive(m, "a", "b", "enter", "c")
@@ -464,9 +466,41 @@ func TestDetailNote(t *testing.T) {
 	if m.mode != modeDetail || m.items[0].Note != "ab\nc" {
 		t.Fatalf("esc should close keeping the saved note: %q mode=%d", m.items[0].Note, m.mode)
 	}
-	m = drive(m, "q")
+	m = drive(m, "esc")
 	if m.mode != modeList {
-		t.Fatal("q did not return to list")
+		t.Fatal("esc did not return to list from detail")
+	}
+}
+
+// TestQuitKeys checks q quits (a tea.Quit cmd) from the non-text modes and that
+// ctrl+c quits from every mode, including text input, while q stays literal
+// text inside an input field. esc backs out of an overlay instead of quitting.
+func TestQuitKeys(t *testing.T) {
+	isQuit := func(m model, md mode, s string) bool {
+		m.mode = md
+		_, cmd := m.Update(key(s))
+		return cmd != nil && cmd() == tea.Quit()
+	}
+	for _, mode := range []mode{modeList, modeDetail, modeHelp, modeArchive, modeProjects, modeSettings, modeConfirmDelete} {
+		if !isQuit(model{input: textinput.New()}, mode, "q") {
+			t.Errorf("q did not quit from mode %d", mode)
+		}
+		if !isQuit(model{input: textinput.New()}, mode, "ctrl+c") {
+			t.Errorf("ctrl+c did not quit from mode %d", mode)
+		}
+	}
+	// ctrl+c aborts from a text-entry mode; q is literal there.
+	if !isQuit(model{input: textinput.New()}, modeAdd, "ctrl+c") {
+		t.Error("ctrl+c did not quit from text input")
+	}
+	if isQuit(model{input: textinput.New()}, modeAdd, "q") {
+		t.Error("q should be literal text in an input, not quit")
+	}
+	// esc backs out of help rather than quitting.
+	m := model{input: textinput.New(), mode: modeHelp}
+	nm, _ := m.Update(key("esc"))
+	if nm.(model).mode != modeList {
+		t.Error("esc did not close help")
 	}
 }
 
@@ -827,9 +861,9 @@ func TestHelpScroll(t *testing.T) {
 	if m.helpScroll != 0 {
 		t.Errorf("after g scroll=%d, want 0", m.helpScroll)
 	}
-	nm, _ := m.updateHelp(tea.KeyMsg{Type: tea.KeyEnter})
+	nm, _ := m.updateHelp(tea.KeyMsg{Type: tea.KeyEsc})
 	if nm.(model).mode != modeList {
-		t.Error("enter did not close help")
+		t.Error("esc did not close help")
 	}
 }
 
