@@ -51,6 +51,7 @@ func TestStatsJSON(t *testing.T) {
 func TestStatsAll(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", "")
 	t.Setenv("SHEPHERD_TODO_FILE", "") // don't let the override short-circuit boards
 	base := filepath.Join(home, ".config", "shepherd")
 	if err := os.MkdirAll(filepath.Join(base, "projects"), 0o755); err != nil {
@@ -74,5 +75,29 @@ func TestStatsAll(t *testing.T) {
 	}
 	if s.Total != 3 || s.ByProject["default"].Open != 1 || s.ByProject["web"].Open != 2 {
 		t.Errorf("all aggregate wrong: total %d, byProject %+v", s.Total, s.ByProject)
+	}
+}
+
+// TestOrderByConfig checks stats orders statuses by the configured order, with
+// unconfigured statuses falling back to count-descending after them.
+func TestOrderByConfig(t *testing.T) {
+	s := todo.Stats{ByStatus: []todo.StatusCount{
+		{Name: "done", Count: 1},
+		{Name: "in-progress", Count: 1},
+		{Name: "blocked", Count: 5}, // not in config → after configured, by count
+	}}
+	orderByConfig(&s, []string{"in-progress", "open", "done"})
+	got := []string{s.ByStatus[0].Name, s.ByStatus[1].Name, s.ByStatus[2].Name}
+	want := []string{"in-progress", "done", "blocked"}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("order = %v, want %v", got, want)
+		}
+	}
+	// no config → leave Compute's order untouched
+	s2 := todo.Stats{ByStatus: []todo.StatusCount{{Name: "done"}, {Name: "open"}}}
+	orderByConfig(&s2, nil)
+	if s2.ByStatus[0].Name != "done" {
+		t.Fatalf("nil config should not reorder: %+v", s2.ByStatus)
 	}
 }

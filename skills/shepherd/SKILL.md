@@ -23,15 +23,18 @@ Run `shepherd help` for the authoritative command list. Summary:
 | `shepherd list --all --json` | read across every board; adds a `project` field |
 | `shepherd list --filter <q> [--json]` | list only matching items; real indexes kept |
 | `shepherd projects [--json] [--archived]` | list boards with done/total counts (`--archived` lists archived boards); JSON marks the current board (`"current": true`) |
-| `shepherd project rename\|delete\|archive\|unarchive <name>` | whole-board actions (delete needs `--force`; archive stashes under `projects/archived/`); default board is not actionable |
+| `shepherd project rename\|delete\|archive\|unarchive <name>` | whole-board actions (delete needs `--force`, `--dry-run` previews; archive stashes under `projects/archived/`); default board is not actionable |
 | `shepherd stats --json [--all]` | board metrics (JSON numbers; drop `--json` for charts; `--legend` explains them) |
 | `shepherd add "<text>"` | add an item |
 | `shepherd sub <n> "<text>"` | add a subtask to item n |
 | `shepherd edit <n[.m]> "<tokens>"` | the single setter — merge @category/!prio/due:/defer:/link:/status:/note:/text onto item n (or subtask m); bare key clears, note: takes the rest |
 | `shepherd done <n[.m]>` / `undone <n[.m]>` | (un)complete item n, or its subtask m (shorthand for `edit … status:done`/`status:open`) |
-| `shepherd rm <n[.m]>` | remove item n, or just its subtask m |
+| `shepherd rm <n[.m]> [--dry-run]` | remove item n, or just its subtask m (`--dry-run`/`-n` previews) |
 
 Indexes are 1-based and match `list` order. Read with `--json`, act by index.
+Exit codes: `0` success · `2` usage/input error (bad flag, unknown command,
+out-of-range index) · `1` runtime/IO failure. `-q`/`--quiet` drops a mutation's
+confirmation line, never the requested data.
 
 ## Subtasks
 
@@ -86,10 +89,10 @@ configured list.
 
 ## Notes
 
-- Data file: `~/.config/shepherd/todo.md` by default, or
-  `~/.config/shepherd/projects/<name>.md` when a project is selected with
-  `--project <name>` (or `$SHEPHERD_PROJECT`). Flags follow the verb, e.g.
-  `shepherd list --project web`. Override the exact file with
+- Data file: `todo.md` under `$XDG_CONFIG_HOME/shepherd/` (defaults to
+  `~/.config/shepherd/`), or `projects/<name>.md` there when a project is
+  selected with `--project <name>` (or `$SHEPHERD_PROJECT`). Flags follow the
+  verb, e.g. `shepherd list --project web`. Override the exact file with
   `$SHEPHERD_TODO_FILE`. Dates stored ISO.
 - If `shepherd` isn't found, it isn't installed —
   `brew install jwarykowski/tap/shepherd`.

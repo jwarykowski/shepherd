@@ -97,8 +97,10 @@ func loadConfig(path string) config {
 	return c
 }
 
-// saveConfig writes the known config keys back to config.toml. It rewrites the
-// file from the known keys, so any user comments in it are dropped.
+// saveConfig writes the known config keys back to config.toml. It rewrites
+// managed keys in place and keeps every other line (comments, blanks, unknown
+// keys) verbatim, so user annotations survive a settings change. Managed keys
+// absent from the file are appended.
 func saveConfig(path string, c config) error {
 	den := "compact"
 	if c.density == comfort {
@@ -111,12 +113,41 @@ func saveConfig(path string, c config) error {
 		}
 		return "[" + strings.Join(q, ", ") + "]"
 	}
+	// Ordered so appended-when-missing keys keep a stable, readable layout.
+	managed := []struct{ key, val string }{
+		{"view", fmt.Sprintf("%q", viewName[c.view])},
+		{"density", fmt.Sprintf("%q", den)},
+		{"autosave", strconv.Itoa(c.autosave)},
+		{"categories", list(c.categories)},
+		{"statuses", list(c.statuses)},
+	}
+	want := make(map[string]string, len(managed))
+	for _, m := range managed {
+		want[m.key] = m.val
+	}
+
+	existing, _ := os.ReadFile(path)
+	emitted := map[string]bool{}
 	var b strings.Builder
-	fmt.Fprintf(&b, "view = %q\n", viewName[c.view])
-	fmt.Fprintf(&b, "density = %q\n", den)
-	fmt.Fprintf(&b, "autosave = %d\n", c.autosave)
-	fmt.Fprintf(&b, "categories = %s\n", list(c.categories))
-	fmt.Fprintf(&b, "statuses = %s\n", list(c.statuses))
+	if len(existing) > 0 {
+		for _, ln := range strings.Split(strings.TrimRight(string(existing), "\n"), "\n") {
+			trimmed := strings.TrimSpace(ln)
+			if k, _, ok := strings.Cut(trimmed, "="); ok {
+				key := strings.TrimSpace(k)
+				if v, managed := want[key]; managed && !emitted[key] {
+					fmt.Fprintf(&b, "%s = %s\n", key, v)
+					emitted[key] = true
+					continue
+				}
+			}
+			b.WriteString(ln + "\n")
+		}
+	}
+	for _, m := range managed {
+		if !emitted[m.key] {
+			fmt.Fprintf(&b, "%s = %s\n", m.key, m.val)
+		}
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}

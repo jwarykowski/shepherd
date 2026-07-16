@@ -12,6 +12,8 @@ import (
 	"shepherd/internal/cli"
 	"shepherd/internal/store"
 	"shepherd/internal/tui"
+
+	"github.com/charmbracelet/x/term"
 )
 
 //go:embed herdr-plugin.toml
@@ -64,6 +66,15 @@ func main() {
 		}
 		os.Exit(cli.Run("stats", a))
 	}
+	// The interactive board needs a real terminal on both ends. When either
+	// stdin or stdout is redirected (piped, cron, CI), degrade gracefully to the
+	// help text and point at the command API instead of letting Bubble Tea crash.
+	if !term.IsTerminal(os.Stdin.Fd()) || !term.IsTerminal(os.Stdout.Fd()) {
+		fmt.Fprintln(os.Stderr, cli.Usage())
+		fmt.Fprintln(os.Stderr, "\nshepherd: not a terminal — run a subcommand (e.g. `shepherd list`) for non-interactive use")
+		os.Exit(1)
+	}
+
 	tui.Version = version()
 
 	name, err := store.ResolveProject(*project)

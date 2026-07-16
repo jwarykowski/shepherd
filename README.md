@@ -5,7 +5,8 @@ terminal, or as a [herdr](https://herdr.dev) plugin in a split, tab, overlay,
 or zoomed pane. Backed by a plain markdown file: greppable, hand-editable,
 syncable.
 
-No setup required — everything defaults under `~/.config/shepherd/`:
+No setup required — everything defaults under `~/.config/shepherd/` (or
+`$XDG_CONFIG_HOME/shepherd/` when that is set):
 
 | What | Path |
 |------|------|
@@ -226,9 +227,12 @@ shepherd project rename web webapp  # rename a board (and its archive sibling)
 shepherd project archive webapp     # stash a board under projects/archived/ (reversible)
 shepherd project unarchive webapp   # restore an archived board
 shepherd project delete webapp --force  # delete a board (and its archive sibling)
+shepherd project delete webapp --dry-run # preview the delete without writing
 shepherd stats [--json] [--all]     # board metrics as charts (--json = numbers)
 shepherd stats --legend             # explain every chart and the aging numbers
+shepherd stats --no-color           # charts without ANSI color
 shepherd add "buy milk @home !h due:tomorrow"
+shepherd add "buy milk" -q          # add quietly (no confirmation line)
 shepherd sub 2 "chop onions !m"     # add a subtask to item 2
 shepherd edit 2 "@work !h due:friday" # merge tokens onto item 2 (2.1 edits a subtask)
 shepherd done 2                     # mark item 2 done (cascades to its subtasks)
@@ -237,7 +241,19 @@ shepherd undone 2.1                 # reopen subtask 1 (also reopens the parent)
 shepherd edit 2 "status:in-progress" # set item 2's status (status:done|open recognised)
 shepherd edit 2 "note:waiting on infra" # set item 2's note (edit 2 "note:" clears it)
 shepherd rm 2                       # remove item 2 (rm 2.1 removes just the subtask)
+shepherd rm 2 --dry-run             # preview the removal without writing
 ```
+
+Global flags (any command):
+
+- `-q`, `--quiet` — silence a mutation's confirmation line (`list`/`stats` data is never suppressed).
+- `--no-input` — accepted for script-compat; this API never prompts.
+- `-h`, `--help` — print a command's flags, exit 0.
+
+Exit codes: `0` success · `2` usage/input error (bad flag, unknown command,
+out-of-range index) · `1` runtime/IO failure. A mistyped command suggests the
+closest real one. `stats` drops color when stdout isn't a terminal, `$NO_COLOR`
+is set, or `$TERM=dumb`; `--no-color` forces it off.
 
 `done`/`undone`/`rm`/`edit` take a dotted `n.m` reference for subtask `m` of
 item `n`; see [subtasks](#subtasks) for the cascade rules.
@@ -305,8 +321,9 @@ All three point at the same `shepherd` CLI — no per-tool server, no MCP.
 
 ## configuration
 
-Optional `config.toml` at `~/.config/shepherd/config.toml` — shared across
-every board (override with `SHEPHERD_CONFIG`):
+Optional `config.toml` at `$XDG_CONFIG_HOME/shepherd/config.toml` (defaults to
+`~/.config/shepherd/config.toml`) — shared across every board (override with
+`SHEPHERD_CONFIG`):
 
 ```toml
 view = "category"                          # category (default) | priority | table
@@ -320,9 +337,9 @@ statuses = ["open", "in-progress", "done"] # tab cycles item status in the list
 - `density` — `comfort` adds outer padding and blank lines between rows.
 - `autosave` — idle seconds before an unsaved board is written to disk (default 60); `0` disables it, so only `w` and quit save.
 - `categories` — press `tab` in the category prompt (`g`) to cycle through them.
-- `statuses` — ordered list `tab` cycles through in the list; `done` is always kept and forced last. Defaults to `["open", "done"]`. Intermediate statuses persist as a `status:` line and show a `◐` glyph; the stats page breaks items down by status.
+- `statuses` — ordered list `tab` cycles through in the list; `done` is always kept and forced last. Defaults to `["open", "done"]`. Intermediate statuses persist as a `status:` line and show a `◐` glyph; the stats page (board and `shepherd stats`) breaks items down by status in this order.
 
-Edit these in the running board with `,` (settings): `tab` cycles `view`/`density`, `enter` edits `autosave`/`categories`/`statuses`, and each change is written straight back to `config.toml`. Any comments in the file are dropped on save.
+Edit these in the running board with `,` (settings): `tab` cycles `view`/`density`, `enter` edits `autosave`/`categories`/`statuses`, and each change is written straight back to `config.toml`. Comments and unknown keys in the file are preserved on save.
 
 herdr pane placement (`placement` / `direction`) lives in the same file — see
 [herdr integration](#herdr-integration).

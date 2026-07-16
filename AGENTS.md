@@ -7,14 +7,14 @@ format.
 - `shepherd list --json` — read all items (machine-readable; prefer this)
 - `shepherd list --all --json` — read across every board; adds a `project` field per item
 - `shepherd projects [--json] [--archived]` — list boards with done/total counts (`--archived` lists archived boards instead); JSON marks the current board with `"current": true`
-- `shepherd project rename <old> <new>` / `archive <name>` / `unarchive <name>` / `delete <name> --force` — whole-board actions (default board is not renamable/deletable/archivable; archive stashes under `projects/archived/`)
+- `shepherd project rename <old> <new>` / `archive <name>` / `unarchive <name>` / `delete <name> --force [--dry-run]` — whole-board actions (default board is not renamable/deletable/archivable; archive stashes under `projects/archived/`)
 - `shepherd stats [--json] [--all] [--legend]` — board metrics (charts, or `--json` numbers; `--legend` explains each chart)
 - `shepherd add "buy milk @home !h due:tomorrow"` — add an item
 - `shepherd sub <n> "<text>"` — add a subtask to item n (same quick-add tokens)
 - `shepherd edit <n[.m]> "<tokens>"` — merge tokens onto item n (or subtask m); only the given fields change. Tokens: `@category`, `!prio`, `due:`, `defer:`, `link:`, `status:`, `note:`, and text. A bare key clears its field; `note:` takes the rest of the line
 - `shepherd list --filter <q>` — list only matching items (text/note/category/due/defer/link), keeping their real indexes for done/rm
 - `shepherd done <n[.m]>` / `shepherd undone <n[.m]>` — (un)complete item n, or its subtask m
-- `shepherd rm <n[.m]>` — remove item n, or just its subtask m
+- `shepherd rm <n[.m]> [--dry-run]` — remove item n, or just its subtask m (`--dry-run`/`-n` previews without writing)
 
 `edit` is the single setter for every field — status, note, category, priority,
 due, defer, link, and text all change through its tokens (`edit 2 "status:in-progress"`,
@@ -49,4 +49,9 @@ project's board (`shepherd list --project web`, `shepherd add "…" --project we
 `shepherd list --all` reads across every board and is read-only; its indexes are
 aggregate and **not** valid for `done`/`rm`. To act on an item seen via `--all`,
 re-list that board (`list --project <name>`) and use its index with the same
-`--project`. Run `shepherd help` for the full contract.
+`--project`.
+
+Exit codes for scripting: `0` success, `2` usage/input error (bad flag, unknown
+command, out-of-range index), `1` runtime/IO failure. `-q`/`--quiet` on a
+mutation drops its confirmation line but never the requested data. Run
+`shepherd help` for the full contract.
