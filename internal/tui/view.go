@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
+	"shepherd/internal/store"
 	"shepherd/internal/todo"
 )
 
@@ -38,6 +39,8 @@ func (m model) View() string {
 		content = m.helpView()
 	case m.mode == modeArchive:
 		content = m.archiveView()
+	case m.mode == modeProjects:
+		content = m.projectsView()
 	case m.mode == modeDetail || m.mode == modeNote:
 		content = m.detailView()
 	case m.view == viewTable:
@@ -320,6 +323,44 @@ func (m model) archiveView() string {
 	return m.frame(body, footer)
 }
 
+// projectsView renders the board picker: one row per board with open/total
+// counts, the current board marked, windowed on the cursor.
+func (m model) projectsView() string {
+	w := m.width()
+	cur := m.project
+	if cur == "" {
+		cur = "default"
+	}
+	var out []string
+	cursorLine := 0
+	if len(m.projRows) == 0 {
+		out = append(out, dimStyle.Render("no boards"))
+	}
+	for i, b := range m.projRows {
+		open, total := store.BoardCounts(b.Path)
+		left := "  " + b.Name
+		if b.Name == cur {
+			left = boxStyle.Render("▸ ") + b.Name
+		}
+		cnt := countStyle.Render(fmt.Sprintf("%d/%d", total-open, total))
+		gap := w - lipgloss.Width(left) - lipgloss.Width(cnt)
+		if gap < 1 {
+			gap = 1
+		}
+		row := left + strings.Repeat(" ", gap) + cnt
+		if i == m.projCur {
+			cursorLine = len(out)
+			row = cursorStyle.Width(w).Render(ansi.Strip(row))
+		}
+		out = append(out, row)
+	}
+	footer := ruleStyle.Render(strings.Repeat("┈", w)) + "\n" +
+		dimStyle.Render("boards · j/k move · enter open · esc back · q quit")
+	out = m.windowRows(out, cursorLine, lines(footer))
+	body := m.headerWith("boards", 0, len(m.projRows)) + "\n" + strings.Join(out, "\n")
+	return m.frame(body, footer)
+}
+
 // count returns the done and total item counts across the whole board.
 func (m model) count() (done, total int) {
 	for _, it := range m.items {
@@ -418,7 +459,7 @@ func (m model) helpGrid() string {
 		head    string
 		entries []entry
 	}{
-		{"move", []entry{{"j/k", "move"}, {"space", "toggle"}, {"d", "detail"}, {"v", "view"}, {"/", "filter"}, {"A", "global"}, {"e", "archive"}}},
+		{"move", []entry{{"j/k", "move"}, {"space", "toggle"}, {"d", "detail"}, {"v", "view"}, {"/", "filter"}, {"A", "global"}, {"e", "archive"}, {"p", "boards"}}},
 		{"edit", []entry{{"a", "add"}, {"S", "sub"}, {"u", "edit"}, {"tab", "status"}, {"x", "del"}, {"c", "arch"}}},
 		{"fields", []entry{{"h/m/l", "prio"}, {"g", "cat"}, {"t", "due"}, {"s", "defer"}, {"L", "link"}, {"o", "open"}}},
 		{"board", []entry{{"w", "save"}, {"^e", "editor"}, {"U", "undo"}, {"^r", "redo"}, {"?", "help"}, {"q", "quit"}}},
@@ -426,7 +467,7 @@ func (m model) helpGrid() string {
 
 	// In the read-only global view most actions are inert; dim them so only the
 	// keys that do something (navigate / inspect / leave) read as live.
-	globalActive := map[string]bool{"j/k": true, "d": true, "v": true, "/": true, "A": true, "e": true, "o": true, "?": true, "q": true}
+	globalActive := map[string]bool{"j/k": true, "d": true, "v": true, "/": true, "A": true, "e": true, "o": true, "p": true, "?": true, "q": true}
 
 	// On a subtask row category is parent-only (subs share the parent's board);
 	// dim it. Due / defer / link / status all work on subtasks. `o` opens the

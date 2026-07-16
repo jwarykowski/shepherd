@@ -124,6 +124,18 @@ func Boards() []Board {
 	return bs
 }
 
+// BoardCounts returns the open and total top-level item counts for a board file
+// (subtasks not counted), for the picker and `projects` listing.
+func BoardCounts(path string) (open, total int) {
+	items := Load(path)
+	for _, it := range items {
+		if !it.Done {
+			open++
+		}
+	}
+	return open, len(items)
+}
+
 // LoadAll returns every board's items with Source set to the board name — the
 // read-only aggregate behind the global view. Never write these back: items
 // from many files must not be flattened into one.

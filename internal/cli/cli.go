@@ -20,6 +20,7 @@ const cliUsage = `shepherd — todo board
 Usage:
   shepherd                      open the interactive board
   shepherd list [--json] [--all] [--filter <text>] list items (--all aggregates; --filter matches text/note/category/due/defer/link)
+  shepherd projects [--json]    list boards with open/total counts (* marks the current board)
   shepherd stats [--json] [--all] [--legend] board metrics as charts (--all aggregates; --legend explains them)
   shepherd add "<text>"         add an item (@category !h/!m/!l due: defer: link: status: note:)
   shepherd sub <n> "<text>"     add a subtask to item n (same @/!/due: syntax)
@@ -70,6 +71,8 @@ func Run(verb string, args []string) int {
 	switch verb {
 	case "list":
 		return cmdList(rest, project, os.Stdout)
+	case "projects":
+		return cmdProjects(rest, project, os.Stdout)
 	case "stats":
 		return cmdStats(rest, project, os.Stdout)
 	case "add":
@@ -200,6 +203,54 @@ func cmdList(args []string, project string, w io.Writer) int {
 	}
 	if shown == 0 {
 		emit(w, "(no matches)")
+	}
+	return 0
+}
+
+// cmdProjects lists every board with its open/total counts, marking the
+// effective project (--project / $SHEPHERD_PROJECT, else default).
+func cmdProjects(args []string, project string, w io.Writer) int {
+	fs := flag.NewFlagSet("projects", flag.ContinueOnError)
+	asJSON := fs.Bool("json", false, "machine-readable JSON output")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	cur := project
+	if cur == "" {
+		cur = "default"
+	}
+	boards := store.Boards()
+	if *asJSON {
+		type row struct {
+			Name    string `json:"name"`
+			Open    int    `json:"open"`
+			Total   int    `json:"total"`
+			Current bool   `json:"current"`
+		}
+		out := make([]row, 0, len(boards))
+		for _, b := range boards {
+			open, total := store.BoardCounts(b.Path)
+			out = append(out, row{b.Name, open, total, b.Name == cur})
+		}
+		b, err := json.MarshalIndent(out, "", "  ")
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "shepherd:", err)
+			return 1
+		}
+		emit(w, string(b))
+		return 0
+	}
+	if len(boards) == 0 {
+		emit(w, "(no boards)")
+		return 0
+	}
+	for _, b := range boards {
+		open, total := store.BoardCounts(b.Path)
+		mark := " "
+		if b.Name == cur {
+			mark = "*"
+		}
+		emit(w, fmt.Sprintf("%s %s\t%d/%d", mark, b.Name, total-open, total))
 	}
 	return 0
 }
