@@ -33,7 +33,7 @@ Items (n = item index from 'list'; n.m = its subtask m):
   done|undone <n[.m]>    mark (not) done
   rm <n[.m]>             remove
 
-  tokens: @category  !h|!m|!l  due:<date>  defer:<date>  link:<url>
+  syntax: @category  !h|!m|!l  due:<date>  defer:<date>  link:<url>
           status:<name>  note:<text> (takes the rest of the line)
 
 Boards (the default board can't be renamed/deleted/archived):
