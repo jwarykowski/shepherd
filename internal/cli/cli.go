@@ -18,36 +18,40 @@ import (
 const cliUsage = `shepherd — todo board
 
 Usage:
-  shepherd                      open the interactive board
-  shepherd list [--json] [--all] [--filter <text>] list items (--all aggregates; --filter matches text/note/category/due/defer/link)
-  shepherd projects [--json] [--archived] list boards with done/total counts (* marks current; --archived lists archived boards)
-  shepherd project rename <old> <new>  rename a board (and its archive sibling)
-  shepherd project delete <name> --force  delete a board (and its archive sibling)
-  shepherd project archive <name>      stash a board under projects/archived/ (reversible)
-  shepherd project unarchive <name>    restore an archived board
-  shepherd stats [--json] [--all] [--legend] board metrics as charts (--all aggregates; --legend explains them)
-  shepherd add "<text>"         add an item (@category !h/!m/!l due: defer: link: status: note:)
-  shepherd sub <n> "<text>"     add a subtask to item n (same @/!/due: syntax)
-  shepherd edit <n[.m]> "<tokens>" update item n (or subtask m): @category !prio due: defer: link: status: note: and text (bare key clears; note: takes the rest)
-  shepherd done <n[.m]>         mark item n (or its subtask m) done
-  shepherd undone <n[.m]>       mark item n (or its subtask m) not done
-  shepherd rm <n[.m]>           remove item n (or just its subtask m)
+  shepherd [board flags]     open the interactive board
+  shepherd <command> [args]  run a one-shot command
 
-Flags go after the verb. --project <name> (or $SHEPHERD_PROJECT) selects a
-project board (else the default): e.g. shepherd list --project web.
+Read:
+  list [--json] [--all] [--filter <t>]  list items (--all aggregates every board)
+  projects [--json] [--archived]        list boards, done/total (--archived: archived)
+  stats [--json] [--all] [--legend]     board metrics (charts, or --json numbers)
 
-Completing a parent completes its subtasks; completing the last subtask
-completes the parent (n.m indexes match the order shown by 'list').
+Items (n = item index from 'list'; n.m = its subtask m):
+  add "<text>"           add an item
+  sub <n> "<text>"       add a subtask
+  edit <n[.m]> "<toks>"  merge tokens onto an item (bare key clears)
+  done|undone <n[.m]>    mark (not) done
+  rm <n[.m]>             remove
 
-Board flags (bare shepherd, the interactive board):
-  --project <name>  open a project's board
-  --filter <text>   start pre-filtered (text/note/category/due)
-  --all             read-only global view across all boards
-  --stats           print board stats and exit
-  --legend          explain each stats chart and exit
+  tokens: @category  !h|!m|!l  due:<date>  defer:<date>  link:<url>
+          status:<name>  note:<text> (takes the rest of the line)
+
+Boards (the default board can't be renamed/deleted/archived):
+  project rename <old> <new>
+  project archive <name>        stash under projects/archived/ (reversible)
+  project unarchive <name>      restore an archived board
+  project delete <name> --force
+
+Board flags (bare shepherd):
+  --project <name>  open a project's board (or set $SHEPHERD_PROJECT)
+  --filter <text>   start pre-filtered
+  --all             read-only view across all boards
+  --stats           print stats and exit
+  --legend          explain the stats charts and exit
   --version         print the version and exit
 
-Indexes are 1-based and match the order shown by 'list'.`
+Flags follow the verb. Indexes are 1-based, matching 'list' order.
+Completing a parent completes its subtasks; the last subtask completes the parent.`
 
 // Usage returns the full command + flag reference, shared by `shepherd help`
 // and the flag package's -h/--help handler so the two never diverge.
