@@ -22,28 +22,34 @@ Usage:
   shepherd <command> [args]  run a one-shot command
 
 Read:
-  list [--json] [--all] [--filter <t>]  list items (--all aggregates every board)
-  projects [--json] [--archived]        list boards, done/total (--archived: archived)
-  stats [--json] [--all] [--legend]     board metrics (charts, or --json numbers)
+  list [--json] [--all] [--filter <t>]     list items (--all aggregates every board)
+  projects [--json] [--archived]           list boards, done/total (--archived: archived)
+  stats [--json] [--all] [--legend] [--no-color]  board metrics (charts, or --json numbers)
+  help                                     print this help
 
 Items (n = item index from 'list'; n.m = its subtask m):
   add "<text>"           add an item
   sub <n> "<text>"       add a subtask
   edit <n[.m]> "<toks>"  merge tokens onto an item (bare key clears)
   done|undone <n[.m]>    mark (not) done
-  rm <n[.m]>             remove
+  rm <n[.m]> [--dry-run] remove (--dry-run/-n previews without writing)
 
   syntax: @category  !h|!m|!l  due:<date>  defer:<date>  link:<url>
           status:<name>  note:<text> (takes the rest of the line)
 
 Boards (the default board can't be renamed/deleted/archived):
   project rename <old> <new>
-  project archive <name>        stash under projects/archived/ (reversible)
-  project unarchive <name>      restore an archived board
-  project delete <name> --force
+  project archive <name>            stash under projects/archived/ (reversible)
+  project unarchive <name>          restore an archived board
+  project delete <name> --force [--dry-run]
+
+Global flags (any command):
+  --project <name>  act on a project's board (or set $SHEPHERD_PROJECT)
+  -q, --quiet       suppress state-change confirmation lines
+  --no-input        never prompt (accepted for script-compat; this API never prompts)
+  -h, --help        print a command's flags
 
 Board flags (bare shepherd):
-  --project <name>  open a project's board (or set $SHEPHERD_PROJECT)
   --filter <text>   start pre-filtered
   --all             read-only view across all boards
   --stats           print stats and exit
@@ -57,6 +63,11 @@ Completing a parent completes its subtasks; the last subtask completes the paren
 // and the flag package's -h/--help handler so the two never diverge.
 func Usage() string { return cliUsage }
 
+// knownVerbs is the dispatch table, used both to route and to suggest a
+// correction for a mistyped verb. Version reporting is the `--version` board
+// flag (the clig standard), handled in main — not a subcommand here.
+var knownVerbs = []string{"help", "list", "projects", "project", "stats", "add", "sub", "edit", "done", "undone", "rm"}
+
 // Run handles one command-API invocation and returns a process exit code.
 //
 // last-writer-wins on the file (load, mutate, save; no lock). Fine
@@ -66,6 +77,7 @@ func Run(verb string, args []string) int {
 		fmt.Println(cliUsage)
 		return 0
 	}
+	args = extractGlobals(args)
 	flagVal, rest, err := extractProject(args)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "shepherd:", err)
@@ -98,9 +110,90 @@ func Run(verb string, args []string) int {
 	case "rm":
 		return cmdRemove(rest, project, os.Stdout)
 	default:
-		fmt.Fprintf(os.Stderr, "shepherd: unknown command %q\n\n%s\n", verb, cliUsage)
+		fmt.Fprintf(os.Stderr, "shepherd: unknown command %q\n", verb)
+		if s := suggest(verb); s != "" {
+			fmt.Fprintf(os.Stderr, "did you mean %q?\n", s)
+		}
+		fmt.Fprintf(os.Stderr, "\n%s\n", cliUsage)
 		return 2
 	}
+}
+
+// quiet suppresses state-change confirmation lines (clig -q/--quiet). It gates
+// only confirmations, never requested data (list/projects/stats output).
+//
+// ponytail: a process-lifetime global for a one-shot CLI — safe because each
+// invocation is its own process; extractGlobals resets it so repeated in-process
+// Run calls (tests) don't leak state.
+var quiet bool
+
+// extractGlobals strips the flags that apply to every command and may appear
+// before or after the verb: -q/--quiet and --no-input. They must be removed
+// here because the per-command FlagSets (ContinueOnError) would reject them.
+// --no-input is accepted for script-compat (clig) but is a no-op: the command
+// API reads only argv and never prompts.
+func extractGlobals(args []string) []string {
+	quiet = false
+	rest := make([]string, 0, len(args))
+	for _, a := range args {
+		switch a {
+		case "-q", "--quiet":
+			quiet = true
+		case "--no-input":
+			// no-op: the command API never prompts.
+		default:
+			rest = append(rest, a)
+		}
+	}
+	return rest
+}
+
+// extractDryRun pulls -n/--dry-run out of args (for the destructive verbs that
+// support a preview: rm and project delete).
+func extractDryRun(args []string) (bool, []string) {
+	dry := false
+	rest := make([]string, 0, len(args))
+	for _, a := range args {
+		if a == "-n" || a == "--dry-run" {
+			dry = true
+			continue
+		}
+		rest = append(rest, a)
+	}
+	return dry, rest
+}
+
+// suggest returns the closest known verb to a mistyped one (edit distance < 3),
+// or "" when nothing is close enough to be worth suggesting.
+func suggest(verb string) string {
+	best, bestD := "", 3
+	for _, v := range knownVerbs {
+		if d := levenshtein(verb, v); d < bestD {
+			best, bestD = v, d
+		}
+	}
+	return best
+}
+
+// levenshtein is the classic edit distance over two short verb strings.
+func levenshtein(a, b string) int {
+	prev := make([]int, len(b)+1)
+	for j := range prev {
+		prev[j] = j
+	}
+	for i := 1; i <= len(a); i++ {
+		cur := make([]int, len(b)+1)
+		cur[0] = i
+		for j := 1; j <= len(b); j++ {
+			cost := 1
+			if a[i-1] == b[j-1] {
+				cost = 0
+			}
+			cur[j] = min(prev[j]+1, min(cur[j-1]+1, prev[j-1]+cost))
+		}
+		prev = cur
+	}
+	return prev[len(b)]
 }
 
 // extractProject pulls a --project <name> / --project=<name> flag out of args
@@ -161,13 +254,31 @@ func toJSON(it todo.Item, idx int) itemJSON {
 // actionable failure mode, so the write error is deliberately discarded.
 func emit(w io.Writer, s string) { _, _ = io.WriteString(w, s+"\n") }
 
+// parseExit maps a FlagSet.Parse error to an exit code: 0 when the user asked
+// for help (-h/--help printed the flags), 2 for any real parse error.
+func parseExit(err error) int {
+	if err == flag.ErrHelp {
+		return 0
+	}
+	return 2
+}
+
+// say writes a state-change confirmation, suppressed by -q/--quiet. Requested
+// data (list/projects/stats output) uses emit and is never suppressed.
+func say(w io.Writer, s string) {
+	if quiet {
+		return
+	}
+	emit(w, s)
+}
+
 func cmdList(args []string, project string, w io.Writer) int {
 	fs := flag.NewFlagSet("list", flag.ContinueOnError)
 	asJSON := fs.Bool("json", false, "machine-readable JSON output")
 	all := fs.Bool("all", false, "aggregate items across every board (read-only)")
 	filter := fs.String("filter", "", "only items matching this text (text/note/category/due/defer/link)")
 	if err := fs.Parse(args); err != nil {
-		return 2
+		return parseExit(err)
 	}
 	var items []todo.Item
 	if *all {
@@ -224,7 +335,7 @@ func cmdProjects(args []string, project string, w io.Writer) int {
 	asJSON := fs.Bool("json", false, "machine-readable JSON output")
 	archived := fs.Bool("archived", false, "list archived boards instead")
 	if err := fs.Parse(args); err != nil {
-		return 2
+		return parseExit(err)
 	}
 	cur := project
 	if cur == "" {
@@ -293,9 +404,10 @@ func cmdProject(args []string, w io.Writer) int {
 			fmt.Fprintln(os.Stderr, "shepherd:", err)
 			return 1
 		}
-		emit(w, fmt.Sprintf("renamed board %q -> %q", rest[0], rest[1]))
+		say(w, fmt.Sprintf("renamed board %q -> %q", rest[0], rest[1]))
 		return 0
 	case "delete":
+		dry, rest := extractDryRun(rest)
 		force := false
 		name := ""
 		for _, a := range rest {
@@ -309,6 +421,10 @@ func cmdProject(args []string, w io.Writer) int {
 			fmt.Fprintln(os.Stderr, `shepherd: project delete <name> --force`)
 			return 2
 		}
+		if dry {
+			emit(w, fmt.Sprintf("would delete board %q", name))
+			return 0
+		}
 		if !force {
 			fmt.Fprintf(os.Stderr, "shepherd: refusing to delete %q without --force\n", name)
 			return 2
@@ -317,7 +433,7 @@ func cmdProject(args []string, w io.Writer) int {
 			fmt.Fprintln(os.Stderr, "shepherd:", err)
 			return 1
 		}
-		emit(w, fmt.Sprintf("deleted board %q", name))
+		say(w, fmt.Sprintf("deleted board %q", name))
 		return 0
 	case "archive":
 		if len(rest) != 1 {
@@ -328,7 +444,7 @@ func cmdProject(args []string, w io.Writer) int {
 			fmt.Fprintln(os.Stderr, "shepherd:", err)
 			return 1
 		}
-		emit(w, fmt.Sprintf("archived board %q", rest[0]))
+		say(w, fmt.Sprintf("archived board %q", rest[0]))
 		return 0
 	case "unarchive":
 		if len(rest) != 1 {
@@ -339,7 +455,7 @@ func cmdProject(args []string, w io.Writer) int {
 			fmt.Fprintln(os.Stderr, "shepherd:", err)
 			return 1
 		}
-		emit(w, fmt.Sprintf("unarchived board %q", rest[0]))
+		say(w, fmt.Sprintf("unarchived board %q", rest[0]))
 		return 0
 	default:
 		fmt.Fprintf(os.Stderr, "shepherd: unknown project subcommand %q (rename|delete|archive|unarchive)\n", sub)
@@ -364,7 +480,7 @@ func cmdAdd(args []string, project string, w io.Writer) int {
 		fmt.Fprintln(os.Stderr, "shepherd:", err)
 		return 1
 	}
-	emit(w, formatLine(len(items), it))
+	say(w, formatLine(len(items), it))
 	return 0
 }
 
@@ -376,7 +492,7 @@ func cmdSub(args []string, project string, w io.Writer) int {
 	items := store.Load(path)
 	idx, ok := parseIndex(args, len(items))
 	if !ok {
-		return 1
+		return 2
 	}
 	text := strings.TrimSpace(strings.Join(args[1:], " "))
 	if text == "" {
@@ -395,7 +511,7 @@ func cmdSub(args []string, project string, w io.Writer) int {
 		fmt.Fprintln(os.Stderr, "shepherd:", err)
 		return 1
 	}
-	emit(w, formatSub(idx, len(parent.Subs), sub))
+	say(w, formatSub(idx, len(parent.Subs), sub))
 	return 0
 }
 
@@ -408,7 +524,7 @@ func cmdEdit(args []string, project string, w io.Writer) int {
 	items := store.Load(path)
 	p, s, ok := parseRef(args, items)
 	if !ok {
-		return 1
+		return 2
 	}
 	text := strings.TrimSpace(strings.Join(args[1:], " "))
 	if text == "" {
@@ -428,9 +544,9 @@ func cmdEdit(args []string, project string, w io.Writer) int {
 		return 1
 	}
 	if s == 0 {
-		emit(w, formatLine(p, items[p-1]))
+		say(w, formatLine(p, items[p-1]))
 	} else {
-		emit(w, formatSub(p, s, items[p-1].Subs[s-1]))
+		say(w, formatSub(p, s, items[p-1].Subs[s-1]))
 	}
 	return 0
 }
@@ -440,7 +556,7 @@ func cmdToggle(args []string, project string, done bool, w io.Writer) int {
 	items := store.Load(path)
 	p, s, ok := parseRef(args, items)
 	if !ok {
-		return 1
+		return 2
 	}
 	if s == 0 {
 		todo.SetParentDone(&items[p-1], done)
@@ -451,27 +567,35 @@ func cmdToggle(args []string, project string, done bool, w io.Writer) int {
 		fmt.Fprintln(os.Stderr, "shepherd:", err)
 		return 1
 	}
-	emit(w, formatLine(p, items[p-1]))
+	say(w, formatLine(p, items[p-1]))
 	if s > 0 {
-		emit(w, formatSub(p, s, items[p-1].Subs[s-1]))
+		say(w, formatSub(p, s, items[p-1].Subs[s-1]))
 	}
 	return 0
 }
 
 func cmdRemove(args []string, project string, w io.Writer) int {
+	dry, args := extractDryRun(args)
 	path := store.TodoPathFor(project)
 	items := store.Load(path)
 	p, s, ok := parseRef(args, items)
 	if !ok {
-		return 1
+		return 2
 	}
 	var removed string
 	if s == 0 {
 		removed = items[p-1].Text
+	} else {
+		removed = items[p-1].Subs[s-1].Text
+	}
+	if dry {
+		emit(w, fmt.Sprintf("would remove %q", removed))
+		return 0
+	}
+	if s == 0 {
 		items = append(items[:p-1], items[p:]...)
 	} else {
 		parent := &items[p-1]
-		removed = parent.Subs[s-1].Text
 		parent.Subs = append(parent.Subs[:s-1], parent.Subs[s:]...)
 		// dropping a sub can complete the parent (all remaining subs done).
 		if len(parent.Subs) > 0 {
@@ -482,7 +606,7 @@ func cmdRemove(args []string, project string, w io.Writer) int {
 		fmt.Fprintln(os.Stderr, "shepherd:", err)
 		return 1
 	}
-	emit(w, fmt.Sprintf("removed %q", removed))
+	say(w, fmt.Sprintf("removed %q", removed))
 	return 0
 }
 

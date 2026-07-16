@@ -236,6 +236,7 @@ func seedBoards(t *testing.T) string {
 	t.Helper()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", "")
 	t.Setenv("SHEPHERD_TODO_FILE", "")
 	base := filepath.Join(home, ".config", "shepherd", "projects")
 	if err := os.MkdirAll(base, 0o755); err != nil {
@@ -406,5 +407,19 @@ func TestLoadAll(t *testing.T) {
 	}
 	if bySource["default"] != "a" || bySource["web"] != "b" || bySource["api"] != "c" {
 		t.Fatalf("source tagging wrong: %+v", bySource)
+	}
+}
+
+// TestBaseDirXDG checks BaseDir honors $XDG_CONFIG_HOME and falls back to
+// ~/.config when it is unset (clig: follow the XDG spec).
+func TestBaseDirXDG(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(t.TempDir(), "xdg"))
+	if got, want := BaseDir(), filepath.Join(os.Getenv("XDG_CONFIG_HOME"), "shepherd"); got != want {
+		t.Fatalf("XDG_CONFIG_HOME ignored: got %s want %s", got, want)
+	}
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("HOME", "/home/example")
+	if got, want := BaseDir(), filepath.Join("/home/example", ".config", "shepherd"); got != want {
+		t.Fatalf("HOME fallback wrong: got %s want %s", got, want)
 	}
 }

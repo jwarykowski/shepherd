@@ -27,10 +27,14 @@ var (
 // separators or dots-only names, so a project can never escape BaseDir.
 var projectRE = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]*$`)
 
-// BaseDir is where every board lives: ~/.config/shepherd. Fixed on purpose —
-// shepherd does not follow $HERDR_PLUGIN_STATE_DIR, so the default and all
-// project boards stay in one dotfiles-syncable directory.
+// BaseDir is where every board lives: $XDG_CONFIG_HOME/shepherd, else
+// ~/.config/shepherd (the XDG default). shepherd does not follow
+// $HERDR_PLUGIN_STATE_DIR, so the default and all project boards stay in one
+// dotfiles-syncable directory.
 func BaseDir() string {
+	if x := os.Getenv("XDG_CONFIG_HOME"); x != "" {
+		return filepath.Join(x, "shepherd")
+	}
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".config", "shepherd")
 }
@@ -85,6 +89,39 @@ func ConfigPath() string {
 		return filepath.Join(filepath.Dir(p), "config.toml")
 	}
 	return filepath.Join(BaseDir(), "config.toml")
+}
+
+// ConfigStatusOrder reads the `statuses = [...]` line from the shared
+// config.toml (the same file the TUI reads), lowercased, in declared order.
+// Returns nil if unset/unreadable. This lets the CLI's stats respect the user's
+// configured status order instead of only count order.
+//
+// ponytail: a minimal read of one key, not the TUI's fuller loader in
+// internal/tui — kept separate so this can't destabilize the board. If more
+// config keys are ever needed CLI-side, promote the tui loader into store.
+func ConfigStatusOrder() []string {
+	data, err := os.ReadFile(ConfigPath())
+	if err != nil {
+		return nil
+	}
+	for _, ln := range strings.Split(string(data), "\n") {
+		ln = strings.TrimSpace(ln)
+		if ln == "" || strings.HasPrefix(ln, "#") {
+			continue
+		}
+		k, v, ok := strings.Cut(ln, "=")
+		if !ok || strings.TrimSpace(k) != "statuses" {
+			continue
+		}
+		var out []string
+		for _, part := range strings.Split(strings.Trim(strings.TrimSpace(v), "[]"), ",") {
+			if p := strings.ToLower(strings.Trim(strings.TrimSpace(part), `"`)); p != "" {
+				out = append(out, p)
+			}
+		}
+		return out
+	}
+	return nil
 }
 
 // ArchivePath is the archive sibling of the todo file: todo.md -> archive.md,

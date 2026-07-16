@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -178,13 +179,83 @@ func TestRunDispatch(t *testing.T) {
 		{"add", []string{"x"}, 0},
 		{"list", []string{"--json"}, 0},
 		{"done", []string{"1"}, 0},
-		{"done", []string{"99"}, 1}, // out of range
-		{"done", []string{"nope"}, 1},
+		{"done", []string{"99"}, 2}, // out of range (input error)
+		{"done", []string{"nope"}, 2},
 		{"rm", []string{"1"}, 0},
 	}
 	for _, c := range cases {
 		if got := Run(c.verb, c.args); got != c.want {
 			t.Errorf("Run(%q, %v) = %d, want %d", c.verb, c.args, got, c.want)
+		}
+	}
+}
+
+// TestQuiet checks -q/--quiet suppresses the mutation confirmation but never
+// the requested data (list output).
+func TestQuiet(t *testing.T) {
+	t.Setenv("SHEPHERD_TODO_FILE", filepath.Join(t.TempDir(), "todo.md"))
+
+	var buf bytes.Buffer
+	if code := cmdAddWith(t, "-q", "add", []string{"ship it"}, &buf); code != 0 {
+		t.Fatalf("quiet add exit %d", code)
+	}
+	if buf.String() != "" {
+		t.Fatalf("quiet add should print nothing, got %q", buf.String())
+	}
+	// data output is not suppressed by quiet
+	if code := Run("list", []string{"-q"}); code != 0 {
+		t.Fatalf("quiet list exit %d", code)
+	}
+	var data bytes.Buffer
+	if code := cmdList(extractGlobals([]string{"-q"}), "", &data); code != 0 || data.Len() == 0 {
+		t.Fatalf("quiet must not suppress list data: code=%d out=%q", code, data.String())
+	}
+}
+
+// cmdAddWith runs add through the global-flag extraction so -q is honored, and
+// resets the quiet global afterward.
+func cmdAddWith(t *testing.T, global, _ string, args []string, w io.Writer) int {
+	t.Helper()
+	rest := extractGlobals(append([]string{global}, args...))
+	defer extractGlobals(nil) // reset quiet
+	return cmdAdd(rest, "", w)
+}
+
+// TestDryRun checks rm --dry-run previews the removal without writing the file.
+func TestDryRun(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "todo.md")
+	t.Setenv("SHEPHERD_TODO_FILE", path)
+	cmdAdd([]string{"keep me"}, "", &bytes.Buffer{})
+
+	var buf bytes.Buffer
+	if code := cmdRemove([]string{"1", "--dry-run"}, "", &buf); code != 0 {
+		t.Fatalf("dry-run exit %d", code)
+	}
+	if !strings.Contains(buf.String(), "would remove") {
+		t.Fatalf("dry-run should preview, got %q", buf.String())
+	}
+	if len(store.Load(path)) != 1 {
+		t.Fatal("dry-run must not delete the item")
+	}
+}
+
+// TestHelpExitsZero checks -h/--help on a subcommand exits 0, not 2 (clig).
+func TestHelpExitsZero(t *testing.T) {
+	t.Setenv("SHEPHERD_TODO_FILE", filepath.Join(t.TempDir(), "todo.md"))
+	if code := cmdList([]string{"--help"}, "", &bytes.Buffer{}); code != 0 {
+		t.Fatalf("list --help want exit 0, got %d", code)
+	}
+	if code := cmdList([]string{"--bogus"}, "", &bytes.Buffer{}); code != 2 {
+		t.Fatalf("list --bogus want exit 2, got %d", code)
+	}
+}
+
+// TestSuggest checks a mistyped verb resolves to the closest real one.
+func TestSuggest(t *testing.T) {
+	cases := map[string]string{"lst": "list", "ad": "add", "delete": "", "projct": "project"}
+	for in, want := range cases {
+		if got := suggest(in); got != want {
+			t.Errorf("suggest(%q) = %q, want %q", in, got, want)
 		}
 	}
 }
@@ -208,6 +279,7 @@ func TestExtractProject(t *testing.T) {
 func TestListAll(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", "")
 	t.Setenv("SHEPHERD_TODO_FILE", "")
 	t.Setenv("SHEPHERD_PROJECT", "")
 
@@ -243,6 +315,7 @@ func TestListAll(t *testing.T) {
 func TestProjects(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", "")
 	t.Setenv("SHEPHERD_TODO_FILE", "")
 	t.Setenv("SHEPHERD_PROJECT", "")
 
@@ -286,6 +359,7 @@ func TestProjects(t *testing.T) {
 func TestProjectActions(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", "")
 	t.Setenv("SHEPHERD_TODO_FILE", "")
 	t.Setenv("SHEPHERD_PROJECT", "")
 
@@ -376,6 +450,7 @@ func TestDoneStampsCompleted(t *testing.T) {
 func TestProjectRouting(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", "")
 	t.Setenv("SHEPHERD_TODO_FILE", "") // override must not win
 	t.Setenv("SHEPHERD_PROJECT", "")
 

@@ -55,6 +55,7 @@ func pinToday(t *testing.T, iso string) {
 func TestProjectsPickerJump(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", "")
 	t.Setenv("SHEPHERD_TODO_FILE", "")
 	t.Setenv("SHEPHERD_PROJECT", "")
 	base := filepath.Join(home, ".config", "shepherd")
@@ -88,6 +89,7 @@ func TestProjectsPickerJump(t *testing.T) {
 func TestSettingsEditor(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", "")
 	t.Setenv("SHEPHERD_CONFIG", "")
 	t.Setenv("SHEPHERD_TODO_FILE", "")
 
@@ -153,6 +155,7 @@ func TestSettingsEditor(t *testing.T) {
 func TestProjectPickerActions(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", "")
 	t.Setenv("SHEPHERD_TODO_FILE", "")
 	t.Setenv("SHEPHERD_PROJECT", "")
 	base := filepath.Join(home, ".config", "shepherd")
@@ -216,6 +219,7 @@ func TestProjectPickerActions(t *testing.T) {
 func TestProjectUnarchive(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", "")
 	t.Setenv("SHEPHERD_TODO_FILE", "")
 	t.Setenv("SHEPHERD_PROJECT", "")
 	base := filepath.Join(home, ".config", "shepherd")
@@ -979,5 +983,27 @@ func TestGlobalReadOnly(t *testing.T) {
 	}
 	if d, tot := m.groupCount(m.items[1]); d != 0 || tot != 1 {
 		t.Fatalf("project group count wrong: %d/%d", d, tot)
+	}
+}
+
+// TestSaveConfigPreservesComments checks saveConfig keeps user comments and
+// unknown keys while rewriting managed keys in place.
+func TestSaveConfigPreservesComments(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(path, []byte("# my notes\nview = \"table\"\n# keep me\ncustom = 1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveConfig(path, loadConfig(path)); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(b)
+	for _, want := range []string{"# my notes", "# keep me", "custom = 1", `view = "table"`} {
+		if !strings.Contains(s, want) {
+			t.Fatalf("saveConfig dropped %q:\n%s", want, s)
+		}
 	}
 }
