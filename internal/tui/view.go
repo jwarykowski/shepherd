@@ -342,7 +342,7 @@ func (m model) projectsView() string {
 		if b.Name == cur {
 			left = boxStyle.Render("▸ ") + b.Name
 		}
-		cnt := countStyle.Render(fmt.Sprintf("%d open · %d total", open, total))
+		cnt := countStyle.Render(fmt.Sprintf("%d/%d", total-open, total))
 		gap := w - lipgloss.Width(left) - lipgloss.Width(cnt)
 		if gap < 1 {
 			gap = 1

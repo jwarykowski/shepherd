@@ -250,7 +250,7 @@ func cmdProjects(args []string, project string, w io.Writer) int {
 		if b.Name == cur {
 			mark = "*"
 		}
-		emit(w, fmt.Sprintf("%s %s\t%d open · %d total", mark, b.Name, open, total))
+		emit(w, fmt.Sprintf("%s %s\t%d/%d", mark, b.Name, total-open, total))
 	}
 	return 0
 }
