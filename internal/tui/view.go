@@ -39,7 +39,7 @@ func (m model) View() string {
 		content = m.helpView()
 	case m.mode == modeArchive:
 		content = m.archiveView()
-	case m.mode == modeProjects:
+	case m.mode == modeProjects || m.mode == modeProjectRename || m.mode == modeConfirmDelete:
 		content = m.projectsView()
 	case m.mode == modeSettings || m.mode == modeSettingEdit:
 		content = m.settingsView()
@@ -356,8 +356,20 @@ func (m model) projectsView() string {
 		}
 		out = append(out, row)
 	}
-	footer := ruleStyle.Render(strings.Repeat("┈", w)) + "\n" +
-		dimStyle.Render("boards · j/k move · enter open · esc back · q quit")
+	rule := ruleStyle.Render(strings.Repeat("┈", w))
+	var footer string
+	switch m.mode {
+	case modeProjectRename:
+		footer = rule + "\n" + m.input.View() + "  " + dimStyle.Render("(rename: enter=save esc=cancel)")
+	case modeConfirmDelete:
+		name := ""
+		if b := m.selectedBoard(); b != nil {
+			name = b.Name
+		}
+		footer = rule + "\n" + warnStyle.Render(fmt.Sprintf("delete board %q and its archive? (y/n)", name))
+	default:
+		footer = rule + "\n" + dimStyle.Render("boards · j/k move · enter open · r rename · A archive · x delete · esc back · q quit")
+	}
 	out = m.windowRows(out, cursorLine, lines(footer))
 	body := m.headerWith("boards", 0, len(m.projRows)) + "\n" + strings.Join(out, "\n")
 	return m.frame(body, footer)

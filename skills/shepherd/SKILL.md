@@ -23,6 +23,7 @@ Run `shepherd help` for the authoritative command list. Summary:
 | `shepherd list --all --json` | read across every board; adds a `project` field |
 | `shepherd list --filter <q> [--json]` | list only matching items; real indexes kept |
 | `shepherd projects [--json]` | list boards with open/total counts; JSON marks the current board (`"current": true`) |
+| `shepherd project rename\|delete\|archive\|unarchive <name>` | whole-board actions (delete needs `--force`; archive stashes under `projects/archived/`); default board is not actionable |
 | `shepherd stats --json [--all]` | board metrics (JSON numbers; drop `--json` for charts; `--legend` explains them) |
 | `shepherd add "<text>"` | add an item |
 | `shepherd sub <n> "<text>"` | add a subtask to item n |

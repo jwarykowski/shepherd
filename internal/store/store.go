@@ -124,6 +124,129 @@ func Boards() []Board {
 	return bs
 }
 
+// ValidProject returns an error if name is not a safe project slug. Exported so
+// the TUI and CLI can validate a rename/unarchive target before touching files.
+func ValidProject(name string) error {
+	if name == "" || !projectRE.MatchString(name) {
+		return fmt.Errorf("invalid project name %q (use letters, digits, . _ -)", name)
+	}
+	return nil
+}
+
+func fileExists(p string) bool { _, err := os.Stat(p); return err == nil }
+
+// archivedDir holds whole boards stashed by ArchiveBoard. Boards() never lists
+// it because its glob (projects/*.md) is non-recursive.
+func archivedDir() string { return filepath.Join(BaseDir(), "projects", "archived") }
+
+// RenameBoard renames a named project board and its archive sibling. It refuses
+// the default board, an invalid target, a missing source, or an existing target.
+func RenameBoard(oldName, newName string) error {
+	if oldName == "" || oldName == "default" {
+		return fmt.Errorf("cannot rename the default board")
+	}
+	if err := ValidProject(newName); err != nil {
+		return err
+	}
+	src, dst := TodoPathFor(oldName), TodoPathFor(newName)
+	if !fileExists(src) {
+		return fmt.Errorf("no board %q", oldName)
+	}
+	if fileExists(dst) {
+		return fmt.Errorf("board %q already exists", newName)
+	}
+	if err := os.Rename(src, dst); err != nil {
+		return err
+	}
+	if a := ArchivePath(src); fileExists(a) {
+		_ = os.Rename(a, ArchivePath(dst))
+	}
+	return nil
+}
+
+// DeleteBoard removes a named project board and its archive sibling. It refuses
+// the default board.
+func DeleteBoard(name string) error {
+	if name == "" || name == "default" {
+		return fmt.Errorf("cannot delete the default board")
+	}
+	p := TodoPathFor(name)
+	if !fileExists(p) {
+		return fmt.Errorf("no board %q", name)
+	}
+	if err := os.Remove(p); err != nil {
+		return err
+	}
+	if a := ArchivePath(p); fileExists(a) {
+		_ = os.Remove(a)
+	}
+	return nil
+}
+
+// ArchiveBoard moves a whole board (and its archive sibling) into
+// projects/archived/, hiding it from Boards(). Reversible via UnarchiveBoard.
+func ArchiveBoard(name string) error {
+	if name == "" || name == "default" {
+		return fmt.Errorf("cannot archive the default board")
+	}
+	src := TodoPathFor(name)
+	if !fileExists(src) {
+		return fmt.Errorf("no board %q", name)
+	}
+	if err := os.MkdirAll(archivedDir(), 0o755); err != nil {
+		return err
+	}
+	dst := filepath.Join(archivedDir(), name+".md")
+	if fileExists(dst) {
+		return fmt.Errorf("archived board %q already exists", name)
+	}
+	if err := os.Rename(src, dst); err != nil {
+		return err
+	}
+	if a := ArchivePath(src); fileExists(a) {
+		_ = os.Rename(a, filepath.Join(archivedDir(), name+"-archive.md"))
+	}
+	return nil
+}
+
+// UnarchiveBoard moves an archived board (and its archive sibling) back into
+// projects/, making it live again.
+func UnarchiveBoard(name string) error {
+	if err := ValidProject(name); err != nil {
+		return err
+	}
+	src := filepath.Join(archivedDir(), name+".md")
+	if !fileExists(src) {
+		return fmt.Errorf("no archived board %q", name)
+	}
+	dst := TodoPathFor(name)
+	if fileExists(dst) {
+		return fmt.Errorf("board %q already exists", name)
+	}
+	if err := os.Rename(src, dst); err != nil {
+		return err
+	}
+	if a := filepath.Join(archivedDir(), name+"-archive.md"); fileExists(a) {
+		_ = os.Rename(a, ArchivePath(dst))
+	}
+	return nil
+}
+
+// ArchivedBoards lists boards stashed under projects/archived/ (archive siblings
+// skipped), for the `project unarchive` listing.
+func ArchivedBoards() []Board {
+	var bs []Board
+	matches, _ := filepath.Glob(filepath.Join(archivedDir(), "*.md"))
+	for _, p := range matches {
+		name := strings.TrimSuffix(filepath.Base(p), ".md")
+		if strings.HasSuffix(name, "-archive") {
+			continue
+		}
+		bs = append(bs, Board{Name: name, Path: p})
+	}
+	return bs
+}
+
 // BoardCounts returns the open and total top-level item counts for a board file
 // (subtasks not counted), for the picker and `projects` listing.
 func BoardCounts(path string) (open, total int) {

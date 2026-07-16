@@ -281,6 +281,48 @@ func TestProjects(t *testing.T) {
 	}
 }
 
+// TestProjectActions exercises the whole-board verbs end to end via Run.
+func TestProjectActions(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("SHEPHERD_TODO_FILE", "")
+	t.Setenv("SHEPHERD_PROJECT", "")
+
+	if code := Run("add", []string{"b", "--project", "web"}); code != 0 {
+		t.Fatalf("seed exit %d", code)
+	}
+	exists := func(name string) bool { _, err := os.Stat(store.TodoPathFor(name)); return err == nil }
+
+	if code := Run("project", []string{"rename", "web", "webapp"}); code != 0 {
+		t.Fatalf("rename exit %d", code)
+	}
+	if exists("web") || !exists("webapp") {
+		t.Fatal("rename did not move the board")
+	}
+	// delete requires --force
+	if code := Run("project", []string{"delete", "webapp"}); code == 0 {
+		t.Fatal("delete without --force should fail")
+	}
+	if !exists("webapp") {
+		t.Fatal("board removed despite missing --force")
+	}
+	if code := Run("project", []string{"archive", "webapp"}); code != 0 {
+		t.Fatalf("archive exit %d", code)
+	}
+	if exists("webapp") {
+		t.Fatal("archived board still live")
+	}
+	if code := Run("project", []string{"unarchive", "webapp"}); code != 0 {
+		t.Fatalf("unarchive exit %d", code)
+	}
+	if code := Run("project", []string{"delete", "webapp", "--force"}); code != 0 {
+		t.Fatalf("delete --force exit %d", code)
+	}
+	if exists("webapp") {
+		t.Fatal("board not deleted with --force")
+	}
+}
+
 // TestDoneStampsCompleted checks marking done records a completion timestamp in
 // the JSON, and reopening clears it.
 func TestDoneStampsCompleted(t *testing.T) {

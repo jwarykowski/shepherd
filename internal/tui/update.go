@@ -238,8 +238,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var res tea.Model
 		var cmd tea.Cmd
 		switch m.mode {
-		case modeAdd, modeAddSub, modeEdit, modeCategory, modeDue, modeDefer, modeLink, modeFilter:
+		case modeAdd, modeAddSub, modeEdit, modeCategory, modeDue, modeDefer, modeLink, modeFilter, modeProjectRename:
 			res, cmd = m.updateInput(msg)
+		case modeConfirmDelete:
+			res, cmd = m.updateConfirmDelete(msg)
 		case modeNote:
 			res, cmd = m.updateNote(msg)
 		case modeDetail:
@@ -597,6 +599,83 @@ func (m model) updateProjects(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		nm.w, nm.height, nm.density = m.w, m.height, m.density
 		nm.clamp()
 		return nm, nil
+	case "r": // rename the selected board (not the default)
+		if b := m.selectedBoard(); b != nil && b.Name != "default" {
+			m.mode = modeProjectRename
+			m.input.SetValue(b.Name)
+			m.input.Placeholder = "new board name"
+			m.input.Focus()
+		}
+	case "x": // delete the selected board (confirmed)
+		if b := m.selectedBoard(); b != nil && b.Name != "default" {
+			m.mode = modeConfirmDelete
+		}
+	case "A": // archive the selected board into projects/archived/
+		if b := m.selectedBoard(); b != nil && b.Name != "default" {
+			if err := store.ArchiveBoard(b.Name); err == nil {
+				return m.afterBoardChange(b.Name, ""), nil
+			}
+		}
+	}
+	return m, nil
+}
+
+// selectedBoard is the board row under the picker cursor, or nil when empty.
+func (m model) selectedBoard() *store.Board {
+	if m.projCur < 0 || m.projCur >= len(m.projRows) {
+		return nil
+	}
+	return &m.projRows[m.projCur]
+}
+
+// currentBoardName is the name of the board currently open ("default" when the
+// unnamed board).
+func (m model) currentBoardName() string {
+	if m.project == "" {
+		return "default"
+	}
+	return m.project
+}
+
+// afterBoardChange refreshes the picker after a rename/delete/archive. If the
+// board that changed is the one currently open, it re-opens that board under its
+// new name (newName), or the default board when it was removed/archived
+// (newName == ""), so the live model never points at a moved file.
+func (m model) afterBoardChange(oldName, newName string) model {
+	if oldName == m.currentBoardName() {
+		proj := newName
+		if proj == "default" {
+			proj = ""
+		}
+		nm := newModel(proj)
+		nm.w, nm.height, nm.density = m.w, m.height, m.density
+		nm.enterProjects()
+		return nm
+	}
+	m.projRows = store.Boards()
+	if m.projCur >= len(m.projRows) {
+		m.projCur = len(m.projRows) - 1
+	}
+	if m.projCur < 0 {
+		m.projCur = 0
+	}
+	m.mode = modeProjects
+	return m
+}
+
+// updateConfirmDelete handles the delete-board confirmation: y deletes the
+// selected board, anything else cancels back to the picker.
+func (m model) updateConfirmDelete(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "y", "Y":
+		if b := m.selectedBoard(); b != nil && b.Name != "default" {
+			if err := store.DeleteBoard(b.Name); err == nil {
+				return m.afterBoardChange(b.Name, ""), nil
+			}
+		}
+		m.mode = modeProjects
+	default:
+		m.mode = modeProjects
 	}
 	return m, nil
 }
@@ -871,6 +950,8 @@ func (m model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.filter = ""
 			m.clamp()
 			m.mode = modeList
+		case modeProjectRename:
+			m.mode = modeProjects
 		default:
 			m.mode = modeList
 		}
@@ -946,6 +1027,19 @@ func (m model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.mode = modeList
 		case modeFilter:
 			m.mode = modeList // keep the filter applied
+		case modeProjectRename:
+			old := ""
+			if b := m.selectedBoard(); b != nil {
+				old = b.Name
+			}
+			m.input.Blur()
+			if v != "" && v != old {
+				if err := store.RenameBoard(old, v); err == nil {
+					return m.afterBoardChange(old, v), nil
+				}
+			}
+			m.mode = modeProjects // no-op / invalid name: return to the picker
+			return m, nil
 		}
 		m.input.Blur()
 		return m, nil

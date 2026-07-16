@@ -73,7 +73,7 @@ herdr plugin install jwarykowski/shepherd
 | `d` | open detail view (shows every field) |
 | `v` | cycle view: category / priority / table |
 | `A` | toggle the [global view](#global-view) across all boards |
-| `p` | open the board picker — list every board with open/total counts; `enter` jumps to the selected board |
+| `p` | open the board picker — every board with open/total counts; `enter` jumps, `r` renames, `A` archives, `x` deletes (confirmed) the selected board (not the default) |
 | `e` | browse the archive (read-only; all boards in the global view; `esc` to leave) |
 | `/` | filter (text/note/category/due/defer/link — also greps `archive.md`) |
 | `U` / `ctrl+r` | undo / redo (multi-level) |
@@ -221,6 +221,10 @@ shepherd list [--json]              # show items with their index
 shepherd list --all [--json]        # aggregate across every board (read-only)
 shepherd list --filter home         # only items matching the query, real indexes kept
 shepherd projects [--json]          # list boards with open/total counts (* = current)
+shepherd project rename web webapp  # rename a board (and its archive sibling)
+shepherd project archive webapp     # stash a board under projects/archived/ (reversible)
+shepherd project unarchive webapp   # restore an archived board
+shepherd project delete webapp --force  # delete a board (and its archive sibling)
 shepherd stats [--json] [--all]     # board metrics as charts (--json = numbers)
 shepherd stats --legend             # explain every chart and the aging numbers
 shepherd add "buy milk @home !h due:tomorrow"

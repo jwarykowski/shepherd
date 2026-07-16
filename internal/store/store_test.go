@@ -268,6 +268,77 @@ func TestBoards(t *testing.T) {
 	}
 }
 
+func TestRenameBoard(t *testing.T) {
+	seedBoards(t)
+	if err := RenameBoard("web", "webapp"); err != nil {
+		t.Fatalf("rename: %v", err)
+	}
+	if fileExists(TodoPathFor("web")) {
+		t.Fatal("old board still exists")
+	}
+	if !fileExists(TodoPathFor("webapp")) {
+		t.Fatal("new board missing")
+	}
+	if !fileExists(ArchivePath(TodoPathFor("webapp"))) {
+		t.Fatal("archive sibling not moved")
+	}
+	// guards: default refused, existing target refused
+	if RenameBoard("default", "x") == nil {
+		t.Fatal("renaming default should error")
+	}
+	if RenameBoard("api", "webapp") == nil {
+		t.Fatal("renaming onto an existing board should error")
+	}
+	if RenameBoard("api", "../escape") == nil {
+		t.Fatal("invalid target name should error")
+	}
+}
+
+func TestDeleteBoard(t *testing.T) {
+	seedBoards(t)
+	if err := DeleteBoard("web"); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if fileExists(TodoPathFor("web")) || fileExists(ArchivePath(TodoPathFor("web"))) {
+		t.Fatal("board or archive sibling not removed")
+	}
+	if DeleteBoard("default") == nil {
+		t.Fatal("deleting default should error")
+	}
+	if DeleteBoard("nope") == nil {
+		t.Fatal("deleting a missing board should error")
+	}
+}
+
+func TestArchiveUnarchiveBoard(t *testing.T) {
+	seedBoards(t)
+	if err := ArchiveBoard("web"); err != nil {
+		t.Fatalf("archive: %v", err)
+	}
+	if fileExists(TodoPathFor("web")) {
+		t.Fatal("archived board still live")
+	}
+	// hidden from Boards(), visible in ArchivedBoards()
+	for _, b := range Boards() {
+		if b.Name == "web" {
+			t.Fatal("archived board should not appear in Boards()")
+		}
+	}
+	arc := ArchivedBoards()
+	if len(arc) != 1 || arc[0].Name != "web" {
+		t.Fatalf("ArchivedBoards wrong: %+v", arc)
+	}
+	if err := UnarchiveBoard("web"); err != nil {
+		t.Fatalf("unarchive: %v", err)
+	}
+	if !fileExists(TodoPathFor("web")) || !fileExists(ArchivePath(TodoPathFor("web"))) {
+		t.Fatal("board or archive sibling not restored")
+	}
+	if len(ArchivedBoards()) != 0 {
+		t.Fatal("archived dir should be empty after unarchive")
+	}
+}
+
 func TestLoadAll(t *testing.T) {
 	seedBoards(t)
 	items := LoadAll()

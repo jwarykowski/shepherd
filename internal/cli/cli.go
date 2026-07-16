@@ -21,6 +21,10 @@ Usage:
   shepherd                      open the interactive board
   shepherd list [--json] [--all] [--filter <text>] list items (--all aggregates; --filter matches text/note/category/due/defer/link)
   shepherd projects [--json]    list boards with open/total counts (* marks the current board)
+  shepherd project rename <old> <new>  rename a board (and its archive sibling)
+  shepherd project delete <name> --force  delete a board (and its archive sibling)
+  shepherd project archive <name>      stash a board under projects/archived/ (reversible)
+  shepherd project unarchive <name>    restore an archived board
   shepherd stats [--json] [--all] [--legend] board metrics as charts (--all aggregates; --legend explains them)
   shepherd add "<text>"         add an item (@category !h/!m/!l due: defer: link: status: note:)
   shepherd sub <n> "<text>"     add a subtask to item n (same @/!/due: syntax)
@@ -73,6 +77,8 @@ func Run(verb string, args []string) int {
 		return cmdList(rest, project, os.Stdout)
 	case "projects":
 		return cmdProjects(rest, project, os.Stdout)
+	case "project":
+		return cmdProject(rest, os.Stdout)
 	case "stats":
 		return cmdStats(rest, project, os.Stdout)
 	case "add":
@@ -253,6 +259,79 @@ func cmdProjects(args []string, project string, w io.Writer) int {
 		emit(w, fmt.Sprintf("%s %s\t%d/%d", mark, b.Name, total-open, total))
 	}
 	return 0
+}
+
+// cmdProject groups whole-board actions: rename, delete, archive, unarchive.
+// Board names are explicit positional args (not the --project flag); the default
+// board cannot be renamed, deleted, or archived.
+func cmdProject(args []string, w io.Writer) int {
+	if len(args) == 0 {
+		fmt.Fprintln(os.Stderr, "shepherd: project needs a subcommand: rename|delete|archive|unarchive")
+		return 2
+	}
+	sub, rest := args[0], args[1:]
+	switch sub {
+	case "rename":
+		if len(rest) != 2 {
+			fmt.Fprintln(os.Stderr, `shepherd: project rename <old> <new>`)
+			return 2
+		}
+		if err := store.RenameBoard(rest[0], rest[1]); err != nil {
+			fmt.Fprintln(os.Stderr, "shepherd:", err)
+			return 1
+		}
+		emit(w, fmt.Sprintf("renamed board %q -> %q", rest[0], rest[1]))
+		return 0
+	case "delete":
+		force := false
+		name := ""
+		for _, a := range rest {
+			if a == "--force" {
+				force = true
+			} else if name == "" {
+				name = a
+			}
+		}
+		if name == "" {
+			fmt.Fprintln(os.Stderr, `shepherd: project delete <name> --force`)
+			return 2
+		}
+		if !force {
+			fmt.Fprintf(os.Stderr, "shepherd: refusing to delete %q without --force\n", name)
+			return 2
+		}
+		if err := store.DeleteBoard(name); err != nil {
+			fmt.Fprintln(os.Stderr, "shepherd:", err)
+			return 1
+		}
+		emit(w, fmt.Sprintf("deleted board %q", name))
+		return 0
+	case "archive":
+		if len(rest) != 1 {
+			fmt.Fprintln(os.Stderr, `shepherd: project archive <name>`)
+			return 2
+		}
+		if err := store.ArchiveBoard(rest[0]); err != nil {
+			fmt.Fprintln(os.Stderr, "shepherd:", err)
+			return 1
+		}
+		emit(w, fmt.Sprintf("archived board %q", rest[0]))
+		return 0
+	case "unarchive":
+		if len(rest) != 1 {
+			fmt.Fprintln(os.Stderr, `shepherd: project unarchive <name>`)
+			return 2
+		}
+		if err := store.UnarchiveBoard(rest[0]); err != nil {
+			fmt.Fprintln(os.Stderr, "shepherd:", err)
+			return 1
+		}
+		emit(w, fmt.Sprintf("unarchived board %q", rest[0]))
+		return 0
+	default:
+		fmt.Fprintf(os.Stderr, "shepherd: unknown project subcommand %q (rename|delete|archive|unarchive)\n", sub)
+		return 2
+	}
 }
 
 func cmdAdd(args []string, project string, w io.Writer) int {

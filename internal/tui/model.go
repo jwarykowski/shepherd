@@ -162,6 +162,8 @@ const (
 	modeProjects
 	modeSettings
 	modeSettingEdit
+	modeProjectRename
+	modeConfirmDelete
 )
 
 // density controls spacing: compact (tight, default) or comfort (roomier).
