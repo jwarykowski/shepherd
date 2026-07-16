@@ -244,14 +244,16 @@ shepherd rm 2                       # remove item 2 (rm 2.1 removes just the sub
 shepherd rm 2 --dry-run             # preview the removal without writing
 ```
 
-Global flags work on any command: `-q`/`--quiet` silences the confirmation
-line a mutation prints (requested data like `list`/`stats` is never suppressed),
-and `--no-input` is accepted for script-compat (this API never prompts).
-`-h`/`--help` on any command prints its flags and exits 0. Exit codes: `0`
-success, `2` usage/input error (bad flag, unknown command, out-of-range index),
-`1` runtime/IO failure. A mistyped command suggests the closest real one.
-`stats` disables color automatically when stdout isn't a terminal, `$NO_COLOR`
-is set, or `$TERM=dumb` — `--no-color` forces it off.
+Global flags (any command):
+
+- `-q`, `--quiet` — silence a mutation's confirmation line (`list`/`stats` data is never suppressed).
+- `--no-input` — accepted for script-compat; this API never prompts.
+- `-h`, `--help` — print a command's flags, exit 0.
+
+Exit codes: `0` success · `2` usage/input error (bad flag, unknown command,
+out-of-range index) · `1` runtime/IO failure. A mistyped command suggests the
+closest real one. `stats` drops color when stdout isn't a terminal, `$NO_COLOR`
+is set, or `$TERM=dumb`; `--no-color` forces it off.
 
 `done`/`undone`/`rm`/`edit` take a dotted `n.m` reference for subtask `m` of
 item `n`; see [subtasks](#subtasks) for the cascade rules.
