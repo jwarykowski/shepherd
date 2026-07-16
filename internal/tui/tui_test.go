@@ -81,6 +81,63 @@ func TestProjectsPickerJump(t *testing.T) {
 	}
 }
 
+// TestSettingsEditor drives the settings screen: cycle the enum rows, edit the
+// text rows, and confirm changes apply to the model and persist to config.toml.
+func TestSettingsEditor(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("SHEPHERD_CONFIG", "")
+	t.Setenv("SHEPHERD_TODO_FILE", "")
+
+	m := model{input: textinput.New(), statuses: []string{"open", "done"}, autosaveEvery: 60 * time.Second}
+
+	m = drive(m, ",")
+	if m.mode != modeSettings {
+		t.Fatalf(", did not open settings, mode=%d", m.mode)
+	}
+	if v := m.View(); !strings.Contains(v, "autosave") || !strings.Contains(v, "settings") {
+		t.Fatalf("settings screen did not render fields:\n%s", v)
+	}
+	m = drive(m, "tab") // row 0 view: category -> priority
+	if m.view != viewPriority {
+		t.Fatalf("view not cycled: %v", m.view)
+	}
+	m = drive(m, "j", "tab") // row 1 density -> comfort
+	if m.density != comfort {
+		t.Fatal("density not toggled")
+	}
+	m = drive(m, "j", "enter") // row 2 autosave: edit
+	if m.mode != modeSettingEdit {
+		t.Fatal("enter did not open the editor")
+	}
+	m.input.SetValue("30")
+	m = drive(m, "enter")
+	if m.autosaveEvery != 30*time.Second {
+		t.Fatalf("autosave not applied: %v", m.autosaveEvery)
+	}
+	m = drive(m, "j", "enter") // row 3 categories
+	m.input.SetValue("work, home")
+	m = drive(m, "enter")
+	m = drive(m, "j", "enter") // row 4 statuses
+	m.input.SetValue("open, wip")
+	m = drive(m, "enter")
+	if len(m.statuses) != 3 || m.statuses[2] != "done" || m.statuses[1] != "wip" {
+		t.Fatalf("statuses not normalized: %+v", m.statuses)
+	}
+
+	// everything persisted to config.toml
+	got := loadConfig(store.ConfigPath())
+	if got.view != viewPriority || got.density != comfort || got.autosave != 30 {
+		t.Fatalf("config not persisted: %+v", got)
+	}
+	if strings.Join(got.categories, ",") != "work,home" {
+		t.Fatalf("categories not persisted: %+v", got.categories)
+	}
+	if strings.Join(got.statuses, ",") != "open,wip,done" {
+		t.Fatalf("statuses not persisted: %+v", got.statuses)
+	}
+}
+
 func TestModelActions(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "todo.md")
 	_ = os.WriteFile(p, []byte("- [ ] alpha\n- [ ] beta\n"), 0o644)

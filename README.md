@@ -79,6 +79,7 @@ herdr plugin install jwarykowski/shepherd
 | `U` / `ctrl+r` | undo / redo (multi-level) |
 | `w` | save now (the header shows `● unsaved` / `● saved`) |
 | `ctrl+e` | open the markdown file in `$EDITOR` |
+| `,` | open settings — edit view, density, autosave, categories, statuses; changes save to `config.toml` |
 | `x` | delete item |
 | `c` | archive all done items to `archive.md` |
 | `?` | full help page |
@@ -315,6 +316,8 @@ statuses = ["open", "in-progress", "done"] # tab cycles item status in the list
 - `autosave` — idle seconds before an unsaved board is written to disk (default 60); `0` disables it, so only `w` and quit save.
 - `categories` — press `tab` in the category prompt (`g`) to cycle through them.
 - `statuses` — ordered list `tab` cycles through in the list; `done` is always kept and forced last. Defaults to `["open", "done"]`. Intermediate statuses persist as a `status:` line and show a `◐` glyph; the stats page breaks items down by status.
+
+Edit these in the running board with `,` (settings): `tab` cycles `view`/`density`, `enter` edits `autosave`/`categories`/`statuses`, and each change is written straight back to `config.toml`. Any comments in the file are dropped on save.
 
 herdr pane placement (`placement` / `direction`) lives in the same file — see
 [herdr integration](#herdr-integration).

@@ -3,7 +3,9 @@
 package tui
 
 import (
+	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -95,6 +97,34 @@ func loadConfig(path string) config {
 	return c
 }
 
+// saveConfig writes the known config keys back to config.toml.
+//
+// ponytail: rewrites the file from the known keys, so any user comments are
+// dropped. Switch to a comment-preserving parse only if that ever matters.
+func saveConfig(path string, c config) error {
+	den := "compact"
+	if c.density == comfort {
+		den = "comfort"
+	}
+	list := func(xs []string) string {
+		q := make([]string, len(xs))
+		for i, x := range xs {
+			q[i] = fmt.Sprintf("%q", x)
+		}
+		return "[" + strings.Join(q, ", ") + "]"
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "view = %q\n", viewName[c.view])
+	fmt.Fprintf(&b, "density = %q\n", den)
+	fmt.Fprintf(&b, "autosave = %d\n", c.autosave)
+	fmt.Fprintf(&b, "categories = %s\n", list(c.categories))
+	fmt.Fprintf(&b, "statuses = %s\n", list(c.statuses))
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, []byte(b.String()), 0o644)
+}
+
 // normalizeStatuses dedups the configured statuses and guarantees "done" is
 // present and last — the terminal state the cycle and archiving depend on.
 func normalizeStatuses(ss []string) []string {
@@ -127,6 +157,8 @@ const (
 	modeHelp
 	modeArchive
 	modeProjects
+	modeSettings
+	modeSettingEdit
 )
 
 // density controls spacing: compact (tight, default) or comfort (roomier).
@@ -194,6 +226,19 @@ type model struct {
 	project       string        // the board to return to when leaving global
 	projRows      []store.Board // board list for the picker (modeProjects)
 	projCur       int           // cursor into projRows
+	settingsCur   int           // cursor into the settings rows (modeSettings)
+}
+
+// currentConfig snapshots the live, editable settings for the settings screen
+// and for writing back to config.toml.
+func (m model) currentConfig() config {
+	return config{
+		view:       m.view,
+		density:    m.density,
+		categories: m.categories,
+		statuses:   m.statuses,
+		autosave:   int(m.autosaveEvery / time.Second),
+	}
 }
 
 // resort orders items for the active view.
