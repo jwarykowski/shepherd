@@ -185,6 +185,17 @@ func TestProjectPickerActions(t *testing.T) {
 	if len(m.projRows) != 1 {
 		t.Fatalf("expected only default left, got %+v", m.projRows)
 	}
+
+	// create: press a, type a name, enter
+	m = drive(m, "a")
+	m.input.SetValue("fresh")
+	m = drive(m, "enter")
+	if _, err := os.Stat(store.TodoPathFor("fresh")); err != nil {
+		t.Fatal("a+enter did not create the board")
+	}
+	if len(m.projRows) != 2 || m.projRows[m.projCur].Name != "fresh" {
+		t.Fatalf("picker not refreshed onto new board: cur=%d rows=%+v", m.projCur, m.projRows)
+	}
 }
 
 func TestModelActions(t *testing.T) {

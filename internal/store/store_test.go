@@ -268,6 +268,28 @@ func TestBoards(t *testing.T) {
 	}
 }
 
+func TestCreateBoard(t *testing.T) {
+	seedBoards(t)
+	if err := CreateBoard("newone"); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if !fileExists(TodoPathFor("newone")) {
+		t.Fatal("board file not created")
+	}
+	if CreateBoard("web") == nil {
+		t.Fatal("creating an existing board should error")
+	}
+	if CreateBoard("../escape") == nil {
+		t.Fatal("invalid name should error")
+	}
+	if err := ArchiveBoard("newone"); err != nil {
+		t.Fatal(err)
+	}
+	if CreateBoard("newone") == nil {
+		t.Fatal("creating a name that is archived should error")
+	}
+}
+
 func TestRenameBoard(t *testing.T) {
 	seedBoards(t)
 	if err := RenameBoard("web", "webapp"); err != nil {

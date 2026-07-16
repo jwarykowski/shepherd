@@ -238,7 +238,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var res tea.Model
 		var cmd tea.Cmd
 		switch m.mode {
-		case modeAdd, modeAddSub, modeEdit, modeCategory, modeDue, modeDefer, modeLink, modeFilter, modeProjectRename:
+		case modeAdd, modeAddSub, modeEdit, modeCategory, modeDue, modeDefer, modeLink, modeFilter, modeProjectRename, modeProjectNew:
 			res, cmd = m.updateInput(msg)
 		case modeConfirmDelete:
 			res, cmd = m.updateConfirmDelete(msg)
@@ -599,6 +599,11 @@ func (m model) updateProjects(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		nm.w, nm.height, nm.density = m.w, m.height, m.density
 		nm.clamp()
 		return nm, nil
+	case "a": // create a new board
+		m.mode = modeProjectNew
+		m.input.SetValue("")
+		m.input.Placeholder = "new board name"
+		m.input.Focus()
 	case "r": // rename the selected board (not the default)
 		if b := m.selectedBoard(); b != nil && b.Name != "default" {
 			m.mode = modeProjectRename
@@ -950,7 +955,7 @@ func (m model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.filter = ""
 			m.clamp()
 			m.mode = modeList
-		case modeProjectRename:
+		case modeProjectRename, modeProjectNew:
 			m.mode = modeProjects
 		default:
 			m.mode = modeList
@@ -1039,6 +1044,21 @@ func (m model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				}
 			}
 			m.mode = modeProjects // no-op / invalid name: return to the picker
+			return m, nil
+		case modeProjectNew:
+			m.input.Blur()
+			m.mode = modeProjects
+			if v != "" {
+				if err := store.CreateBoard(v); err == nil {
+					m.projRows = store.Boards()
+					for i, b := range m.projRows { // land on the new board
+						if b.Name == v {
+							m.projCur = i
+							break
+						}
+					}
+				}
+			}
 			return m, nil
 		}
 		m.input.Blur()

@@ -162,6 +162,7 @@ const (
 	modeProjects
 	modeSettings
 	modeSettingEdit
+	modeProjectNew
 	modeProjectRename
 	modeConfirmDelete
 )

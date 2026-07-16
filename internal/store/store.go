@@ -139,6 +139,25 @@ func fileExists(p string) bool { _, err := os.Stat(p); return err == nil }
 // it because its glob (projects/*.md) is non-recursive.
 func archivedDir() string { return filepath.Join(BaseDir(), "projects", "archived") }
 
+// CreateBoard creates a new, empty named project board. It refuses an invalid
+// name or one that already exists (live or archived).
+func CreateBoard(name string) error {
+	if err := ValidProject(name); err != nil {
+		return err
+	}
+	p := TodoPathFor(name)
+	if fileExists(p) {
+		return fmt.Errorf("board %q already exists", name)
+	}
+	if fileExists(filepath.Join(archivedDir(), name+".md")) {
+		return fmt.Errorf("archived board %q already exists — unarchive it instead", name)
+	}
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(p, []byte{}, 0o644)
+}
+
 // RenameBoard renames a named project board and its archive sibling. It refuses
 // the default board, an invalid target, a missing source, or an existing target.
 func RenameBoard(oldName, newName string) error {

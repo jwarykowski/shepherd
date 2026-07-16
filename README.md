@@ -73,7 +73,7 @@ herdr plugin install jwarykowski/shepherd
 | `d` | open detail view (shows every field) |
 | `v` | cycle view: category / priority / table |
 | `A` | toggle the [global view](#global-view) across all boards |
-| `p` | open the board picker — every board with open/total counts; `enter` jumps, `r` renames, `A` archives, `x` deletes (confirmed) the selected board (not the default) |
+| `p` | open the board picker — every board with open/total counts; `enter` jumps, `a` creates a board, `r` renames, `A` archives, `x` deletes (confirmed) the selected board (rename/archive/delete don't apply to the default board) |
 | `e` | browse the archive (read-only; all boards in the global view; `esc` to leave) |
 | `/` | filter (text/note/category/due/defer/link — also greps `archive.md`) |
 | `U` / `ctrl+r` | undo / redo (multi-level) |

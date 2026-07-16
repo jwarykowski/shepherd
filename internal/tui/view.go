@@ -39,7 +39,7 @@ func (m model) View() string {
 		content = m.helpView()
 	case m.mode == modeArchive:
 		content = m.archiveView()
-	case m.mode == modeProjects || m.mode == modeProjectRename || m.mode == modeConfirmDelete:
+	case m.mode == modeProjects || m.mode == modeProjectNew || m.mode == modeProjectRename || m.mode == modeConfirmDelete:
 		content = m.projectsView()
 	case m.mode == modeSettings || m.mode == modeSettingEdit:
 		content = m.settingsView()
@@ -359,6 +359,8 @@ func (m model) projectsView() string {
 	rule := ruleStyle.Render(strings.Repeat("┈", w))
 	var footer string
 	switch m.mode {
+	case modeProjectNew:
+		footer = rule + "\n" + m.input.View() + "  " + dimStyle.Render("(new board: enter=create esc=cancel)")
 	case modeProjectRename:
 		footer = rule + "\n" + m.input.View() + "  " + dimStyle.Render("(rename: enter=save esc=cancel)")
 	case modeConfirmDelete:
@@ -368,7 +370,7 @@ func (m model) projectsView() string {
 		}
 		footer = rule + "\n" + warnStyle.Render(fmt.Sprintf("delete board %q and its archive? (y/n)", name))
 	default:
-		footer = rule + "\n" + dimStyle.Render("boards · j/k move · enter open · r rename · A archive · x delete · esc back · q quit")
+		footer = rule + "\n" + m.projectsHelp()
 	}
 	out = m.windowRows(out, cursorLine, lines(footer))
 	body := m.headerWith("boards", 0, len(m.projRows)) + "\n" + strings.Join(out, "\n")
@@ -423,6 +425,29 @@ func (m model) settingsView() string {
 	}
 	body := header + "\n" + strings.Join(out, "\n")
 	return m.frame(body, footer)
+}
+
+// projectsHelp renders the picker's key hints, dimming the board actions
+// (rename/archive/delete) when the default board is selected — they don't apply
+// to it.
+func (m model) projectsHelp() string {
+	onDefault := false
+	if b := m.selectedBoard(); b != nil && b.Name == "default" {
+		onDefault = true
+	}
+	tok := func(s string) string { return dimStyle.Render(s) }
+	action := func(s string) string {
+		if onDefault {
+			return doneStyle.Render(s) // faint + strikethrough: not applicable to default
+		}
+		return dimStyle.Render(s)
+	}
+	parts := []string{
+		tok("j/k move"), tok("enter open"), tok("a new"),
+		action("r rename"), action("A archive"), action("x delete"),
+		tok("esc back"), tok("q quit"),
+	}
+	return strings.Join(parts, dimStyle.Render(" · "))
 }
 
 // count returns the done and total item counts across the whole board.
