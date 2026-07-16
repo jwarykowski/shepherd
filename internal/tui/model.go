@@ -126,6 +126,7 @@ const (
 	modeDetail
 	modeHelp
 	modeArchive
+	modeProjects
 )
 
 // density controls spacing: compact (tight, default) or comfort (roomier).
@@ -191,6 +192,8 @@ type model struct {
 	density       density       // spacing mode
 	global        bool          // read-only aggregate across all boards
 	project       string        // the board to return to when leaving global
+	projRows      []store.Board // board list for the picker (modeProjects)
+	projCur       int           // cursor into projRows
 }
 
 // resort orders items for the active view.

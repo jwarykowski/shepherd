@@ -237,6 +237,50 @@ func TestListAll(t *testing.T) {
 	}
 }
 
+// TestProjects checks the projects listing reports each board with open/total
+// counts and marks the effective project as current.
+func TestProjects(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("SHEPHERD_TODO_FILE", "")
+	t.Setenv("SHEPHERD_PROJECT", "")
+
+	if code := Run("add", []string{"a"}); code != 0 { // default board, 1 open
+		t.Fatalf("add default exit %d", code)
+	}
+	if code := Run("add", []string{"b", "--project", "web"}); code != 0 {
+		t.Fatalf("add web exit %d", code)
+	}
+	if code := Run("done", []string{"1", "--project", "web"}); code != 0 { // web: 0 open, 1 total
+		t.Fatalf("done web exit %d", code)
+	}
+
+	var buf bytes.Buffer
+	if code := cmdProjects([]string{"--json"}, "web", &buf); code != 0 {
+		t.Fatalf("projects exit %d", code)
+	}
+	type row struct {
+		Name    string `json:"name"`
+		Open    int    `json:"open"`
+		Total   int    `json:"total"`
+		Current bool   `json:"current"`
+	}
+	var got []row
+	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+		t.Fatalf("json: %v", err)
+	}
+	byName := map[string]row{}
+	for _, r := range got {
+		byName[r.Name] = r
+	}
+	if d := byName["default"]; d.Open != 1 || d.Total != 1 || d.Current {
+		t.Fatalf("default board wrong: %+v", d)
+	}
+	if w := byName["web"]; w.Open != 0 || w.Total != 1 || !w.Current {
+		t.Fatalf("web board wrong: %+v", w)
+	}
+}
+
 // TestDoneStampsCompleted checks marking done records a completion timestamp in
 // the JSON, and reopening clears it.
 func TestDoneStampsCompleted(t *testing.T) {

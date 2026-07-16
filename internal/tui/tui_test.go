@@ -48,6 +48,39 @@ func pinToday(t *testing.T, iso string) {
 	t.Cleanup(func() { todo.Today = func() string { return time.Now().Format("2006-01-02") } })
 }
 
+// TestProjectsPickerJump checks p opens the board picker and enter jumps to the
+// selected board, rebuilding the model against that board's file.
+func TestProjectsPickerJump(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("SHEPHERD_TODO_FILE", "")
+	t.Setenv("SHEPHERD_PROJECT", "")
+	base := filepath.Join(home, ".config", "shepherd")
+	if err := os.MkdirAll(filepath.Join(base, "projects"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_ = os.WriteFile(filepath.Join(base, "todo.md"), []byte("- [ ] alpha\n"), 0o644)
+	_ = os.WriteFile(filepath.Join(base, "projects", "web.md"), []byte("- [ ] beta\n"), 0o644)
+
+	m := model{path: filepath.Join(base, "todo.md"), project: "", input: textinput.New(),
+		items: store.Load(filepath.Join(base, "todo.md"))}
+
+	m = drive(m, "p") // open picker
+	if m.mode != modeProjects {
+		t.Fatalf("p did not open picker, mode=%d", m.mode)
+	}
+	if len(m.projRows) != 2 || m.projCur != 0 {
+		t.Fatalf("picker rows/cursor wrong: rows=%d cur=%d", len(m.projRows), m.projCur)
+	}
+	m = drive(m, "j", "enter") // select web, jump
+	if m.project != "web" || m.mode != modeList {
+		t.Fatalf("jump failed: project=%q mode=%d", m.project, m.mode)
+	}
+	if len(m.items) != 1 || m.items[0].Text != "beta" {
+		t.Fatalf("did not load web board: %+v", m.items)
+	}
+}
+
 func TestModelActions(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "todo.md")
 	_ = os.WriteFile(p, []byte("- [ ] alpha\n- [ ] beta\n"), 0o644)

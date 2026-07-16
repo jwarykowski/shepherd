@@ -247,6 +247,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			res, cmd = m.updateHelp(msg)
 		case modeArchive:
 			res, cmd = m.updateArchive(msg)
+		case modeProjects:
+			res, cmd = m.updateProjects(msg)
 		default:
 			if m.global {
 				res, cmd = m.updateGlobal(msg)
@@ -303,6 +305,8 @@ func (m model) updateGlobal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "e":
 		m.enterArchive()
+	case "p":
+		m.enterProjects()
 	case "?":
 		m.mode = modeHelp
 	case "/":
@@ -523,8 +527,68 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "e":
 		m.enterArchive()
+	case "p":
+		m.enterProjects()
 	case "ctrl+e":
 		return m, m.openEditor()
+	}
+	return m, nil
+}
+
+// enterProjects opens the board picker, listing every board with the current
+// one (default when unnamed) under the cursor.
+func (m *model) enterProjects() {
+	m.projRows = store.Boards()
+	m.projCur = 0
+	cur := m.project
+	if cur == "" {
+		cur = "default"
+	}
+	for i, b := range m.projRows {
+		if b.Name == cur {
+			m.projCur = i
+			break
+		}
+	}
+	m.mode = modeProjects
+}
+
+// updateProjects handles keys in the board picker: navigate, enter to jump to
+// the selected board (flushing any unsaved edits first), esc to return.
+func (m model) updateProjects(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "q", "ctrl+c":
+		if !m.global && m.dirty {
+			_ = store.Save(m.path, m.items)
+		}
+		return m, tea.Quit
+	case "esc":
+		m.mode = modeList
+	case "j", "down":
+		if m.projCur < len(m.projRows)-1 {
+			m.projCur++
+		}
+	case "k", "up":
+		if m.projCur > 0 {
+			m.projCur--
+		}
+	case "enter":
+		if len(m.projRows) == 0 {
+			m.mode = modeList
+			return m, nil
+		}
+		name := m.projRows[m.projCur].Name
+		proj := name
+		if name == "default" {
+			proj = ""
+		}
+		if !m.global && m.dirty {
+			_ = store.Save(m.path, m.items)
+		}
+		nm := newModel(proj) // jump: rebuild the board fresh, like toggleGlobal
+		nm.w, nm.height, nm.density = m.w, m.height, m.density
+		nm.clamp()
+		return nm, nil
 	}
 	return m, nil
 }

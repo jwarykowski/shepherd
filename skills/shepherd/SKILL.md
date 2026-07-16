@@ -22,6 +22,7 @@ Run `shepherd help` for the authoritative command list. Summary:
 | `shepherd list --json` | read all items (machine shape — prefer this) |
 | `shepherd list --all --json` | read across every board; adds a `project` field |
 | `shepherd list --filter <q> [--json]` | list only matching items; real indexes kept |
+| `shepherd projects [--json]` | list boards with open/total counts; JSON marks the current board (`"current": true`) |
 | `shepherd stats --json [--all]` | board metrics (JSON numbers; drop `--json` for charts; `--legend` explains them) |
 | `shepherd add "<text>"` | add an item |
 | `shepherd sub <n> "<text>"` | add a subtask to item n |

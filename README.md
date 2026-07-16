@@ -73,6 +73,7 @@ herdr plugin install jwarykowski/shepherd
 | `d` | open detail view (shows every field) |
 | `v` | cycle view: category / priority / table |
 | `A` | toggle the [global view](#global-view) across all boards |
+| `p` | open the board picker — list every board with open/total counts; `enter` jumps to the selected board |
 | `e` | browse the archive (read-only; all boards in the global view; `esc` to leave) |
 | `/` | filter (text/note/category/due/defer/link — also greps `archive.md`) |
 | `U` / `ctrl+r` | undo / redo (multi-level) |
@@ -218,6 +219,7 @@ always valid. Indexes are 1-based and match `list` order.
 shepherd list [--json]              # show items with their index
 shepherd list --all [--json]        # aggregate across every board (read-only)
 shepherd list --filter home         # only items matching the query, real indexes kept
+shepherd projects [--json]          # list boards with open/total counts (* = current)
 shepherd stats [--json] [--all]     # board metrics as charts (--json = numbers)
 shepherd stats --legend             # explain every chart and the aging numbers
 shepherd add "buy milk @home !h due:tomorrow"
