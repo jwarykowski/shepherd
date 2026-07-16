@@ -6,7 +6,8 @@ format.
 
 - `shepherd list --json` — read all items (machine-readable; prefer this)
 - `shepherd list --all --json` — read across every board; adds a `project` field per item
-- `shepherd projects [--json]` — list boards with open/total counts; JSON marks the current board with `"current": true`
+- `shepherd projects [--json] [--archived]` — list boards with done/total counts (`--archived` lists archived boards instead); JSON marks the current board with `"current": true`
+- `shepherd project rename <old> <new>` / `archive <name>` / `unarchive <name>` / `delete <name> --force` — whole-board actions (default board is not renamable/deletable/archivable; archive stashes under `projects/archived/`)
 - `shepherd stats [--json] [--all] [--legend]` — board metrics (charts, or `--json` numbers; `--legend` explains each chart)
 - `shepherd add "buy milk @home !h due:tomorrow"` — add an item
 - `shepherd sub <n> "<text>"` — add a subtask to item n (same quick-add tokens)

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"shepherd/internal/store"
@@ -278,6 +279,61 @@ func TestProjects(t *testing.T) {
 	}
 	if w := byName["web"]; w.Open != 0 || w.Total != 1 || !w.Current {
 		t.Fatalf("web board wrong: %+v", w)
+	}
+}
+
+// TestProjectActions exercises the whole-board verbs end to end via Run.
+func TestProjectActions(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("SHEPHERD_TODO_FILE", "")
+	t.Setenv("SHEPHERD_PROJECT", "")
+
+	if code := Run("add", []string{"b", "--project", "web"}); code != 0 {
+		t.Fatalf("seed exit %d", code)
+	}
+	exists := func(name string) bool { _, err := os.Stat(store.TodoPathFor(name)); return err == nil }
+
+	if code := Run("project", []string{"rename", "web", "webapp"}); code != 0 {
+		t.Fatalf("rename exit %d", code)
+	}
+	if exists("web") || !exists("webapp") {
+		t.Fatal("rename did not move the board")
+	}
+	// delete requires --force
+	if code := Run("project", []string{"delete", "webapp"}); code == 0 {
+		t.Fatal("delete without --force should fail")
+	}
+	if !exists("webapp") {
+		t.Fatal("board removed despite missing --force")
+	}
+	if code := Run("project", []string{"archive", "webapp"}); code != 0 {
+		t.Fatalf("archive exit %d", code)
+	}
+	if exists("webapp") {
+		t.Fatal("archived board still live")
+	}
+	// projects --archived lists it; the live listing does not
+	var arc bytes.Buffer
+	if code := cmdProjects([]string{"--archived"}, "", &arc); code != 0 {
+		t.Fatalf("projects --archived exit %d", code)
+	}
+	if !strings.Contains(arc.String(), "webapp") {
+		t.Fatalf("--archived did not list the archived board:\n%s", arc.String())
+	}
+	var live bytes.Buffer
+	_ = cmdProjects(nil, "", &live)
+	if strings.Contains(live.String(), "webapp") {
+		t.Fatalf("live listing showed an archived board:\n%s", live.String())
+	}
+	if code := Run("project", []string{"unarchive", "webapp"}); code != 0 {
+		t.Fatalf("unarchive exit %d", code)
+	}
+	if code := Run("project", []string{"delete", "webapp", "--force"}); code != 0 {
+		t.Fatalf("delete --force exit %d", code)
+	}
+	if exists("webapp") {
+		t.Fatal("board not deleted with --force")
 	}
 }
 

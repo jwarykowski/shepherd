@@ -268,6 +268,132 @@ func TestBoards(t *testing.T) {
 	}
 }
 
+func TestCreateBoard(t *testing.T) {
+	seedBoards(t)
+	if err := CreateBoard("newone"); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if !fileExists(TodoPathFor("newone")) {
+		t.Fatal("board file not created")
+	}
+	if CreateBoard("web") == nil {
+		t.Fatal("creating an existing board should error")
+	}
+	if CreateBoard("../escape") == nil {
+		t.Fatal("invalid name should error")
+	}
+	if err := ArchiveBoard("newone"); err != nil {
+		t.Fatal(err)
+	}
+	if CreateBoard("newone") == nil {
+		t.Fatal("creating a name that is archived should error")
+	}
+}
+
+func TestRenameBoard(t *testing.T) {
+	seedBoards(t)
+	if err := RenameBoard("web", "webapp"); err != nil {
+		t.Fatalf("rename: %v", err)
+	}
+	if fileExists(TodoPathFor("web")) {
+		t.Fatal("old board still exists")
+	}
+	if !fileExists(TodoPathFor("webapp")) {
+		t.Fatal("new board missing")
+	}
+	if !fileExists(ArchivePath(TodoPathFor("webapp"))) {
+		t.Fatal("archive sibling not moved")
+	}
+	// guards: default refused, existing target refused
+	if RenameBoard("default", "x") == nil {
+		t.Fatal("renaming default should error")
+	}
+	if RenameBoard("api", "webapp") == nil {
+		t.Fatal("renaming onto an existing board should error")
+	}
+	if RenameBoard("api", "../escape") == nil {
+		t.Fatal("invalid target name should error")
+	}
+}
+
+func TestDeleteBoard(t *testing.T) {
+	seedBoards(t)
+	if err := DeleteBoard("web"); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	if fileExists(TodoPathFor("web")) || fileExists(ArchivePath(TodoPathFor("web"))) {
+		t.Fatal("board or archive sibling not removed")
+	}
+	if DeleteBoard("default") == nil {
+		t.Fatal("deleting default should error")
+	}
+	if DeleteBoard("nope") == nil {
+		t.Fatal("deleting a missing board should error")
+	}
+}
+
+func TestArchiveUnarchiveBoard(t *testing.T) {
+	seedBoards(t)
+	if err := ArchiveBoard("web"); err != nil {
+		t.Fatalf("archive: %v", err)
+	}
+	if fileExists(TodoPathFor("web")) {
+		t.Fatal("archived board still live")
+	}
+	// hidden from Boards(), visible in ArchivedBoards()
+	for _, b := range Boards() {
+		if b.Name == "web" {
+			t.Fatal("archived board should not appear in Boards()")
+		}
+	}
+	arc := ArchivedBoards()
+	if len(arc) != 1 || arc[0].Name != "web" {
+		t.Fatalf("ArchivedBoards wrong: %+v", arc)
+	}
+	if err := UnarchiveBoard("web"); err != nil {
+		t.Fatalf("unarchive: %v", err)
+	}
+	if !fileExists(TodoPathFor("web")) || !fileExists(ArchivePath(TodoPathFor("web"))) {
+		t.Fatal("board or archive sibling not restored")
+	}
+	if len(ArchivedBoards()) != 0 {
+		t.Fatal("archived dir should be empty after unarchive")
+	}
+}
+
+// TestBoardNameCollisions covers a live and an archived board sharing a name:
+// create/archive/unarchive/rename must all refuse rather than clobber.
+func TestBoardNameCollisions(t *testing.T) {
+	seedBoards(t)
+	if err := os.MkdirAll(archivedDir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// "dup" exists both live and archived at once (constructed directly).
+	if err := os.WriteFile(TodoPathFor("dup"), []byte("- [ ] live\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(archivedDir(), "dup.md"), []byte("- [ ] arc\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if CreateBoard("dup") == nil {
+		t.Fatal("create onto a name that is live+archived should error")
+	}
+	if ArchiveBoard("dup") == nil {
+		t.Fatal("archive onto an existing archived name should error")
+	}
+	if UnarchiveBoard("dup") == nil {
+		t.Fatal("unarchive onto an existing live name should error")
+	}
+	if RenameBoard("api", "dup") == nil {
+		t.Fatal("rename onto an archived name should error")
+	}
+	// the live and archived copies are untouched after every refusal.
+	if !fileExists(TodoPathFor("dup")) || !fileExists(filepath.Join(archivedDir(), "dup.md")) {
+		t.Fatal("a refused op clobbered a file")
+	}
+}
+
 func TestLoadAll(t *testing.T) {
 	seedBoards(t)
 	items := LoadAll()
