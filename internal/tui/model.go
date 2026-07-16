@@ -3,7 +3,9 @@
 package tui
 
 import (
+	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -95,8 +97,36 @@ func loadConfig(path string) config {
 	return c
 }
 
-// normalizeStatuses dedups the configured statuses and guarantees "done" is
-// present and last — the terminal state the cycle and archiving depend on.
+// saveConfig writes the known config keys back to config.toml. It rewrites the
+// file from the known keys, so any user comments in it are dropped.
+func saveConfig(path string, c config) error {
+	den := "compact"
+	if c.density == comfort {
+		den = "comfort"
+	}
+	list := func(xs []string) string {
+		q := make([]string, len(xs))
+		for i, x := range xs {
+			q[i] = fmt.Sprintf("%q", x)
+		}
+		return "[" + strings.Join(q, ", ") + "]"
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "view = %q\n", viewName[c.view])
+	fmt.Fprintf(&b, "density = %q\n", den)
+	fmt.Fprintf(&b, "autosave = %d\n", c.autosave)
+	fmt.Fprintf(&b, "categories = %s\n", list(c.categories))
+	fmt.Fprintf(&b, "statuses = %s\n", list(c.statuses))
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, []byte(b.String()), 0o644)
+}
+
+// normalizeStatuses dedups the configured statuses and guarantees a non-terminal
+// first status (the implicit default) plus "done" present and last — the two ends
+// the cycle and archiving depend on. Without a non-terminal entry, tab-cycle
+// could never reopen a done item.
 func normalizeStatuses(ss []string) []string {
 	out := make([]string, 0, len(ss)+1)
 	seen := map[string]bool{}
@@ -106,6 +136,9 @@ func normalizeStatuses(ss []string) []string {
 		}
 		seen[s] = true
 		out = append(out, s)
+	}
+	if len(out) == 0 {
+		out = append(out, "open")
 	}
 	return append(out, "done")
 }
@@ -127,6 +160,8 @@ const (
 	modeHelp
 	modeArchive
 	modeProjects
+	modeSettings
+	modeSettingEdit
 )
 
 // density controls spacing: compact (tight, default) or comfort (roomier).
@@ -194,6 +229,19 @@ type model struct {
 	project       string        // the board to return to when leaving global
 	projRows      []store.Board // board list for the picker (modeProjects)
 	projCur       int           // cursor into projRows
+	settingsCur   int           // cursor into the settings rows (modeSettings)
+}
+
+// currentConfig snapshots the live, editable settings for the settings screen
+// and for writing back to config.toml.
+func (m model) currentConfig() config {
+	return config{
+		view:       m.view,
+		density:    m.density,
+		categories: m.categories,
+		statuses:   m.statuses,
+		autosave:   int(m.autosaveEvery / time.Second),
+	}
 }
 
 // resort orders items for the active view.

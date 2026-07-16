@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -249,6 +250,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			res, cmd = m.updateArchive(msg)
 		case modeProjects:
 			res, cmd = m.updateProjects(msg)
+		case modeSettings:
+			res, cmd = m.updateSettings(msg)
+		case modeSettingEdit:
+			res, cmd = m.updateSettingEdit(msg)
 		default:
 			if m.global {
 				res, cmd = m.updateGlobal(msg)
@@ -529,6 +534,9 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.enterArchive()
 	case "p":
 		m.enterProjects()
+	case ",":
+		m.mode = modeSettings
+		m.settingsCur = 0
 	case "ctrl+e":
 		return m, m.openEditor()
 	}
@@ -591,6 +599,142 @@ func (m model) updateProjects(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return nm, nil
 	}
 	return m, nil
+}
+
+// numSettings is the count of editable rows in the settings screen, in the
+// order settingsView renders them: view, density, autosave, categories, statuses.
+const numSettings = 5
+
+func (m *model) saveSettings() { _ = saveConfig(store.ConfigPath(), m.currentConfig()) }
+
+// updateSettings handles the settings screen: navigate rows, cycle the enum
+// rows (view/density) in place, or open the editor on a text row. Every change
+// applies to the live model and is written straight to config.toml.
+func (m model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "q", "ctrl+c":
+		if !m.global && m.dirty {
+			_ = store.Save(m.path, m.items)
+		}
+		return m, tea.Quit
+	case "esc":
+		m.mode = modeList
+	case "j", "down":
+		if m.settingsCur < numSettings-1 {
+			m.settingsCur++
+		}
+	case "k", "up":
+		if m.settingsCur > 0 {
+			m.settingsCur--
+		}
+	case "tab", " ":
+		m.cycleSetting() // no-op on text rows
+	case "enter", "l", "right":
+		switch m.settingsCur {
+		case 0, 1:
+			m.cycleSetting()
+		default:
+			m.mode = modeSettingEdit
+			m.input.SetValue(m.settingValue(m.settingsCur))
+			m.input.Placeholder = m.settingPlaceholder(m.settingsCur)
+			m.input.Focus()
+		}
+	}
+	return m, nil
+}
+
+// cycleSetting advances an enum row (view or density) and persists.
+func (m *model) cycleSetting() {
+	switch m.settingsCur {
+	case 0: // view: category -> priority -> table
+		m.view = (m.view + 1) % 3
+		m.resort()
+		m.clamp()
+		m.saveSettings()
+	case 1: // density: compact <-> comfort
+		if m.density == comfort {
+			m.density = compact
+		} else {
+			m.density = comfort
+		}
+		m.saveSettings()
+	}
+}
+
+// settingValue is the editor seed for a text setting row.
+func (m model) settingValue(idx int) string {
+	switch idx {
+	case 2:
+		return strconv.Itoa(int(m.autosaveEvery / time.Second))
+	case 3:
+		return strings.Join(m.categories, ", ")
+	case 4:
+		return strings.Join(m.statuses, ", ")
+	}
+	return ""
+}
+
+func (m model) settingPlaceholder(idx int) string {
+	switch idx {
+	case 2:
+		return "autosave seconds (0 disables)"
+	case 3:
+		return "categories, comma-separated"
+	case 4:
+		return "statuses, comma-separated (done always kept last)"
+	}
+	return ""
+}
+
+// updateSettingEdit runs the shared text input for a text setting row, applying
+// and saving on enter.
+func (m model) updateSettingEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.input.Blur()
+		m.mode = modeSettings
+		return m, nil
+	case "enter":
+		v := strings.TrimSpace(m.input.Value())
+		m.applySettingText(m.settingsCur, v)
+		m.saveSettings()
+		m.input.Blur()
+		m.mode = modeSettings
+		return m, nil
+	}
+	var cmd tea.Cmd
+	m.input, cmd = m.input.Update(msg)
+	return m, cmd
+}
+
+// applySettingText writes an edited text setting back onto the live model.
+func (m *model) applySettingText(idx int, v string) {
+	switch idx {
+	case 2:
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			m.autosaveEvery = time.Duration(n) * time.Second
+		}
+	case 3:
+		m.categories = parseCommaList(v, false)
+	case 4:
+		m.statuses = normalizeStatuses(parseCommaList(v, true))
+	}
+}
+
+// parseCommaList splits a comma-separated list, trimming blanks; lower lowercases
+// each entry (used for statuses).
+func parseCommaList(v string, lower bool) []string {
+	var out []string
+	for _, p := range strings.Split(v, ",") {
+		s := strings.TrimSpace(p)
+		if lower {
+			s = strings.ToLower(s)
+		}
+		if s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 // enterArchive opens the read-only archive browser. On a project board it shows

@@ -41,6 +41,8 @@ func (m model) View() string {
 		content = m.archiveView()
 	case m.mode == modeProjects:
 		content = m.projectsView()
+	case m.mode == modeSettings || m.mode == modeSettingEdit:
+		content = m.settingsView()
 	case m.mode == modeDetail || m.mode == modeNote:
 		content = m.detailView()
 	case m.view == viewTable:
@@ -361,6 +363,56 @@ func (m model) projectsView() string {
 	return m.frame(body, footer)
 }
 
+// settingsView renders the settings screen: one row per editable config field,
+// the enum rows (view/density) cycled in place, the text rows opened in the
+// shared input. Changes are written to config.toml as they are made.
+func (m model) settingsView() string {
+	w := m.width()
+	cfg := m.currentConfig()
+	den := "compact"
+	if cfg.density == comfort {
+		den = "comfort"
+	}
+	rows := []struct{ k, v string }{
+		{"view", viewName[cfg.view]},
+		{"density", den},
+		{"autosave", fmt.Sprintf("%ds", cfg.autosave)},
+		{"categories", strings.Join(cfg.categories, ", ")},
+		{"statuses", strings.Join(cfg.statuses, ", ")},
+	}
+	var out []string
+	for i, r := range rows {
+		val := r.v
+		if val == "" {
+			val = "(none)"
+		}
+		line := "  " + fmt.Sprintf("%-12s", r.k) + val
+		if i == m.settingsCur {
+			line = cursorStyle.Width(w).Render(ansi.Strip(line))
+		}
+		out = append(out, line)
+	}
+
+	// header without the done/total count that headerWith always appends.
+	left := dimStyle.Render(appSubtitle)
+	right := dimStyle.Render("settings")
+	gap := w - lipgloss.Width(left) - lipgloss.Width(right)
+	if gap < 1 {
+		gap = 1
+	}
+	header := left + strings.Repeat(" ", gap) + right + "\n" + ruleStyle.Render(strings.Repeat("┈", w))
+
+	rule := ruleStyle.Render(strings.Repeat("┈", w))
+	footer := rule + "\n"
+	if m.mode == modeSettingEdit {
+		footer += m.input.View() + "  " + dimStyle.Render("(enter=save esc=cancel)")
+	} else {
+		footer += dimStyle.Render("settings · j/k move · tab cycle · enter edit · esc back · q quit")
+	}
+	body := header + "\n" + strings.Join(out, "\n")
+	return m.frame(body, footer)
+}
+
 // count returns the done and total item counts across the whole board.
 func (m model) count() (done, total int) {
 	for _, it := range m.items {
@@ -459,10 +511,10 @@ func (m model) helpGrid() string {
 		head    string
 		entries []entry
 	}{
-		{"move", []entry{{"j/k", "move"}, {"space", "toggle"}, {"d", "detail"}, {"v", "view"}, {"/", "filter"}, {"A", "global"}, {"e", "archive"}, {"p", "boards"}}},
+		{"move", []entry{{"j/k", "move"}, {"space", "toggle"}, {"d", "detail"}, {"v", "view"}, {"A", "global"}, {"e", "archive"}, {"p", "boards"}}},
 		{"edit", []entry{{"a", "add"}, {"S", "sub"}, {"u", "edit"}, {"tab", "status"}, {"x", "del"}, {"c", "arch"}}},
 		{"fields", []entry{{"h/m/l", "prio"}, {"g", "cat"}, {"t", "due"}, {"s", "defer"}, {"L", "link"}, {"o", "open"}}},
-		{"board", []entry{{"w", "save"}, {"^e", "editor"}, {"U", "undo"}, {"^r", "redo"}, {"?", "help"}, {"q", "quit"}}},
+		{"board", []entry{{"w", "save"}, {"^e", "editor"}, {"U", "undo"}, {"^r", "redo"}, {"/", "filter"}, {",", "settings"}, {"?", "help"}, {"q", "quit"}}},
 	}
 
 	// In the read-only global view most actions are inert; dim them so only the
