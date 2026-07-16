@@ -136,6 +136,14 @@ func TestSettingsEditor(t *testing.T) {
 	if strings.Join(got.statuses, ",") != "open,wip,done" {
 		t.Fatalf("statuses not persisted: %+v", got.statuses)
 	}
+
+	// clearing statuses must keep a non-terminal default so tab-cycle can reopen.
+	if s := normalizeStatuses(nil); len(s) != 2 || s[0] != "open" || s[1] != "done" {
+		t.Fatalf("empty statuses not guarded: %+v", s)
+	}
+	if s := normalizeStatuses([]string{"done"}); len(s) != 2 || s[0] != "open" {
+		t.Fatalf("done-only statuses not guarded: %+v", s)
+	}
 }
 
 func TestModelActions(t *testing.T) {

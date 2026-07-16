@@ -97,10 +97,8 @@ func loadConfig(path string) config {
 	return c
 }
 
-// saveConfig writes the known config keys back to config.toml.
-//
-// ponytail: rewrites the file from the known keys, so any user comments are
-// dropped. Switch to a comment-preserving parse only if that ever matters.
+// saveConfig writes the known config keys back to config.toml. It rewrites the
+// file from the known keys, so any user comments in it are dropped.
 func saveConfig(path string, c config) error {
 	den := "compact"
 	if c.density == comfort {
@@ -125,8 +123,10 @@ func saveConfig(path string, c config) error {
 	return os.WriteFile(path, []byte(b.String()), 0o644)
 }
 
-// normalizeStatuses dedups the configured statuses and guarantees "done" is
-// present and last — the terminal state the cycle and archiving depend on.
+// normalizeStatuses dedups the configured statuses and guarantees a non-terminal
+// first status (the implicit default) plus "done" present and last — the two ends
+// the cycle and archiving depend on. Without a non-terminal entry, tab-cycle
+// could never reopen a done item.
 func normalizeStatuses(ss []string) []string {
 	out := make([]string, 0, len(ss)+1)
 	seen := map[string]bool{}
@@ -136,6 +136,9 @@ func normalizeStatuses(ss []string) []string {
 		}
 		seen[s] = true
 		out = append(out, s)
+	}
+	if len(out) == 0 {
+		out = append(out, "open")
 	}
 	return append(out, "done")
 }
