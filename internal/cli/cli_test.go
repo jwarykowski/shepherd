@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"shepherd/internal/store"
@@ -311,6 +312,19 @@ func TestProjectActions(t *testing.T) {
 	}
 	if exists("webapp") {
 		t.Fatal("archived board still live")
+	}
+	// projects --archived lists it; the live listing does not
+	var arc bytes.Buffer
+	if code := cmdProjects([]string{"--archived"}, "", &arc); code != 0 {
+		t.Fatalf("projects --archived exit %d", code)
+	}
+	if !strings.Contains(arc.String(), "webapp") {
+		t.Fatalf("--archived did not list the archived board:\n%s", arc.String())
+	}
+	var live bytes.Buffer
+	_ = cmdProjects(nil, "", &live)
+	if strings.Contains(live.String(), "webapp") {
+		t.Fatalf("live listing showed an archived board:\n%s", live.String())
 	}
 	if code := Run("project", []string{"unarchive", "webapp"}); code != 0 {
 		t.Fatalf("unarchive exit %d", code)

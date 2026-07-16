@@ -232,6 +232,8 @@ type model struct {
 	project       string        // the board to return to when leaving global
 	projRows      []store.Board // board list for the picker (modeProjects)
 	projCur       int           // cursor into projRows
+	projArchived  bool          // picker is showing archived boards (unarchive-only)
+	projNotice    string        // transient picker error (e.g. invalid/duplicate board name)
 	settingsCur   int           // cursor into the settings rows (modeSettings)
 }
 

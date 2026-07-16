@@ -361,6 +361,39 @@ func TestArchiveUnarchiveBoard(t *testing.T) {
 	}
 }
 
+// TestBoardNameCollisions covers a live and an archived board sharing a name:
+// create/archive/unarchive/rename must all refuse rather than clobber.
+func TestBoardNameCollisions(t *testing.T) {
+	seedBoards(t)
+	if err := os.MkdirAll(archivedDir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// "dup" exists both live and archived at once (constructed directly).
+	if err := os.WriteFile(TodoPathFor("dup"), []byte("- [ ] live\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(archivedDir(), "dup.md"), []byte("- [ ] arc\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if CreateBoard("dup") == nil {
+		t.Fatal("create onto a name that is live+archived should error")
+	}
+	if ArchiveBoard("dup") == nil {
+		t.Fatal("archive onto an existing archived name should error")
+	}
+	if UnarchiveBoard("dup") == nil {
+		t.Fatal("unarchive onto an existing live name should error")
+	}
+	if RenameBoard("api", "dup") == nil {
+		t.Fatal("rename onto an archived name should error")
+	}
+	// the live and archived copies are untouched after every refusal.
+	if !fileExists(TodoPathFor("dup")) || !fileExists(filepath.Join(archivedDir(), "dup.md")) {
+		t.Fatal("a refused op clobbered a file")
+	}
+}
+
 func TestLoadAll(t *testing.T) {
 	seedBoards(t)
 	items := LoadAll()

@@ -174,6 +174,9 @@ func RenameBoard(oldName, newName string) error {
 	if fileExists(dst) {
 		return fmt.Errorf("board %q already exists", newName)
 	}
+	if fileExists(filepath.Join(archivedDir(), newName+".md")) {
+		return fmt.Errorf("archived board %q already exists — unarchive it instead", newName)
+	}
 	if err := os.Rename(src, dst); err != nil {
 		return err
 	}

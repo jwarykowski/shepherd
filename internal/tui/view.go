@@ -336,12 +336,16 @@ func (m model) projectsView() string {
 	var out []string
 	cursorLine := 0
 	if len(m.projRows) == 0 {
-		out = append(out, dimStyle.Render("no boards"))
+		if m.projArchived {
+			out = append(out, dimStyle.Render("no archived boards"))
+		} else {
+			out = append(out, dimStyle.Render("no boards"))
+		}
 	}
 	for i, b := range m.projRows {
 		open, total := store.BoardCounts(b.Path)
 		left := "  " + b.Name
-		if b.Name == cur {
+		if !m.projArchived && b.Name == cur {
 			left = boxStyle.Render("▸ ") + b.Name
 		}
 		cnt := countStyle.Render(fmt.Sprintf("%d/%d", total-open, total))
@@ -370,10 +374,18 @@ func (m model) projectsView() string {
 		}
 		footer = rule + "\n" + warnStyle.Render(fmt.Sprintf("delete board %q and its archive? (y/n)", name))
 	default:
-		footer = rule + "\n" + m.projectsHelp()
+		footer = rule + "\n"
+		if m.projNotice != "" {
+			footer += warnStyle.Render(m.projNotice) + "\n"
+		}
+		footer += m.projectsHelp()
 	}
 	out = m.windowRows(out, cursorLine, lines(footer))
-	body := m.headerWith("boards", 0, len(m.projRows)) + "\n" + strings.Join(out, "\n")
+	title := "boards"
+	if m.projArchived {
+		title = "archived boards"
+	}
+	body := m.headerWith(title, 0, len(m.projRows)) + "\n" + strings.Join(out, "\n")
 	return m.frame(body, footer)
 }
 
@@ -431,11 +443,18 @@ func (m model) settingsView() string {
 // (rename/archive/delete) when the default board is selected — they don't apply
 // to it.
 func (m model) projectsHelp() string {
+	tok := func(s string) string { return dimStyle.Render(s) }
+	if m.projArchived {
+		parts := []string{
+			tok("j/k move"), tok("u unarchive"), tok("e live"),
+			tok("esc back"), tok("q quit"),
+		}
+		return strings.Join(parts, dimStyle.Render(" · "))
+	}
 	onDefault := false
 	if b := m.selectedBoard(); b != nil && b.Name == "default" {
 		onDefault = true
 	}
-	tok := func(s string) string { return dimStyle.Render(s) }
 	action := func(s string) string {
 		if onDefault {
 			return doneStyle.Render(s) // faint + strikethrough: not applicable to default
@@ -445,7 +464,7 @@ func (m model) projectsHelp() string {
 	parts := []string{
 		tok("j/k move"), tok("enter open"), tok("a new"),
 		action("r rename"), action("A archive"), action("x delete"),
-		tok("esc back"), tok("q quit"),
+		tok("e archived"), tok("esc back"), tok("q quit"),
 	}
 	return strings.Join(parts, dimStyle.Render(" · "))
 }

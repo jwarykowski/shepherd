@@ -20,7 +20,7 @@ const cliUsage = `shepherd — todo board
 Usage:
   shepherd                      open the interactive board
   shepherd list [--json] [--all] [--filter <text>] list items (--all aggregates; --filter matches text/note/category/due/defer/link)
-  shepherd projects [--json]    list boards with open/total counts (* marks the current board)
+  shepherd projects [--json] [--archived] list boards with done/total counts (* marks current; --archived lists archived boards)
   shepherd project rename <old> <new>  rename a board (and its archive sibling)
   shepherd project delete <name> --force  delete a board (and its archive sibling)
   shepherd project archive <name>      stash a board under projects/archived/ (reversible)
@@ -218,6 +218,7 @@ func cmdList(args []string, project string, w io.Writer) int {
 func cmdProjects(args []string, project string, w io.Writer) int {
 	fs := flag.NewFlagSet("projects", flag.ContinueOnError)
 	asJSON := fs.Bool("json", false, "machine-readable JSON output")
+	archived := fs.Bool("archived", false, "list archived boards instead")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -226,6 +227,10 @@ func cmdProjects(args []string, project string, w io.Writer) int {
 		cur = "default"
 	}
 	boards := store.Boards()
+	if *archived {
+		boards = store.ArchivedBoards()
+		cur = "" // nothing is "current" among archived boards
+	}
 	if *asJSON {
 		type row struct {
 			Name    string `json:"name"`
@@ -247,7 +252,11 @@ func cmdProjects(args []string, project string, w io.Writer) int {
 		return 0
 	}
 	if len(boards) == 0 {
-		emit(w, "(no boards)")
+		if *archived {
+			emit(w, "(no archived boards)")
+		} else {
+			emit(w, "(no boards)")
+		}
 		return 0
 	}
 	for _, b := range boards {

@@ -196,6 +196,51 @@ func TestProjectPickerActions(t *testing.T) {
 	if len(m.projRows) != 2 || m.projRows[m.projCur].Name != "fresh" {
 		t.Fatalf("picker not refreshed onto new board: cur=%d rows=%+v", m.projCur, m.projRows)
 	}
+
+	// invalid name (spaces): rejected with a visible notice, no file created.
+	m = drive(m, "a")
+	m.input.SetValue("bad name")
+	m = drive(m, "enter")
+	if m.projNotice == "" {
+		t.Fatal("invalid board name gave no feedback")
+	}
+	if _, err := os.Stat(store.TodoPathFor("bad name")); err == nil {
+		t.Fatal("invalid board name was created anyway")
+	}
+}
+
+// TestProjectUnarchive archives a board, toggles the picker to the archived view
+// with e, and restores it with u.
+func TestProjectUnarchive(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("SHEPHERD_TODO_FILE", "")
+	t.Setenv("SHEPHERD_PROJECT", "")
+	base := filepath.Join(home, ".config", "shepherd")
+	if err := os.MkdirAll(filepath.Join(base, "projects"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_ = os.WriteFile(filepath.Join(base, "todo.md"), []byte("- [ ] a\n"), 0o644)
+	_ = os.WriteFile(filepath.Join(base, "projects", "web.md"), []byte("- [ ] b\n"), 0o644)
+
+	m := model{path: filepath.Join(base, "todo.md"), project: "", input: textinput.New()}
+
+	// archive web (row 1), then toggle to the archived view with e
+	m = drive(m, "p", "j", "A", "e")
+	if !m.projArchived || len(m.projRows) != 1 || m.projRows[0].Name != "web" {
+		t.Fatalf("archived view not showing web: archived=%v rows=%+v", m.projArchived, m.projRows)
+	}
+	// unarchive it: back to live boards, file restored
+	m = drive(m, "u")
+	if m.projArchived {
+		t.Fatal("still in archived view after unarchive")
+	}
+	if _, err := os.Stat(store.TodoPathFor("web")); err != nil {
+		t.Fatal("u did not restore the board file")
+	}
+	if _, err := os.Stat(filepath.Join(base, "projects", "archived", "web.md")); err == nil {
+		t.Fatal("archived copy still present after unarchive")
+	}
 }
 
 func TestModelActions(t *testing.T) {
