@@ -159,6 +159,28 @@ func TestAgenticRoundTrip(t *testing.T) {
 	}
 }
 
+func TestActionRoundTrip(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "todo.md")
+	src := "- [ ] deploy\n  status: hold\n  agentic: true\n  action: deploy-release\n"
+	if err := os.WriteFile(p, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	items := Load(p)
+	if items[0].Action != "deploy-release" {
+		t.Fatalf("action not parsed: %+v", items[0])
+	}
+	if err := Save(p, items); err != nil {
+		t.Fatal(err)
+	}
+	if got := string(mustRead(t, p)); got != src {
+		t.Fatalf("action round-trip mismatch:\n%s", got)
+	}
+	// An item with no action never writes the line.
+	if strings.Contains(Serialize([]todo.Item{{Text: "x"}}), "action:") {
+		t.Fatalf("item without action leaked action line")
+	}
+}
+
 func TestNoteMultilineRoundTrip(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "todo.md")
 	// a multi-line note serialises as one note: line per physical line.

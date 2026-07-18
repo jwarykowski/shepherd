@@ -23,6 +23,11 @@ type Item struct {
 	// The status lifecycle (hold/go/running) is only meaningful on such tasks; a
 	// human toggles the status to hand work to, or hold it from, the agent.
 	Agentic bool
+	// Action names the effect a consumer (e.g. drover) fires when an agentic
+	// task is released. It is an opaque label, never a command — the executor
+	// maps the name to a command in its own trusted config. Meaningful only on
+	// agentic tasks; empty otherwise.
+	Action string
 	// Source is the board an item came from in an aggregated (global) view,
 	// e.g. "web" or "default". Derived from the filename; never serialised.
 	Source string
@@ -35,10 +40,11 @@ type Item struct {
 
 // ApplyEdit applies quick-add tokens onto an existing item, touching only the
 // fields present in s: @category, !h/!m/!l priority, due:<preset>,
-// defer:<preset>, link:<url>, status:<name>, agentic, and note:<text>. A bare
-// key token clears that field: "@", "!", "due:", "defer:", "link:", "status:"
-// reset category / priority / due / defer / link / status respectively; a bare
-// "agentic" sets the agentic flag and "agentic:false" clears it. Text is
+// defer:<preset>, link:<url>, status:<name>, agentic, action:<name>, and
+// note:<text>. A bare key token clears that field: "@", "!", "due:", "defer:",
+// "link:", "status:", "action:" reset category / priority / due / defer / link /
+// status / action respectively; a bare "agentic" sets the agentic flag and
+// "agentic:false" clears it. Text is
 // replaced only when s carries plain (non-token) words, so a token-only edit
 // leaves the text alone. Unrecognised tokens count as plain words.
 //
@@ -83,6 +89,10 @@ func ApplyEdit(it *Item, s string) {
 			it.Agentic = true
 		case tok == "agentic:false":
 			it.Agentic = false
+		case tok == "action:":
+			it.Action = ""
+		case strings.HasPrefix(tok, "action:") && len(tok) > 7:
+			it.Action = strings.ToLower(tok[7:])
 		default:
 			words = append(words, tok)
 		}

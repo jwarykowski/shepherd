@@ -16,12 +16,12 @@ import (
 
 var (
 	lineRE = regexp.MustCompile(`^- \[([ xX])\] (?:\(([HMLhml])\) )?(.*)$`)
-	metaRE = regexp.MustCompile(`^  (id|created|completed|defer|note|category|due|link|status|agentic): (.*)$`)
+	metaRE = regexp.MustCompile(`^  (id|created|completed|defer|note|category|due|link|status|agentic|action): (.*)$`)
 	// subtask lines are the same checklist syntax indented two spaces, with
 	// their own meta indented four. They never collide with metaRE (which needs
 	// a bare `word:` at two spaces, never `- [`).
 	subLineRE = regexp.MustCompile(`^  - \[([ xX])\] (?:\(([HMLhml])\) )?(.*)$`)
-	subMetaRE = regexp.MustCompile(`^    (id|created|completed|defer|note|category|due|link|status|agentic): (.*)$`)
+	subMetaRE = regexp.MustCompile(`^    (id|created|completed|defer|note|category|due|link|status|agentic|action): (.*)$`)
 )
 
 // projectRE is the allowed project-name slug. Anchored and free of path
@@ -402,6 +402,8 @@ func applyMeta(it *todo.Item, key, val string) {
 		it.Status = strings.ToLower(val)
 	case "agentic":
 		it.Agentic = val == "true"
+	case "action":
+		it.Action = val
 	}
 }
 
@@ -477,6 +479,9 @@ func writeItem(b *strings.Builder, it todo.Item, indent string) {
 	}
 	if it.Agentic {
 		fmt.Fprintf(b, "%sagentic: true\n", meta)
+	}
+	if it.Action != "" {
+		fmt.Fprintf(b, "%saction: %s\n", meta, it.Action)
 	}
 	if it.Link != "" {
 		fmt.Fprintf(b, "%slink: %s\n", meta, strings.ReplaceAll(it.Link, "\n", " "))

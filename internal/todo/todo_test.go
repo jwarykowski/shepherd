@@ -124,6 +124,18 @@ func TestQuickAddAgentic(t *testing.T) {
 	}
 }
 
+func TestQuickAddAction(t *testing.T) {
+	it := ParseQuickAdd("deploy release agentic action:deploy-release status:hold")
+	if it.Text != "deploy release" || !it.Agentic || it.Action != "deploy-release" || it.Status != "hold" {
+		t.Fatalf("action quick-add wrong: %+v", it)
+	}
+	// A bare action: clears only the action, leaving the rest intact.
+	ApplyEdit(&it, "action:")
+	if it.Action != "" || !it.Agentic || it.Status != "hold" {
+		t.Fatalf("bare action: should clear only the action: %+v", it)
+	}
+}
+
 func TestSortByPriorityView(t *testing.T) {
 	items := []Item{
 		{Text: "a", Category: "z", Prio: 'L'},

@@ -12,7 +12,7 @@ format.
 - `shepherd stats [--json] [--all] [--legend]` — board metrics (charts, or `--json` numbers; `--legend` explains each chart)
 - `shepherd add "buy milk @home !h due:tomorrow" [--json]` — add an item
 - `shepherd sub <ref> "<text>" [--json]` — add a subtask to an item (same quick-add tokens)
-- `shepherd edit <ref> "<tokens>" [--json]` — merge tokens onto an item (or subtask); only the given fields change. Tokens: `@category`, `!prio`, `due:`, `defer:`, `link:`, `status:`, `note:`, and text. A bare key clears its field; `note:` takes the rest of the line
+- `shepherd edit <ref> "<tokens>" [--json]` — merge tokens onto an item (or subtask); only the given fields change. Tokens: `@category`, `!prio`, `due:`, `defer:`, `link:`, `status:`, `agentic`, `action:`, `note:`, and text. A bare key clears its field; `note:` takes the rest of the line
 - `shepherd list --filter <q>` — list only matching items (text/note/category/due/defer/link), keeping their real indexes for done/rm
 - `shepherd done <ref>... [--json]` / `shepherd undone <ref>...` — (un)complete one or more items/subtasks
 - `shepherd rm <ref>... [--dry-run] [--json]` — remove one or more items/subtasks (`--dry-run`/`-n` previews without writing)
@@ -35,10 +35,10 @@ stdout.
 
 Quick-add tokens (shared by `add`, `sub`, `edit`): `@category`, `!h`/`!m`/`!l`
 priority, `due:<today|tomorrow|+3d|15-07-2026>`, `defer:<same date forms>`
-(start/defer date), `link:<url>`, `status:<name>`, and `note:<text>` (holds
-spaces, takes the rest of the line — put it last). `list --json` reports `id`
-(the stable handle), `completed` (done timestamp), `defer`, `link`, and `status`
-per item.
+(start/defer date), `link:<url>`, `status:<name>`, `agentic` (`agentic:false` clears), `action:<name>`,
+and `note:<text>` (holds spaces, takes the rest of the line — put it last).
+`list --json` reports `id` (the stable handle), `completed` (done timestamp),
+`defer`, `link`, `status`, `agentic`, and `action` per item.
 
 Subtasks nest one level under an item. `list --json` puts them in each item's
 `subtasks` array (1-based within the parent); address them by id or as `n.m`. Completion
@@ -53,6 +53,20 @@ field is empty for a plain open or done item, else the named status. Set it with
 `shepherd edit <n> "status:<name>"` (any name accepted; `status:done`/`status:open`
 recognised as the terminal/default ends, and `done`/`undone` are shorthands for
 them); `tab` cycles the configured list in the interactive board.
+
+An item flagged `agentic` (token `agentic`; `agentic:false` clears) is one
+raised and driven by an autonomous agent (e.g. drover) rather than the user,
+so tools can tell agent-managed work from the board's own todos. On agentic
+items the status is a hand-off: the agent raises the task on `status:hold`, a
+human toggles it to `status:go` to release it, the agent moves it to
+`status:running` while working, then `done` (`hold`/`go`/`running` are status
+names by convention; any name works). The optional `action:<name>` records the
+effect the agent fires when the task is released — an **opaque name only**:
+shepherd never interprets or runs it; the agent maps the name to a command in
+its own trusted config. Never put a command in `action` — the todo file is
+synced and hand-editable, so a name resolved against the agent's allowlist is
+safe where an inline command would be an RCE vector. Both fields appear in
+`list --json`.
 
 Boards are per-project: add `--project <name>` after the verb to target a
 project's board (`shepherd list --project web`, `shepherd add "…" --project web`,
