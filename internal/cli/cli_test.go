@@ -61,6 +61,72 @@ func TestCLIRoundTrip(t *testing.T) {
 	}
 }
 
+// TestCLIByID checks that mutators resolve an item by its stable id (agents'
+// primary handle) regardless of list position, and that a done stays put.
+func TestCLIByID(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "todo.md")
+	t.Setenv("SHEPHERD_TODO_FILE", path)
+	cmdAdd([]string{"first"}, "", &bytes.Buffer{})
+	cmdAdd([]string{"second"}, "", &bytes.Buffer{})
+
+	id := store.Load(path)[1].ID // "second"
+	if id == "" {
+		t.Fatal("save did not backfill an id")
+	}
+	if code := cmdToggle([]string{id}, "", true, &bytes.Buffer{}); code != 0 {
+		t.Fatalf("done by id exit %d", code)
+	}
+	items := store.Load(path)
+	if !items[1].Done || items[0].Done {
+		t.Fatalf("id addressed the wrong item: %+v", items)
+	}
+}
+
+// TestCLIMultiAndJSON covers multi-id verbs, the --json echo on a mutator, and
+// the structured not_found error an agent branches on.
+func TestCLIMultiAndJSON(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "todo.md")
+	t.Setenv("SHEPHERD_TODO_FILE", path)
+	for _, txt := range []string{"a", "b", "c"} {
+		cmdAdd([]string{txt}, "", &bytes.Buffer{})
+	}
+
+	// multi-id done in one call, echoing the affected items as JSON.
+	var buf bytes.Buffer
+	if code := cmdToggle([]string{"1", "3", "--json"}, "", true, &buf); code != 0 {
+		t.Fatalf("multi done exit %d", code)
+	}
+	var echoed []itemJSON
+	if err := json.Unmarshal(buf.Bytes(), &echoed); err != nil {
+		t.Fatalf("json echo: %v (%s)", err, buf.String())
+	}
+	if len(echoed) != 2 || !echoed[0].Done || echoed[0].ID == "" {
+		t.Fatalf("echo wrong: %+v", echoed)
+	}
+	items := store.Load(path)
+	if !items[0].Done || items[1].Done || !items[2].Done {
+		t.Fatalf("multi done hit wrong items: %+v", items)
+	}
+
+	// multi-rm is identity-based, so removing 1 and 3 together is index-safe.
+	if code := cmdRemove([]string{"1", "3"}, "", &bytes.Buffer{}); code != 0 {
+		t.Fatalf("multi rm exit %d", code)
+	}
+	if left := store.Load(path); len(left) != 1 || left[0].Text != "b" {
+		t.Fatalf("multi rm left wrong board: %+v", left)
+	}
+
+	// structured error on an unknown id: exit 2 and {"error":"not_found"}.
+	var eb bytes.Buffer
+	if code := cmdToggle([]string{"deadbeef", "--json"}, "", true, &eb); code != 2 {
+		t.Fatalf("not_found exit = %d, want 2", code)
+	}
+	var perr map[string]string
+	if err := json.Unmarshal(eb.Bytes(), &perr); err != nil || perr["error"] != "not_found" {
+		t.Fatalf("want not_found json, got %s (%v)", eb.String(), err)
+	}
+}
+
 // TestCLIEdit checks that edit merges tokens onto an item (text preserved on a
 // token-only edit, replaced when plain words are given) and can target a subtask.
 func TestCLIEdit(t *testing.T) {

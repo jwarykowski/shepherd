@@ -1,13 +1,83 @@
 package store
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"shepherd/internal/todo"
 )
+
+// TestWithLockSerialisesWriters proves the advisory lock closes the lost-update
+// race: N concurrent load→append→save transactions must all survive. Without
+// WithLock each writer clobbers the file another just wrote and the final count
+// falls short of N. Each WithLock opens its own fd on the sidecar, so flock
+// (per open-file-description) serialises them even within one process.
+func TestWithLockSerialisesWriters(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "todo.md")
+	if err := os.WriteFile(p, []byte{}, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	const n = 25
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			_ = WithLock(p, func() error {
+				items := append(Load(p), todo.Item{Text: fmt.Sprintf("t%d", i)})
+				return Save(p, items)
+			})
+		}(i)
+	}
+	wg.Wait()
+	if got := len(Load(p)); got != n {
+		t.Fatalf("lost updates: want %d items, got %d", n, got)
+	}
+}
+
+// TestMain pins NewID to empty so the byte-equality round-trip tests below
+// exercise the legacy (id-less) on-disk format unchanged. Tests that care about
+// ids set todo.NewID themselves and restore it.
+func TestMain(m *testing.M) {
+	todo.NewID = func() string { return "" }
+	os.Exit(m.Run())
+}
+
+// TestIDBackfillAndRoundTrip covers ids end to end: Save mints one for every
+// id-less item (legacy board), it persists as the first meta line, a reload
+// reads it back, and a second Save keeps it rather than regenerating.
+func TestIDBackfillAndRoundTrip(t *testing.T) {
+	n := 0
+	orig := todo.NewID
+	todo.NewID = func() string { n++; return fmt.Sprintf("id%02d", n) }
+	defer func() { todo.NewID = orig }()
+
+	p := filepath.Join(t.TempDir(), "todo.md")
+	if err := os.WriteFile(p, []byte("- [ ] parent\n  - [ ] step\n- [ ] solo\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := Save(p, Load(p)); err != nil { // Save backfills ids
+		t.Fatal(err)
+	}
+	got := Load(p)
+	if got[0].ID == "" || got[0].Subs[0].ID == "" || got[1].ID == "" {
+		t.Fatalf("ids not backfilled+persisted: %+v", got)
+	}
+	if !strings.Contains(string(mustRead(t, p)), "- [ ] parent\n  id: ") {
+		t.Fatalf("id not serialised as first meta line:\n%s", mustRead(t, p))
+	}
+	before := got[0].ID
+	if err := Save(p, got); err != nil {
+		t.Fatal(err)
+	}
+	if reloaded := Load(p); reloaded[0].ID != before {
+		t.Fatalf("id changed on re-save: %q -> %q", before, reloaded[0].ID)
+	}
+}
 
 func mustRead(t *testing.T, p string) []byte {
 	t.Helper()
@@ -59,7 +129,7 @@ func TestStatusRoundTrip(t *testing.T) {
 		t.Fatalf("status round-trip mismatch:\n%s", mustRead(t, p))
 	}
 
-	// A done item never serializes a status line even if the field is set.
+	// A done item never serialises a status line even if the field is set.
 	done := []todo.Item{{Done: true, Status: "in-progress", Text: "x"}}
 	if strings.Contains(Serialize(done), "status:") {
 		t.Fatalf("done item leaked status line:\n%s", Serialize(done))
@@ -68,7 +138,7 @@ func TestStatusRoundTrip(t *testing.T) {
 
 func TestNoteMultilineRoundTrip(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "todo.md")
-	// a multi-line note serializes as one note: line per physical line.
+	// a multi-line note serialises as one note: line per physical line.
 	src := "- [ ] task\n  note: first line\n  note: second line\n"
 	if err := os.WriteFile(p, []byte(src), 0o644); err != nil {
 		t.Fatal(err)
@@ -86,7 +156,7 @@ func TestNoteMultilineRoundTrip(t *testing.T) {
 }
 
 // TestRoundTripMetadata covers the added fields (completed, defer, link) parse
-// back and re-serialize in the fixed field order.
+// back and re-serialise in the fixed field order.
 func TestRoundTripMetadata(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "todo.md")
 	src := "- [x] (H) ship it\n  created: 2026-07-10 13:40\n  completed: 2026-07-12 09:00\n  defer: 2026-07-11\n  due: 2026-07-15\n  category: work\n  link: https://ex.com/pr/1\n  note: block first\n"
@@ -111,7 +181,7 @@ func TestRoundTripMetadata(t *testing.T) {
 
 // TestSubtaskRoundTrip covers nested subtasks: a two-space checklist line is a
 // child, its four-space meta attaches to the child, and the whole thing
-// re-serializes byte-identically with parent meta before the subs.
+// re-serialises byte-identically with parent meta before the subs.
 func TestSubtaskRoundTrip(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "todo.md")
 	src := "- [ ] (H) parent\n  created: 2026-07-10 13:40\n  - [ ] first step\n  - [x] (M) second step\n    due: 2026-07-15\n- [ ] loner\n"

@@ -27,12 +27,18 @@ Read:
   stats [--json] [--all] [--legend] [--no-color]  board metrics (charts, or --json numbers)
   help                                     print this help
 
-Items (n = item index from 'list'; n.m = its subtask m):
-  add "<text>"           add an item
-  sub <n> "<text>"       add a subtask
-  edit <n[.m]> "<toks>"  merge tokens onto an item (bare key clears)
-  done|undone <n[.m]>    mark (not) done
-  rm <n[.m]> [--dry-run] remove (--dry-run/-n previews without writing)
+Items (ref = an item's stable id from 'list --json', or its 1-based index n;
+       n.m or <id> = a subtask). Agents should address items by id: the index
+       shifts as the board reorders, the id never does.
+  add "<text>" [--json]        add an item
+  sub <ref> "<text>" [--json]  add a subtask
+  edit <ref> "<toks>" [--json] merge tokens onto an item (bare key clears)
+  done|undone <ref>... [--json] mark one or more (not) done
+  rm <ref>... [--dry-run] [--json]  remove one or more (--dry-run/-n previews)
+
+  --json  echo the resulting item(s) as JSON (like 'list --json'), and report
+          failures as {"error":…} on stdout instead of text on stderr.
+  Mutating verbs are safe to repeat: re-marking a done item keeps its stamp.
 
   syntax: @category  !h|!m|!l  due:<date>  defer:<date>  link:<url>
           status:<name>  note:<text> (takes the rest of the line)
@@ -70,8 +76,10 @@ var knownVerbs = []string{"help", "list", "projects", "project", "stats", "add",
 
 // Run handles one command-API invocation and returns a process exit code.
 //
-// last-writer-wins on the file (load, mutate, save; no lock). Fine
-// for a single-user local todo; add locking only if concurrent writers appear.
+// Each mutating verb runs its load→mutate→save under store.WithLock, so
+// parallel shepherd processes (e.g. multiple agents) serialise and can't lose
+// one another's edits. Reads (list/stats/projects) take no lock: Save's atomic
+// rename means a reader always sees a whole file.
 func Run(verb string, args []string) int {
 	if verb == "help" {
 		fmt.Println(cliUsage)
@@ -122,7 +130,7 @@ func Run(verb string, args []string) int {
 // quiet suppresses state-change confirmation lines (clig -q/--quiet). It gates
 // only confirmations, never requested data (list/projects/stats output).
 //
-// ponytail: a process-lifetime global for a one-shot CLI — safe because each
+// a process-lifetime global for a one-shot CLI — safe because each
 // invocation is its own process; extractGlobals resets it so repeated in-process
 // Run calls (tests) don't leak state.
 var quiet bool
@@ -161,6 +169,73 @@ func extractDryRun(args []string) (bool, []string) {
 		rest = append(rest, a)
 	}
 	return dry, rest
+}
+
+// extractJSON pulls --json out of args (the mutating verbs parse it by hand
+// rather than through a FlagSet, like extractDryRun). In JSON mode a verb echoes
+// the resulting item(s) so an agent needn't re-list to confirm, and reports
+// failures as a structured object instead of free text on stderr.
+func extractJSON(args []string) (bool, []string) {
+	asJSON := false
+	rest := make([]string, 0, len(args))
+	for _, a := range args {
+		if a == "--json" {
+			asJSON = true
+			continue
+		}
+		rest = append(rest, a)
+	}
+	return asJSON, rest
+}
+
+// emitJSON marshals v and writes it to w. Returns exit 0, or 1 if v somehow
+// can't be marshalled (never expected for these types).
+func emitJSON(w io.Writer, v any) int {
+	b, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "shepherd:", err)
+		return 1
+	}
+	emit(w, string(b))
+	return 0
+}
+
+// jsonErr writes a structured error object to stdout — {"error":kind,"detail":…}
+// — so agents branch on the outcome without scraping stderr, and returns code.
+func jsonErr(w io.Writer, code int, kind, detail string) int {
+	_ = emitJSON(w, map[string]string{"error": kind, "detail": detail})
+	return code
+}
+
+// usageErr and saveErr render an input error (exit 2) / an IO failure (exit 1)
+// as a stderr line in text mode or a structured object in JSON mode.
+func usageErr(w io.Writer, asJSON bool, msg string) int {
+	if asJSON {
+		return jsonErr(w, 2, "usage", msg)
+	}
+	fmt.Fprintln(os.Stderr, "shepherd:", msg)
+	return 2
+}
+
+func saveErr(w io.Writer, asJSON bool, err error) int {
+	if asJSON {
+		return jsonErr(w, 1, "io", err.Error())
+	}
+	fmt.Fprintln(os.Stderr, "shepherd:", err)
+	return 1
+}
+
+// refErr reports an unresolvable item ref: a usage error when the ref was
+// missing entirely (bad==""), else not_found naming the offending token.
+func refErr(w io.Writer, asJSON bool, bad string, n int) int {
+	if bad == "" {
+		return usageErr(w, asJSON, "need an item id or number")
+	}
+	if asJSON {
+		return jsonErr(w, 2, "not_found", bad)
+	}
+	fmt.Fprintf(os.Stderr, "shepherd: no item %q (have %d items)\n", bad, n)
+	return 2
 }
 
 // suggest returns the closest known verb to a mistyped one (edit distance < 3),
@@ -223,6 +298,7 @@ func extractProject(args []string) (string, []string, error) {
 
 // itemJSON is the machine-readable view agents read via `list --json`.
 type itemJSON struct {
+	ID        string     `json:"id,omitempty"` // stable opaque id; use it (not index) to address the item
 	Index     int        `json:"index"`
 	Done      bool       `json:"done"`
 	Status    string     `json:"status,omitempty"`   // named non-terminal status; empty when open or done
@@ -240,7 +316,7 @@ type itemJSON struct {
 }
 
 func toJSON(it todo.Item, idx int) itemJSON {
-	j := itemJSON{Index: idx, Done: it.Done, Status: it.Status, Text: it.Text, Category: it.Category, Created: it.Created, Completed: it.Completed, Defer: it.Defer, Due: it.Due, Link: it.Link, Note: it.Note, Project: it.Source}
+	j := itemJSON{ID: it.ID, Index: idx, Done: it.Done, Status: it.Status, Text: it.Text, Category: it.Category, Created: it.Created, Completed: it.Completed, Defer: it.Defer, Due: it.Due, Link: it.Link, Note: it.Note, Project: it.Source}
 	if it.Prio != 0 {
 		j.Priority = string(it.Prio)
 	}
@@ -463,193 +539,332 @@ func cmdProject(args []string, w io.Writer) int {
 	}
 }
 
+// The mutating verbs run their whole load→mutate→save under store.WithLock, so
+// concurrent shepherd processes (parallel agents) serialise and never lose one
+// another's edits. Each captures its exit code from inside the locked closure;
+// a returned error is an IO/lock failure (exit 1 via saveErr).
+
 func cmdAdd(args []string, project string, w io.Writer) int {
+	asJSON, args := extractJSON(args)
 	text := strings.TrimSpace(strings.Join(args, " "))
 	if text == "" {
-		fmt.Fprintln(os.Stderr, `shepherd: add needs text, e.g. shepherd add "buy milk @home !h"`)
-		return 2
+		return usageErr(w, asJSON, `add needs text, e.g. shepherd add "buy milk @home !h"`)
 	}
 	it := todo.ParseQuickAdd(text)
 	if it.Text == "" {
-		fmt.Fprintln(os.Stderr, "shepherd: nothing to add after parsing tokens")
-		return 2
+		return usageErr(w, asJSON, "nothing to add after parsing tokens")
 	}
 	path := store.TodoPathFor(project)
-	items := append(store.Load(path), it)
-	if err := store.Save(path, items); err != nil {
-		fmt.Fprintln(os.Stderr, "shepherd:", err)
-		return 1
+	exit := 0
+	err := store.WithLock(path, func() error {
+		items := append(store.Load(path), it)
+		if err := store.Save(path, items); err != nil { // Save backfills the new item's id
+			return err
+		}
+		idx := len(items)
+		if asJSON {
+			exit = emitJSON(w, toJSON(items[idx-1], idx))
+		} else {
+			say(w, formatLine(idx, items[idx-1]))
+		}
+		return nil
+	})
+	if err != nil {
+		return saveErr(w, asJSON, err)
 	}
-	say(w, formatLine(len(items), it))
-	return 0
+	return exit
 }
 
-// cmdSub adds a subtask to item n: shepherd sub <n> "<text>". The text takes
-// the same quick-add tokens as `add`. Adding an open subtask reopens the parent
-// (it's no longer all-done).
+// cmdSub adds a subtask to item <ref>: shepherd sub <ref> "<text>". The text
+// takes the same quick-add tokens as `add`. Adding an open subtask reopens the
+// parent (it's no longer all-done). <ref> must resolve to a top-level item.
 func cmdSub(args []string, project string, w io.Writer) int {
+	asJSON, args := extractJSON(args)
 	path := store.TodoPathFor(project)
-	items := store.Load(path)
-	idx, ok := parseIndex(args, len(items))
-	if !ok {
-		return 2
+	exit := 0
+	err := store.WithLock(path, func() error {
+		items := store.Load(path)
+		if len(args) == 0 {
+			exit = usageErr(w, asJSON, `sub needs an item and text, e.g. shepherd sub 1 "parse tokens"`)
+			return nil
+		}
+		p, s, ok := resolveRef(args[0], items)
+		if !ok || s != 0 {
+			exit = refErr(w, asJSON, args[0], len(items))
+			return nil
+		}
+		text := strings.TrimSpace(strings.Join(args[1:], " "))
+		if text == "" {
+			exit = usageErr(w, asJSON, `sub needs text, e.g. shepherd sub 1 "parse tokens"`)
+			return nil
+		}
+		sub := todo.ParseQuickAdd(text)
+		if sub.Text == "" {
+			exit = usageErr(w, asJSON, "nothing to add after parsing tokens")
+			return nil
+		}
+		parent := &items[p-1]
+		parent.Subs = append(parent.Subs, sub)
+		todo.SetDone(parent, todo.AllSubsDone(parent))
+		if err := store.Save(path, items); err != nil {
+			return err
+		}
+		if asJSON {
+			exit = emitJSON(w, toJSON(items[p-1], p))
+		} else {
+			say(w, formatSub(p, len(parent.Subs), parent.Subs[len(parent.Subs)-1]))
+		}
+		return nil
+	})
+	if err != nil {
+		return saveErr(w, asJSON, err)
 	}
-	text := strings.TrimSpace(strings.Join(args[1:], " "))
-	if text == "" {
-		fmt.Fprintln(os.Stderr, `shepherd: sub needs text, e.g. shepherd sub 1 "parse tokens"`)
-		return 2
-	}
-	sub := todo.ParseQuickAdd(text)
-	if sub.Text == "" {
-		fmt.Fprintln(os.Stderr, "shepherd: nothing to add after parsing tokens")
-		return 2
-	}
-	parent := &items[idx-1]
-	parent.Subs = append(parent.Subs, sub)
-	todo.SetDone(parent, todo.AllSubsDone(parent))
-	if err := store.Save(path, items); err != nil {
-		fmt.Fprintln(os.Stderr, "shepherd:", err)
-		return 1
-	}
-	say(w, formatSub(idx, len(parent.Subs), sub))
-	return 0
+	return exit
 }
 
-// cmdEdit merges quick-add tokens onto an existing item n (or subtask m):
-// shepherd edit <n[.m]> "<tokens>". Only the fields present in the tokens
-// change; a bare key token clears its field, note: takes the rest of the line,
-// and text is replaced only when plain words are given (see todo.ApplyEdit).
+// cmdEdit merges quick-add tokens onto an existing item <ref> (or subtask):
+// shepherd edit <ref> "<tokens>". Only the fields present in the tokens change;
+// a bare key token clears its field, note: takes the rest of the line, and text
+// is replaced only when plain words are given (see todo.ApplyEdit).
 func cmdEdit(args []string, project string, w io.Writer) int {
+	asJSON, args := extractJSON(args)
 	path := store.TodoPathFor(project)
-	items := store.Load(path)
-	p, s, ok := parseRef(args, items)
-	if !ok {
-		return 2
+	exit := 0
+	err := store.WithLock(path, func() error {
+		items := store.Load(path)
+		if len(args) == 0 {
+			exit = usageErr(w, asJSON, `edit needs an item and tokens, e.g. shepherd edit 2 "@home !h due:tomorrow"`)
+			return nil
+		}
+		p, s, ok := resolveRef(args[0], items)
+		if !ok {
+			exit = refErr(w, asJSON, args[0], len(items))
+			return nil
+		}
+		text := strings.TrimSpace(strings.Join(args[1:], " "))
+		if text == "" {
+			exit = usageErr(w, asJSON, `edit needs tokens, e.g. shepherd edit 2 "@home !h due:tomorrow"`)
+			return nil
+		}
+		if s == 0 {
+			todo.ApplyEdit(&items[p-1], text)
+		} else {
+			todo.ApplyEdit(&items[p-1].Subs[s-1], text)
+			// editing a sub's status/done can complete or reopen the parent, same
+			// as done/undone — ApplyEdit works on one Item, so reconcile here.
+			todo.SetDone(&items[p-1], todo.AllSubsDone(&items[p-1]))
+		}
+		if err := store.Save(path, items); err != nil {
+			return err
+		}
+		if asJSON {
+			exit = emitJSON(w, toJSON(items[p-1], p))
+		} else if s == 0 {
+			say(w, formatLine(p, items[p-1]))
+		} else {
+			say(w, formatSub(p, s, items[p-1].Subs[s-1]))
+		}
+		return nil
+	})
+	if err != nil {
+		return saveErr(w, asJSON, err)
 	}
-	text := strings.TrimSpace(strings.Join(args[1:], " "))
-	if text == "" {
-		fmt.Fprintln(os.Stderr, `shepherd: edit needs tokens, e.g. shepherd edit 2 "@home !h due:tomorrow"`)
-		return 2
-	}
-	if s == 0 {
-		todo.ApplyEdit(&items[p-1], text)
-	} else {
-		todo.ApplyEdit(&items[p-1].Subs[s-1], text)
-		// editing a sub's status/done can complete or reopen the parent, same
-		// as done/undone — ApplyEdit works on one Item, so reconcile here.
-		todo.SetDone(&items[p-1], todo.AllSubsDone(&items[p-1]))
-	}
-	if err := store.Save(path, items); err != nil {
-		fmt.Fprintln(os.Stderr, "shepherd:", err)
-		return 1
-	}
-	if s == 0 {
-		say(w, formatLine(p, items[p-1]))
-	} else {
-		say(w, formatSub(p, s, items[p-1].Subs[s-1]))
-	}
-	return 0
+	return exit
 }
 
+// cmdToggle marks one or more items (not) done: shepherd done|undone <ref>...
+// Multiple refs are a single atomic write — agents mark a burst of subtasks done
+// in one call. Marking done never reorders the in-memory slice, so every ref
+// stays valid through the loop.
 func cmdToggle(args []string, project string, done bool, w io.Writer) int {
+	asJSON, args := extractJSON(args)
 	path := store.TodoPathFor(project)
-	items := store.Load(path)
-	p, s, ok := parseRef(args, items)
-	if !ok {
-		return 2
+	exit := 0
+	err := store.WithLock(path, func() error {
+		items := store.Load(path)
+		refs, bad, ok := parseRefs(args, items)
+		if !ok {
+			exit = refErr(w, asJSON, bad, len(items))
+			return nil
+		}
+		for _, r := range refs {
+			if r[1] == 0 {
+				todo.SetParentDone(&items[r[0]-1], done)
+			} else {
+				todo.SetSubDone(&items[r[0]-1], r[1]-1, done)
+			}
+		}
+		if err := store.Save(path, items); err != nil {
+			return err
+		}
+		if asJSON {
+			exit = emitJSON(w, affectedJSON(items, refs))
+			return nil
+		}
+		for _, r := range refs {
+			say(w, formatLine(r[0], items[r[0]-1]))
+			if r[1] > 0 {
+				say(w, formatSub(r[0], r[1], items[r[0]-1].Subs[r[1]-1]))
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return saveErr(w, asJSON, err)
 	}
-	if s == 0 {
-		todo.SetParentDone(&items[p-1], done)
-	} else {
-		todo.SetSubDone(&items[p-1], s-1, done)
-	}
-	if err := store.Save(path, items); err != nil {
-		fmt.Fprintln(os.Stderr, "shepherd:", err)
-		return 1
-	}
-	say(w, formatLine(p, items[p-1]))
-	if s > 0 {
-		say(w, formatSub(p, s, items[p-1].Subs[s-1]))
-	}
-	return 0
+	return exit
 }
 
+// cmdRemove deletes one or more items/subtasks: shepherd rm <ref>... [--dry-run].
+// Refs are resolved to an identity set before any deletion, so a multi-remove is
+// order- and index-shift-safe (removing item 2 never renumbers item 3 mid-op).
 func cmdRemove(args []string, project string, w io.Writer) int {
+	asJSON, args := extractJSON(args)
 	dry, args := extractDryRun(args)
 	path := store.TodoPathFor(project)
-	items := store.Load(path)
-	p, s, ok := parseRef(args, items)
-	if !ok {
-		return 2
-	}
-	var removed string
-	if s == 0 {
-		removed = items[p-1].Text
-	} else {
-		removed = items[p-1].Subs[s-1].Text
-	}
-	if dry {
-		emit(w, fmt.Sprintf("would remove %q", removed))
-		return 0
-	}
-	if s == 0 {
-		items = append(items[:p-1], items[p:]...)
-	} else {
-		parent := &items[p-1]
-		parent.Subs = append(parent.Subs[:s-1], parent.Subs[s:]...)
-		// dropping a sub can complete the parent (all remaining subs done).
-		if len(parent.Subs) > 0 {
-			todo.SetDone(parent, todo.AllSubsDone(parent))
+	exit := 0
+	err := store.WithLock(path, func() error {
+		items := store.Load(path)
+		refs, bad, ok := parseRefs(args, items)
+		if !ok {
+			exit = refErr(w, asJSON, bad, len(items))
+			return nil
 		}
+		rmParent := map[int]bool{}      // parent index -> whole item removed
+		rmSub := map[int]map[int]bool{} // parent index -> sub indices removed
+		var removed []string
+		for _, r := range refs {
+			p, s := r[0], r[1]
+			if s == 0 {
+				rmParent[p] = true
+				removed = append(removed, items[p-1].Text)
+			} else {
+				if rmSub[p] == nil {
+					rmSub[p] = map[int]bool{}
+				}
+				rmSub[p][s] = true
+				removed = append(removed, items[p-1].Subs[s-1].Text)
+			}
+		}
+		if dry {
+			if asJSON {
+				exit = emitJSON(w, map[string]any{"dry_run": true, "removed": removed})
+			} else {
+				for _, t := range removed {
+					emit(w, fmt.Sprintf("would remove %q", t))
+				}
+			}
+			return nil
+		}
+		kept := make([]todo.Item, 0, len(items))
+		for i := range items {
+			p := i + 1
+			if rmParent[p] {
+				continue
+			}
+			if subs := rmSub[p]; subs != nil {
+				nsub := make([]todo.Item, 0, len(items[i].Subs))
+				for j := range items[i].Subs {
+					if !subs[j+1] {
+						nsub = append(nsub, items[i].Subs[j])
+					}
+				}
+				items[i].Subs = nsub
+				// dropping a sub can complete the parent (all remaining subs done).
+				if len(items[i].Subs) > 0 {
+					todo.SetDone(&items[i], todo.AllSubsDone(&items[i]))
+				}
+			}
+			kept = append(kept, items[i])
+		}
+		if err := store.Save(path, kept); err != nil {
+			return err
+		}
+		if asJSON {
+			exit = emitJSON(w, map[string]any{"removed": removed})
+		} else {
+			for _, t := range removed {
+				say(w, fmt.Sprintf("removed %q", t))
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return saveErr(w, asJSON, err)
 	}
-	if err := store.Save(path, items); err != nil {
-		fmt.Fprintln(os.Stderr, "shepherd:", err)
-		return 1
-	}
-	say(w, fmt.Sprintf("removed %q", removed))
-	return 0
+	return exit
 }
 
-// parseRef reads a 1-based item ref from args: "n" for a parent, or "n.m" for
-// subtask m of item n. Returns (parent, sub, ok) with sub==0 meaning the parent
-// itself. Prints the reason to stderr and returns ok=false on any problem.
-func parseRef(args []string, items []todo.Item) (int, int, bool) {
-	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "shepherd: need an item number")
-		return 0, 0, false
+// resolveRef resolves one item ref against items — a stable id, a "n" index, or
+// a "n.m" subtask — returning (parent, sub, ok) with sub==0 for a top-level
+// item. Ids are tried first, but an index like "3"/"3.1" is never a 32-char hex
+// id, so the two forms never collide. Pure: it prints nothing.
+func resolveRef(tok string, items []todo.Item) (int, int, bool) {
+	if p, s, ok := resolveID(items, tok); ok {
+		return p, s, true
 	}
-	tok := args[0]
 	pStr, sStr, dotted := strings.Cut(tok, ".")
 	p, err := strconv.Atoi(pStr)
 	if err != nil || p < 1 || p > len(items) {
-		fmt.Fprintf(os.Stderr, "shepherd: invalid item number %q (have %d items)\n", tok, len(items))
 		return 0, 0, false
 	}
 	if !dotted {
 		return p, 0, true
 	}
-	subs := len(items[p-1].Subs)
 	s, err := strconv.Atoi(sStr)
-	if err != nil || s < 1 || s > subs {
-		fmt.Fprintf(os.Stderr, "shepherd: invalid subtask number %q (item %d has %d subtasks)\n", tok, p, subs)
+	if err != nil || s < 1 || s > len(items[p-1].Subs) {
 		return 0, 0, false
 	}
 	return p, s, true
 }
 
-// parseIndex reads a 1-based item number from args and bounds-checks it against
-// n items. Prints the reason to stderr and returns ok=false on any problem.
-func parseIndex(args []string, n int) (int, bool) {
+// parseRefs resolves one or more item refs against items. On the first
+// unresolvable token it returns that token with ok=false (bad=="" means no ref
+// was given at all); the caller renders the error via refErr.
+func parseRefs(args []string, items []todo.Item) ([][2]int, string, bool) {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "shepherd: need an item number")
-		return 0, false
+		return nil, "", false
 	}
-	idx, err := strconv.Atoi(args[0])
-	if err != nil || idx < 1 || idx > n {
-		fmt.Fprintf(os.Stderr, "shepherd: invalid item number %q (have %d items)\n", args[0], n)
-		return 0, false
+	refs := make([][2]int, 0, len(args))
+	for _, tok := range args {
+		p, s, ok := resolveRef(tok, items)
+		if !ok {
+			return nil, tok, false
+		}
+		refs = append(refs, [2]int{p, s})
 	}
-	return idx, true
+	return refs, "", true
+}
+
+// affectedJSON renders the distinct top-level items touched by refs (in first-
+// seen order), each including its subtasks — the machine echo for a mutation.
+func affectedJSON(items []todo.Item, refs [][2]int) []itemJSON {
+	seen := map[int]bool{}
+	out := make([]itemJSON, 0, len(refs))
+	for _, r := range refs {
+		if seen[r[0]] {
+			continue
+		}
+		seen[r[0]] = true
+		out = append(out, toJSON(items[r[0]-1], r[0]))
+	}
+	return out
+}
+
+// resolveID looks an item or subtask up by its stable id, returning (parent,
+// sub, ok) with sub==0 for a top-level item — the same shape as resolveRef.
+func resolveID(items []todo.Item, id string) (int, int, bool) {
+	for i := range items {
+		if items[i].ID == id {
+			return i + 1, 0, true
+		}
+		for j := range items[i].Subs {
+			if items[i].Subs[j].ID == id {
+				return i + 1, j + 1, true
+			}
+		}
+	}
+	return 0, 0, false
 }
 
 // formatLine renders one item for the plain-text list/add/done output.

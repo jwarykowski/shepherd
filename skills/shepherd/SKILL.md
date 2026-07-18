@@ -25,22 +25,37 @@ Run `shepherd help` for the authoritative command list. Summary:
 | `shepherd projects [--json] [--archived]` | list boards with done/total counts (`--archived` lists archived boards); JSON marks the current board (`"current": true`) |
 | `shepherd project rename\|delete\|archive\|unarchive <name>` | whole-board actions (delete needs `--force`, `--dry-run` previews; archive stashes under `projects/archived/`); default board is not actionable |
 | `shepherd stats --json [--all]` | board metrics (JSON numbers; drop `--json` for charts; `--legend` explains them) |
-| `shepherd add "<text>"` | add an item |
-| `shepherd sub <n> "<text>"` | add a subtask to item n |
-| `shepherd edit <n[.m]> "<tokens>"` | the single setter — merge @category/!prio/due:/defer:/link:/status:/note:/text onto item n (or subtask m); bare key clears, note: takes the rest |
-| `shepherd done <n[.m]>` / `undone <n[.m]>` | (un)complete item n, or its subtask m (shorthand for `edit … status:done`/`status:open`) |
-| `shepherd rm <n[.m]> [--dry-run]` | remove item n, or just its subtask m (`--dry-run`/`-n` previews) |
+| `shepherd add "<text>" [--json]` | add an item |
+| `shepherd sub <ref> "<text>" [--json]` | add a subtask to an item |
+| `shepherd edit <ref> "<tokens>" [--json]` | the single setter — merge @category/!prio/due:/defer:/link:/status:/note:/text onto an item (or subtask); bare key clears, note: takes the rest |
+| `shepherd done <ref>... [--json]` / `undone <ref>...` | (un)complete one or more items/subtasks (shorthand for `edit … status:done`/`status:open`) |
+| `shepherd rm <ref>... [--dry-run] [--json]` | remove one or more items/subtasks (`--dry-run`/`-n` previews) |
 
-Indexes are 1-based and match `list` order. Read with `--json`, act by index.
+A `<ref>` is either an item's **stable id** (the `id` field from `list --json`)
+or its 1-based index. **Prefer the id**: the index shifts whenever the board
+reorders (a new high-priority task, a due date crossing into overdue), so an
+index read in one call can point at a different item by the next — the id never
+does. The index stays as a human convenience. `done`/`undone`/`rm` take several
+refs at once and apply them as one atomic write.
+
+Mutating verbs are safe to repeat: re-marking a done item keeps its original
+completion stamp, so a retried call after a timeout won't corrupt state. They're
+also safe to run concurrently — each mutation serialises under a board lock, so
+parallel agents never lose one another's writes.
+
+`--json` on a mutating verb echoes the resulting item(s) in the same shape as
+`list --json` (so you needn't re-list to confirm) and reports failures as a
+`{"error":…}` object on stdout instead of text on stderr.
+
 Exit codes: `0` success · `2` usage/input error (bad flag, unknown command,
-out-of-range index) · `1` runtime/IO failure. `-q`/`--quiet` drops a mutation's
+unknown ref) · `1` runtime/IO failure. `-q`/`--quiet` drops a mutation's
 confirmation line, never the requested data.
 
 ## Subtasks
 
-Items can hold one level of subtasks. `shepherd sub <n> "<text>"` adds one
-(same quick-add tokens as `add`). Address a subtask as `n.m` (subtask `m` of
-item `n`) in `done`/`undone`/`rm`. Completion cascades both ways: completing a
+Items can hold one level of subtasks. `shepherd sub <ref> "<text>"` adds one
+(same quick-add tokens as `add`). Address a subtask by its own id, or as `n.m`
+(subtask `m` of item `n`), in `done`/`undone`/`rm`. Completion cascades both ways: completing a
 parent completes its subtasks, and completing the last subtask completes the
 parent. `list --json` nests them under each item's `subtasks` array (each with
 a 1-based `index` within the parent). `stats` counts top-level items only.
@@ -54,8 +69,8 @@ default board. Flags follow the verb — `shepherd list --project web`,
 
 `shepherd list --all` reads across every board and is **read-only**; its
 indexes are aggregate, **not** valid for `done`/`rm`. To act on an item you
-found via `--all`, re-list that board (`list --project <name> --json`) and use
-*that* board's index, mutating with the same `--project`.
+found via `--all`, mutate with the same `--project` as its board — the item's
+`id` works directly, or re-list that board for its local index.
 
 ## Adding
 
@@ -68,8 +83,9 @@ found via `--all`, re-list that board (`list --project <name> --json`) and use
 - `status:<name>` — set a status · `note:<text>` — a note (holds spaces, takes
   the rest of the line, so put it last)
 
-`list --json` includes `completed` (timestamp set when an item is marked done),
-`defer`, `link`, and `status` per item.
+`list --json` includes `id` (the stable handle — use it to address the item),
+`completed` (timestamp set when an item is marked done), `defer`, `link`, and
+`status` per item.
 
 ## Statuses
 

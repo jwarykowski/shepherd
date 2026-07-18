@@ -74,14 +74,14 @@ func ParseDue(s string) string {
 			}
 		}
 	}
-	// explicit dates: accept DMY or ISO, normalize to ISO on disk
+	// explicit dates: accept DMY or ISO, normalise to ISO on disk
 	if t, err := time.Parse(dmyDate, s); err == nil {
 		return t.Format(dateFormat)
 	}
 	if t, err := time.Parse(dateFormat, s); err == nil {
 		return t.Format(dateFormat)
 	}
-	return "" // unrecognized: clear rather than store garbage
+	return "" // unrecognised: clear rather than store garbage
 }
 
 // DueLabel renders a due date relative to today, and whether it's due/overdue.
@@ -110,6 +110,9 @@ func DueLabel(due string) (string, bool) {
 // SetDone flips an item's done state and maintains the completion timestamp:
 // stamped when marked done, cleared when reopened.
 func SetDone(it *Item, done bool) {
+	if it.Done == done {
+		return // idempotent: re-marking a done/open item keeps its original stamp
+	}
 	it.Done = done
 	if done {
 		it.Completed = Now()

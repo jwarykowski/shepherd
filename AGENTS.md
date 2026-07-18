@@ -9,27 +9,38 @@ format.
 - `shepherd projects [--json] [--archived]` — list boards with done/total counts (`--archived` lists archived boards instead); JSON marks the current board with `"current": true`
 - `shepherd project rename <old> <new>` / `archive <name>` / `unarchive <name>` / `delete <name> --force [--dry-run]` — whole-board actions (default board is not renamable/deletable/archivable; archive stashes under `projects/archived/`)
 - `shepherd stats [--json] [--all] [--legend]` — board metrics (charts, or `--json` numbers; `--legend` explains each chart)
-- `shepherd add "buy milk @home !h due:tomorrow"` — add an item
-- `shepherd sub <n> "<text>"` — add a subtask to item n (same quick-add tokens)
-- `shepherd edit <n[.m]> "<tokens>"` — merge tokens onto item n (or subtask m); only the given fields change. Tokens: `@category`, `!prio`, `due:`, `defer:`, `link:`, `status:`, `note:`, and text. A bare key clears its field; `note:` takes the rest of the line
+- `shepherd add "buy milk @home !h due:tomorrow" [--json]` — add an item
+- `shepherd sub <ref> "<text>" [--json]` — add a subtask to an item (same quick-add tokens)
+- `shepherd edit <ref> "<tokens>" [--json]` — merge tokens onto an item (or subtask); only the given fields change. Tokens: `@category`, `!prio`, `due:`, `defer:`, `link:`, `status:`, `note:`, and text. A bare key clears its field; `note:` takes the rest of the line
 - `shepherd list --filter <q>` — list only matching items (text/note/category/due/defer/link), keeping their real indexes for done/rm
-- `shepherd done <n[.m]>` / `shepherd undone <n[.m]>` — (un)complete item n, or its subtask m
-- `shepherd rm <n[.m]> [--dry-run]` — remove item n, or just its subtask m (`--dry-run`/`-n` previews without writing)
+- `shepherd done <ref>... [--json]` / `shepherd undone <ref>...` — (un)complete one or more items/subtasks
+- `shepherd rm <ref>... [--dry-run] [--json]` — remove one or more items/subtasks (`--dry-run`/`-n` previews without writing)
 
 `edit` is the single setter for every field — status, note, category, priority,
 due, defer, link, and text all change through its tokens (`edit 2 "status:in-progress"`,
 `edit 2 "note:call the vendor"`); a bare `key:` clears. `done`/`undone` are the
 only shorthands, for the terminal state.
 
-Indexes are 1-based and match `list` order. Quick-add tokens (shared by `add`,
-`sub`, `edit`): `@category`, `!h`/`!m`/`!l` priority,
-`due:<today|tomorrow|+3d|15-07-2026>`, `defer:<same date forms>` (start/defer
-date), `link:<url>`, `status:<name>`, and `note:<text>` (holds spaces, takes the
-rest of the line — put it last). `list --json` reports `completed` (done
-timestamp), `defer`, `link`, and `status` per item.
+Address items by their stable `id` (the `id` field in `list --json`), not by
+index: the index shifts whenever the board reorders (a new high-priority item, a
+due date going overdue), so an index from one call can point at a different item
+by the next — the id never moves. The 1-based index remains as a human
+convenience. `done`/`undone`/`rm` accept several refs in one atomic call, and
+are safe to repeat (re-marking a done item keeps its stamp). Mutations are also
+safe to run concurrently: each serialises under a board lock, so parallel agents
+never lose one another's writes. `--json` on any mutating verb echoes the
+resulting item(s) like `list --json` and reports failures as `{"error":…}` on
+stdout.
+
+Quick-add tokens (shared by `add`, `sub`, `edit`): `@category`, `!h`/`!m`/`!l`
+priority, `due:<today|tomorrow|+3d|15-07-2026>`, `defer:<same date forms>`
+(start/defer date), `link:<url>`, `status:<name>`, and `note:<text>` (holds
+spaces, takes the rest of the line — put it last). `list --json` reports `id`
+(the stable handle), `completed` (done timestamp), `defer`, `link`, and `status`
+per item.
 
 Subtasks nest one level under an item. `list --json` puts them in each item's
-`subtasks` array (1-based within the parent); address them as `n.m`. Completion
+`subtasks` array (1-based within the parent); address them by id or as `n.m`. Completion
 cascades both ways: completing a parent completes all its subtasks, and
 completing the last subtask completes the parent. Stats count top-level items
 only — subtasks are decomposition, not separate board work.
@@ -48,10 +59,10 @@ project's board (`shepherd list --project web`, `shepherd add "…" --project we
 
 `shepherd list --all` reads across every board and is read-only; its indexes are
 aggregate and **not** valid for `done`/`rm`. To act on an item seen via `--all`,
-re-list that board (`list --project <name>`) and use its index with the same
-`--project`.
+mutate with the same `--project` as its board — its `id` works directly, or
+re-list that board (`list --project <name>`) for its local index.
 
 Exit codes for scripting: `0` success, `2` usage/input error (bad flag, unknown
-command, out-of-range index), `1` runtime/IO failure. `-q`/`--quiet` on a
+command, unknown ref), `1` runtime/IO failure. `-q`/`--quiet` on a
 mutation drops its confirmation line but never the requested data. Run
 `shepherd help` for the full contract.
