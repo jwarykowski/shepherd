@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"shepherd/internal/store"
+	"shepherd/internal/todo"
 )
 
 // TestCLIRoundTrip exercises every write path: add parses quick-add tokens,
@@ -124,6 +125,36 @@ func TestCLIMultiAndJSON(t *testing.T) {
 	var perr map[string]string
 	if err := json.Unmarshal(eb.Bytes(), &perr); err != nil || perr["error"] != "not_found" {
 		t.Fatalf("want not_found json, got %s (%v)", eb.String(), err)
+	}
+}
+
+// TestDiffBoard covers the watch change detection: added/updated/removed by
+// stable id, and no event for an unchanged item.
+func TestDiffBoard(t *testing.T) {
+	prev := []todo.Item{
+		{ID: "a", Text: "keep"},
+		{ID: "b", Text: "change me"},
+		{ID: "c", Text: "gone soon"},
+	}
+	cur := []todo.Item{
+		{ID: "a", Text: "keep"},                // unchanged
+		{ID: "b", Text: "changed", Done: true}, // updated
+		{ID: "d", Text: "brand new"},           // added
+		// "c" removed
+	}
+	evs := diffBoard(prev, cur)
+	got := map[string]string{} // id -> type
+	for _, e := range evs {
+		got[e.Item.ID] = e.Type
+	}
+	if _, ok := got["a"]; ok {
+		t.Fatalf("unchanged item emitted an event: %+v", evs)
+	}
+	if got["b"] != "updated" || got["d"] != "added" || got["c"] != "removed" {
+		t.Fatalf("wrong events: %+v", got)
+	}
+	if len(evs) != 3 {
+		t.Fatalf("want 3 events, got %d: %+v", len(evs), evs)
 	}
 }
 

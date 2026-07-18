@@ -22,6 +22,7 @@ Run `shepherd help` for the authoritative command list. Summary:
 | `shepherd list --json` | read all items (machine shape — prefer this) |
 | `shepherd list --all --json` | read across every board; adds a `project` field |
 | `shepherd list --filter <q> [--json]` | list only matching items; real indexes kept |
+| `shepherd watch [--interval <dur>]` | stream board changes as NDJSON until killed — react without polling |
 | `shepherd projects [--json] [--archived]` | list boards with done/total counts (`--archived` lists archived boards); JSON marks the current board (`"current": true`) |
 | `shepherd project rename\|delete\|archive\|unarchive <name>` | whole-board actions (delete needs `--force`, `--dry-run` previews; archive stashes under `projects/archived/`); default board is not actionable |
 | `shepherd stats --json [--all]` | board metrics (JSON numbers; drop `--json` for charts; `--legend` explains them) |
@@ -50,6 +51,21 @@ parallel agents never lose one another's writes.
 Exit codes: `0` success · `2` usage/input error (bad flag, unknown command,
 unknown ref) · `1` runtime/IO failure. `-q`/`--quiet` drops a mutation's
 confirmation line, never the requested data.
+
+## Watching
+
+`shepherd watch [--interval <dur>] [--project <name>]` streams a board's changes
+as NDJSON (one JSON object per line) until the process is killed — so a
+coordinating agent reacts to changes instead of polling `list`. The first line
+is a baseline `{"type":"snapshot","items":[…]}` (no need to `list` first); after
+that, each change is one line keyed by the item's stable `id`:
+
+- `{"type":"added","item":{…}}` — a new item (item shape = `list --json`)
+- `{"type":"updated","item":{…}}` — any field changed, including its subtasks
+- `{"type":"removed","item":{…}}` — the last-known item, now gone
+
+Detection is mtime polling (`--interval`, default `1s`); it's read-only, so it
+never blocks a writer.
 
 ## Subtasks
 

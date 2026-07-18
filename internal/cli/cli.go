@@ -10,6 +10,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"shepherd/internal/store"
 	"shepherd/internal/todo"
@@ -23,6 +24,7 @@ Usage:
 
 Read:
   list [--json] [--all] [--filter <t>]     list items (--all aggregates every board)
+  watch [--interval <dur>]                 stream board changes as NDJSON until killed
   projects [--json] [--archived]           list boards, done/total (--archived: archived)
   stats [--json] [--all] [--legend] [--no-color]  board metrics (charts, or --json numbers)
   help                                     print this help
@@ -72,7 +74,7 @@ func Usage() string { return cliUsage }
 // knownVerbs is the dispatch table, used both to route and to suggest a
 // correction for a mistyped verb. Version reporting is the `--version` board
 // flag (the clig standard), handled in main — not a subcommand here.
-var knownVerbs = []string{"help", "list", "projects", "project", "stats", "add", "sub", "edit", "done", "undone", "rm"}
+var knownVerbs = []string{"help", "list", "watch", "projects", "project", "stats", "add", "sub", "edit", "done", "undone", "rm"}
 
 // Run handles one command-API invocation and returns a process exit code.
 //
@@ -99,6 +101,8 @@ func Run(verb string, args []string) int {
 	switch verb {
 	case "list":
 		return cmdList(rest, project, os.Stdout)
+	case "watch":
+		return cmdWatch(rest, project, os.Stdout)
 	case "projects":
 		return cmdProjects(rest, project, os.Stdout)
 	case "project":
@@ -402,6 +406,88 @@ func cmdList(args []string, project string, w io.Writer) int {
 		emit(w, "(no matches)")
 	}
 	return 0
+}
+
+// watchEvent is one NDJSON line in the change stream: a type and the item it
+// concerns (the last-known item for a "removed").
+type watchEvent struct {
+	Type string   `json:"type"` // added | updated | removed
+	Item itemJSON `json:"item"`
+}
+
+// emitLine writes v as one compact JSON line — the NDJSON unit for `watch`.
+func emitLine(w io.Writer, v any) {
+	if b, err := json.Marshal(v); err == nil {
+		emit(w, string(b))
+	}
+}
+
+// diffBoard compares two board snapshots by stable id and returns the change
+// events between them: an id only in cur is "added", one whose serialised form
+// changed is "updated", one only in prev is "removed". Pure, so it's unit-
+// tested without the poll loop. Keys on id, so it assumes a post-0.15 board
+// (any mutation backfills ids); id-less legacy items collide under "".
+func diffBoard(prev, cur []todo.Item) []watchEvent {
+	prevByID := make(map[string]todo.Item, len(prev))
+	for _, it := range prev {
+		prevByID[it.ID] = it
+	}
+	inCur := make(map[string]bool, len(cur))
+	var evs []watchEvent
+	for i, it := range cur {
+		inCur[it.ID] = true
+		old, existed := prevByID[it.ID]
+		switch {
+		case !existed:
+			evs = append(evs, watchEvent{"added", toJSON(it, i+1)})
+		case store.Serialize([]todo.Item{it}) != store.Serialize([]todo.Item{old}):
+			evs = append(evs, watchEvent{"updated", toJSON(it, i+1)})
+		}
+	}
+	for _, it := range prev {
+		if !inCur[it.ID] {
+			evs = append(evs, watchEvent{"removed", toJSON(it, 0)})
+		}
+	}
+	return evs
+}
+
+// cmdWatch streams a board's changes as NDJSON until the process is killed. It
+// emits a "snapshot" line first (a race-free baseline the consumer needn't
+// re-list for), then one "added"/"updated"/"removed" line per change. Detection
+// is mtime polling (--interval, default 1s) — the same mechanism the TUI uses,
+// no filesystem-watch dependency. Read-only, so it takes no board lock; Save's
+// atomic rename means a poll never sees a half-written file.
+func cmdWatch(args []string, project string, w io.Writer) int {
+	fs := flag.NewFlagSet("watch", flag.ContinueOnError)
+	interval := fs.Duration("interval", time.Second, "poll interval for change detection")
+	if err := fs.Parse(args); err != nil {
+		return parseExit(err)
+	}
+	if *interval <= 0 {
+		*interval = time.Second
+	}
+	path := store.TodoPathFor(project)
+	prev := store.Load(path)
+	snap := make([]itemJSON, 0, len(prev))
+	for i, it := range prev {
+		snap = append(snap, toJSON(it, i+1))
+	}
+	emitLine(w, map[string]any{"type": "snapshot", "items": snap})
+	lastMod := store.FileModTime(path)
+	for {
+		time.Sleep(*interval)
+		mod := store.FileModTime(path)
+		if !mod.After(lastMod) {
+			continue
+		}
+		lastMod = mod
+		cur := store.Load(path)
+		for _, ev := range diffBoard(prev, cur) {
+			emitLine(w, ev)
+		}
+		prev = cur
+	}
 }
 
 // cmdProjects lists every board with its open/total counts, marking the
