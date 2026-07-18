@@ -224,6 +224,8 @@ board lock, so parallel processes never lose one another's writes.
 shepherd list [--json]              # show items with their index
 shepherd list --all [--json]        # aggregate across every board (read-only)
 shepherd list --filter home         # only items matching the query, real indexes kept
+shepherd watch                      # stream board changes as NDJSON until killed
+shepherd watch --interval 500ms     # poll faster (default 1s)
 shepherd projects [--json]          # list boards with done/total counts (* = current)
 shepherd projects --archived        # list archived boards instead
 shepherd project rename web webapp  # rename a board (and its archive sibling)
@@ -276,6 +278,13 @@ it last (`edit 2 "!h note:call the bank"`).
 `list --filter <q>` matches text/note/category/due/defer/link and keeps each
 item's real board index, so `done`/`rm` on a filtered listing still hit the
 right item.
+
+`watch` streams a board's changes as NDJSON until killed — a coordinating agent
+reacts instead of polling. The first line is a `{"type":"snapshot","items":[…]}`
+baseline, then one line per change keyed by the item's stable id:
+`{"type":"added|updated|removed","item":{…}}` (item shape = `list --json`).
+Change detection is mtime polling (`--interval`, default `1s`); it's read-only
+and never blocks a writer.
 
 Flags go **after** the verb. Add `--project <name>` (or set `$SHEPHERD_PROJECT`)
 to target a project board instead of the default:
