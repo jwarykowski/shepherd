@@ -39,7 +39,9 @@ does. The index stays as a human convenience. `done`/`undone`/`rm` take several
 refs at once and apply them as one atomic write.
 
 Mutating verbs are safe to repeat: re-marking a done item keeps its original
-completion stamp, so a retried call after a timeout won't corrupt state.
+completion stamp, so a retried call after a timeout won't corrupt state. They're
+also safe to run concurrently — each mutation serializes under a board lock, so
+parallel agents never lose one another's writes.
 
 `--json` on a mutating verb echoes the resulting item(s) in the same shape as
 `list --json` (so you needn't re-list to confirm) and reports failures as a

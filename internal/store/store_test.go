@@ -5,10 +5,39 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"shepherd/internal/todo"
 )
+
+// TestWithLockSerializesWriters proves the advisory lock closes the lost-update
+// race: N concurrent load→append→save transactions must all survive. Without
+// WithLock each writer clobbers the file another just wrote and the final count
+// falls short of N. Each WithLock opens its own fd on the sidecar, so flock
+// (per open-file-description) serializes them even within one process.
+func TestWithLockSerializesWriters(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "todo.md")
+	if err := os.WriteFile(p, []byte{}, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	const n = 25
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			_ = WithLock(p, func() error {
+				items := append(Load(p), todo.Item{Text: fmt.Sprintf("t%d", i)})
+				return Save(p, items)
+			})
+		}(i)
+	}
+	wg.Wait()
+	if got := len(Load(p)); got != n {
+		t.Fatalf("lost updates: want %d items, got %d", n, got)
+	}
+}
 
 // TestMain pins NewID to empty so the byte-equality round-trip tests below
 // exercise the legacy (id-less) on-disk format unchanged. Tests that care about

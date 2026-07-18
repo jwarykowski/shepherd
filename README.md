@@ -217,7 +217,8 @@ argument switches shepherd from the board to a one-shot command that reads or
 mutates a board file and exits — the binary owns the file format, so writes are
 always valid. Items carry a stable `id` (in `list --json`); mutating verbs take
 either that id or the 1-based `list` index. Agents should use the id — the index
-shifts as the board reorders, the id never does.
+shifts as the board reorders, the id never does. Mutations serialize under a
+board lock, so parallel processes never lose one another's writes.
 
 ```sh
 shepherd list [--json]              # show items with their index

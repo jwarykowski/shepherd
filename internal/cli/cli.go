@@ -76,8 +76,10 @@ var knownVerbs = []string{"help", "list", "projects", "project", "stats", "add",
 
 // Run handles one command-API invocation and returns a process exit code.
 //
-// last-writer-wins on the file (load, mutate, save; no lock). Fine
-// for a single-user local todo; add locking only if concurrent writers appear.
+// Each mutating verb runs its load→mutate→save under store.WithLock, so
+// parallel shepherd processes (e.g. multiple agents) serialize and can't lose
+// one another's edits. Reads (list/stats/projects) take no lock: Save's atomic
+// rename means a reader always sees a whole file.
 func Run(verb string, args []string) int {
 	if verb == "help" {
 		fmt.Println(cliUsage)
@@ -537,6 +539,11 @@ func cmdProject(args []string, w io.Writer) int {
 	}
 }
 
+// The mutating verbs run their whole load→mutate→save under store.WithLock, so
+// concurrent shepherd processes (parallel agents) serialize and never lose one
+// another's edits. Each captures its exit code from inside the locked closure;
+// a returned error is an IO/lock failure (exit 1 via saveErr).
+
 func cmdAdd(args []string, project string, w io.Writer) int {
 	asJSON, args := extractJSON(args)
 	text := strings.TrimSpace(strings.Join(args, " "))
@@ -548,16 +555,24 @@ func cmdAdd(args []string, project string, w io.Writer) int {
 		return usageErr(w, asJSON, "nothing to add after parsing tokens")
 	}
 	path := store.TodoPathFor(project)
-	items := append(store.Load(path), it)
-	if err := store.Save(path, items); err != nil { // Save backfills the new item's id
+	exit := 0
+	err := store.WithLock(path, func() error {
+		items := append(store.Load(path), it)
+		if err := store.Save(path, items); err != nil { // Save backfills the new item's id
+			return err
+		}
+		idx := len(items)
+		if asJSON {
+			exit = emitJSON(w, toJSON(items[idx-1], idx))
+		} else {
+			say(w, formatLine(idx, items[idx-1]))
+		}
+		return nil
+	})
+	if err != nil {
 		return saveErr(w, asJSON, err)
 	}
-	idx := len(items)
-	if asJSON {
-		return emitJSON(w, toJSON(items[idx-1], idx))
-	}
-	say(w, formatLine(idx, items[idx-1]))
-	return 0
+	return exit
 }
 
 // cmdSub adds a subtask to item <ref>: shepherd sub <ref> "<text>". The text
@@ -566,33 +581,45 @@ func cmdAdd(args []string, project string, w io.Writer) int {
 func cmdSub(args []string, project string, w io.Writer) int {
 	asJSON, args := extractJSON(args)
 	path := store.TodoPathFor(project)
-	items := store.Load(path)
-	if len(args) == 0 {
-		return usageErr(w, asJSON, `sub needs an item and text, e.g. shepherd sub 1 "parse tokens"`)
-	}
-	p, s, ok := resolveRef(args[0], items)
-	if !ok || s != 0 {
-		return refErr(w, asJSON, args[0], len(items))
-	}
-	text := strings.TrimSpace(strings.Join(args[1:], " "))
-	if text == "" {
-		return usageErr(w, asJSON, `sub needs text, e.g. shepherd sub 1 "parse tokens"`)
-	}
-	sub := todo.ParseQuickAdd(text)
-	if sub.Text == "" {
-		return usageErr(w, asJSON, "nothing to add after parsing tokens")
-	}
-	parent := &items[p-1]
-	parent.Subs = append(parent.Subs, sub)
-	todo.SetDone(parent, todo.AllSubsDone(parent))
-	if err := store.Save(path, items); err != nil {
+	exit := 0
+	err := store.WithLock(path, func() error {
+		items := store.Load(path)
+		if len(args) == 0 {
+			exit = usageErr(w, asJSON, `sub needs an item and text, e.g. shepherd sub 1 "parse tokens"`)
+			return nil
+		}
+		p, s, ok := resolveRef(args[0], items)
+		if !ok || s != 0 {
+			exit = refErr(w, asJSON, args[0], len(items))
+			return nil
+		}
+		text := strings.TrimSpace(strings.Join(args[1:], " "))
+		if text == "" {
+			exit = usageErr(w, asJSON, `sub needs text, e.g. shepherd sub 1 "parse tokens"`)
+			return nil
+		}
+		sub := todo.ParseQuickAdd(text)
+		if sub.Text == "" {
+			exit = usageErr(w, asJSON, "nothing to add after parsing tokens")
+			return nil
+		}
+		parent := &items[p-1]
+		parent.Subs = append(parent.Subs, sub)
+		todo.SetDone(parent, todo.AllSubsDone(parent))
+		if err := store.Save(path, items); err != nil {
+			return err
+		}
+		if asJSON {
+			exit = emitJSON(w, toJSON(items[p-1], p))
+		} else {
+			say(w, formatSub(p, len(parent.Subs), parent.Subs[len(parent.Subs)-1]))
+		}
+		return nil
+	})
+	if err != nil {
 		return saveErr(w, asJSON, err)
 	}
-	if asJSON {
-		return emitJSON(w, toJSON(items[p-1], p))
-	}
-	say(w, formatSub(p, len(parent.Subs), parent.Subs[len(parent.Subs)-1]))
-	return 0
+	return exit
 }
 
 // cmdEdit merges quick-add tokens onto an existing item <ref> (or subtask):
@@ -602,38 +629,47 @@ func cmdSub(args []string, project string, w io.Writer) int {
 func cmdEdit(args []string, project string, w io.Writer) int {
 	asJSON, args := extractJSON(args)
 	path := store.TodoPathFor(project)
-	items := store.Load(path)
-	if len(args) == 0 {
-		return usageErr(w, asJSON, `edit needs an item and tokens, e.g. shepherd edit 2 "@home !h due:tomorrow"`)
-	}
-	p, s, ok := resolveRef(args[0], items)
-	if !ok {
-		return refErr(w, asJSON, args[0], len(items))
-	}
-	text := strings.TrimSpace(strings.Join(args[1:], " "))
-	if text == "" {
-		return usageErr(w, asJSON, `edit needs tokens, e.g. shepherd edit 2 "@home !h due:tomorrow"`)
-	}
-	if s == 0 {
-		todo.ApplyEdit(&items[p-1], text)
-	} else {
-		todo.ApplyEdit(&items[p-1].Subs[s-1], text)
-		// editing a sub's status/done can complete or reopen the parent, same
-		// as done/undone — ApplyEdit works on one Item, so reconcile here.
-		todo.SetDone(&items[p-1], todo.AllSubsDone(&items[p-1]))
-	}
-	if err := store.Save(path, items); err != nil {
+	exit := 0
+	err := store.WithLock(path, func() error {
+		items := store.Load(path)
+		if len(args) == 0 {
+			exit = usageErr(w, asJSON, `edit needs an item and tokens, e.g. shepherd edit 2 "@home !h due:tomorrow"`)
+			return nil
+		}
+		p, s, ok := resolveRef(args[0], items)
+		if !ok {
+			exit = refErr(w, asJSON, args[0], len(items))
+			return nil
+		}
+		text := strings.TrimSpace(strings.Join(args[1:], " "))
+		if text == "" {
+			exit = usageErr(w, asJSON, `edit needs tokens, e.g. shepherd edit 2 "@home !h due:tomorrow"`)
+			return nil
+		}
+		if s == 0 {
+			todo.ApplyEdit(&items[p-1], text)
+		} else {
+			todo.ApplyEdit(&items[p-1].Subs[s-1], text)
+			// editing a sub's status/done can complete or reopen the parent, same
+			// as done/undone — ApplyEdit works on one Item, so reconcile here.
+			todo.SetDone(&items[p-1], todo.AllSubsDone(&items[p-1]))
+		}
+		if err := store.Save(path, items); err != nil {
+			return err
+		}
+		if asJSON {
+			exit = emitJSON(w, toJSON(items[p-1], p))
+		} else if s == 0 {
+			say(w, formatLine(p, items[p-1]))
+		} else {
+			say(w, formatSub(p, s, items[p-1].Subs[s-1]))
+		}
+		return nil
+	})
+	if err != nil {
 		return saveErr(w, asJSON, err)
 	}
-	if asJSON {
-		return emitJSON(w, toJSON(items[p-1], p))
-	}
-	if s == 0 {
-		say(w, formatLine(p, items[p-1]))
-	} else {
-		say(w, formatSub(p, s, items[p-1].Subs[s-1]))
-	}
-	return 0
+	return exit
 }
 
 // cmdToggle marks one or more items (not) done: shepherd done|undone <ref>...
@@ -643,31 +679,40 @@ func cmdEdit(args []string, project string, w io.Writer) int {
 func cmdToggle(args []string, project string, done bool, w io.Writer) int {
 	asJSON, args := extractJSON(args)
 	path := store.TodoPathFor(project)
-	items := store.Load(path)
-	refs, bad, ok := parseRefs(args, items)
-	if !ok {
-		return refErr(w, asJSON, bad, len(items))
-	}
-	for _, r := range refs {
-		if r[1] == 0 {
-			todo.SetParentDone(&items[r[0]-1], done)
-		} else {
-			todo.SetSubDone(&items[r[0]-1], r[1]-1, done)
+	exit := 0
+	err := store.WithLock(path, func() error {
+		items := store.Load(path)
+		refs, bad, ok := parseRefs(args, items)
+		if !ok {
+			exit = refErr(w, asJSON, bad, len(items))
+			return nil
 		}
-	}
-	if err := store.Save(path, items); err != nil {
+		for _, r := range refs {
+			if r[1] == 0 {
+				todo.SetParentDone(&items[r[0]-1], done)
+			} else {
+				todo.SetSubDone(&items[r[0]-1], r[1]-1, done)
+			}
+		}
+		if err := store.Save(path, items); err != nil {
+			return err
+		}
+		if asJSON {
+			exit = emitJSON(w, affectedJSON(items, refs))
+			return nil
+		}
+		for _, r := range refs {
+			say(w, formatLine(r[0], items[r[0]-1]))
+			if r[1] > 0 {
+				say(w, formatSub(r[0], r[1], items[r[0]-1].Subs[r[1]-1]))
+			}
+		}
+		return nil
+	})
+	if err != nil {
 		return saveErr(w, asJSON, err)
 	}
-	if asJSON {
-		return emitJSON(w, affectedJSON(items, refs))
-	}
-	for _, r := range refs {
-		say(w, formatLine(r[0], items[r[0]-1]))
-		if r[1] > 0 {
-			say(w, formatSub(r[0], r[1], items[r[0]-1].Subs[r[1]-1]))
-		}
-	}
-	return 0
+	return exit
 }
 
 // cmdRemove deletes one or more items/subtasks: shepherd rm <ref>... [--dry-run].
@@ -677,67 +722,77 @@ func cmdRemove(args []string, project string, w io.Writer) int {
 	asJSON, args := extractJSON(args)
 	dry, args := extractDryRun(args)
 	path := store.TodoPathFor(project)
-	items := store.Load(path)
-	refs, bad, ok := parseRefs(args, items)
-	if !ok {
-		return refErr(w, asJSON, bad, len(items))
-	}
-	rmParent := map[int]bool{}      // parent index -> whole item removed
-	rmSub := map[int]map[int]bool{} // parent index -> sub indices removed
-	var removed []string
-	for _, r := range refs {
-		p, s := r[0], r[1]
-		if s == 0 {
-			rmParent[p] = true
-			removed = append(removed, items[p-1].Text)
-		} else {
-			if rmSub[p] == nil {
-				rmSub[p] = map[int]bool{}
+	exit := 0
+	err := store.WithLock(path, func() error {
+		items := store.Load(path)
+		refs, bad, ok := parseRefs(args, items)
+		if !ok {
+			exit = refErr(w, asJSON, bad, len(items))
+			return nil
+		}
+		rmParent := map[int]bool{}      // parent index -> whole item removed
+		rmSub := map[int]map[int]bool{} // parent index -> sub indices removed
+		var removed []string
+		for _, r := range refs {
+			p, s := r[0], r[1]
+			if s == 0 {
+				rmParent[p] = true
+				removed = append(removed, items[p-1].Text)
+			} else {
+				if rmSub[p] == nil {
+					rmSub[p] = map[int]bool{}
+				}
+				rmSub[p][s] = true
+				removed = append(removed, items[p-1].Subs[s-1].Text)
 			}
-			rmSub[p][s] = true
-			removed = append(removed, items[p-1].Subs[s-1].Text)
 		}
-	}
-	if dry {
-		if asJSON {
-			return emitJSON(w, map[string]any{"dry_run": true, "removed": removed})
-		}
-		for _, t := range removed {
-			emit(w, fmt.Sprintf("would remove %q", t))
-		}
-		return 0
-	}
-	kept := make([]todo.Item, 0, len(items))
-	for i := range items {
-		p := i + 1
-		if rmParent[p] {
-			continue
-		}
-		if subs := rmSub[p]; subs != nil {
-			nsub := make([]todo.Item, 0, len(items[i].Subs))
-			for j := range items[i].Subs {
-				if !subs[j+1] {
-					nsub = append(nsub, items[i].Subs[j])
+		if dry {
+			if asJSON {
+				exit = emitJSON(w, map[string]any{"dry_run": true, "removed": removed})
+			} else {
+				for _, t := range removed {
+					emit(w, fmt.Sprintf("would remove %q", t))
 				}
 			}
-			items[i].Subs = nsub
-			// dropping a sub can complete the parent (all remaining subs done).
-			if len(items[i].Subs) > 0 {
-				todo.SetDone(&items[i], todo.AllSubsDone(&items[i]))
+			return nil
+		}
+		kept := make([]todo.Item, 0, len(items))
+		for i := range items {
+			p := i + 1
+			if rmParent[p] {
+				continue
+			}
+			if subs := rmSub[p]; subs != nil {
+				nsub := make([]todo.Item, 0, len(items[i].Subs))
+				for j := range items[i].Subs {
+					if !subs[j+1] {
+						nsub = append(nsub, items[i].Subs[j])
+					}
+				}
+				items[i].Subs = nsub
+				// dropping a sub can complete the parent (all remaining subs done).
+				if len(items[i].Subs) > 0 {
+					todo.SetDone(&items[i], todo.AllSubsDone(&items[i]))
+				}
+			}
+			kept = append(kept, items[i])
+		}
+		if err := store.Save(path, kept); err != nil {
+			return err
+		}
+		if asJSON {
+			exit = emitJSON(w, map[string]any{"removed": removed})
+		} else {
+			for _, t := range removed {
+				say(w, fmt.Sprintf("removed %q", t))
 			}
 		}
-		kept = append(kept, items[i])
-	}
-	if err := store.Save(path, kept); err != nil {
+		return nil
+	})
+	if err != nil {
 		return saveErr(w, asJSON, err)
 	}
-	if asJSON {
-		return emitJSON(w, map[string]any{"removed": removed})
-	}
-	for _, t := range removed {
-		say(w, fmt.Sprintf("removed %q", t))
-	}
-	return 0
+	return exit
 }
 
 // resolveRef resolves one item ref against items — a stable id, a "n" index, or

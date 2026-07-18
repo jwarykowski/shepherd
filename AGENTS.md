@@ -26,9 +26,11 @@ index: the index shifts whenever the board reorders (a new high-priority item, a
 due date going overdue), so an index from one call can point at a different item
 by the next — the id never moves. The 1-based index remains as a human
 convenience. `done`/`undone`/`rm` accept several refs in one atomic call, and
-are safe to repeat (re-marking a done item keeps its stamp). `--json` on any
-mutating verb echoes the resulting item(s) like `list --json` and reports
-failures as `{"error":…}` on stdout.
+are safe to repeat (re-marking a done item keeps its stamp). Mutations are also
+safe to run concurrently: each serializes under a board lock, so parallel agents
+never lose one another's writes. `--json` on any mutating verb echoes the
+resulting item(s) like `list --json` and reports failures as `{"error":…}` on
+stdout.
 
 Quick-add tokens (shared by `add`, `sub`, `edit`): `@category`, `!h`/`!m`/`!l`
 priority, `due:<today|tomorrow|+3d|15-07-2026>`, `defer:<same date forms>`

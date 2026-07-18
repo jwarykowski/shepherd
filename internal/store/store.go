@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"syscall"
 	"time"
 
 	"shepherd/internal/todo"
@@ -511,6 +512,35 @@ func AssignMissingIDs(items []todo.Item) {
 			}
 		}
 	}
+}
+
+// WithLock runs fn while holding an exclusive advisory lock for path's board,
+// so concurrent shepherd processes serialize their whole read-modify-write. fn
+// must do its own Load and Save inside: the lock spans both, which closes the
+// lost-update race that a bare Save (atomic, but last-writer-wins) leaves open —
+// A loads, B loads+saves, A saves, B's edit gone.
+//
+// The lock is a flock on a stable `<board>.lock` sidecar, never the board file
+// itself: Save replaces the board via rename (a new inode), so a lock on the
+// board fd wouldn't carry across the swap. Readers take no lock — Save's atomic
+// rename means a reader always sees a whole file, old or new, never a torn one.
+//
+// ponytail: syscall.Flock is darwin+linux only (shepherd's platforms). Add a
+// build-tagged no-op for Windows only if shepherd is ever ported there.
+func WithLock(path string, fn func() error) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	f, err := os.OpenFile(path+".lock", os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+		return err
+	}
+	defer syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+	return fn()
 }
 
 // Save writes items to path, creating the directory if needed. It backfills any
