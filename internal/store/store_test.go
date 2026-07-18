@@ -11,12 +11,12 @@ import (
 	"shepherd/internal/todo"
 )
 
-// TestWithLockSerializesWriters proves the advisory lock closes the lost-update
+// TestWithLockSerialisesWriters proves the advisory lock closes the lost-update
 // race: N concurrent load→append→save transactions must all survive. Without
 // WithLock each writer clobbers the file another just wrote and the final count
 // falls short of N. Each WithLock opens its own fd on the sidecar, so flock
 // (per open-file-description) serialises them even within one process.
-func TestWithLockSerializesWriters(t *testing.T) {
+func TestWithLockSerialisesWriters(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "todo.md")
 	if err := os.WriteFile(p, []byte{}, 0o644); err != nil {
 		t.Fatal(err)
