@@ -96,7 +96,7 @@ a start/defer date, `link:<url>` a reference, `status:<name>` a status, and
 everything else is the task text.
 
 Items are ordered by **category, then priority, then soonest due**, grouped
-under headers, with a colored priority label flush right. **Overdue** open
+under headers, with a coloured priority label flush right. **Overdue** open
 items are pinned to a `⚠ overdue` group at the top. New items get a `created`
 timestamp; due items show a relative label
 (`due 3d`, `overdue 2d` in red). Edits save on quit, autosave after a short
@@ -217,7 +217,7 @@ argument switches shepherd from the board to a one-shot command that reads or
 mutates a board file and exits — the binary owns the file format, so writes are
 always valid. Items carry a stable `id` (in `list --json`); mutating verbs take
 either that id or the 1-based `list` index. Agents should use the id — the index
-shifts as the board reorders, the id never does. Mutations serialize under a
+shifts as the board reorders, the id never does. Mutations serialise under a
 board lock, so parallel processes never lose one another's writes.
 
 ```sh
@@ -257,7 +257,7 @@ Global flags (any command):
 
 Exit codes: `0` success · `2` usage/input error (bad flag, unknown command,
 unknown ref) · `1` runtime/IO failure. A mistyped command suggests the
-closest real one. `stats` drops color when stdout isn't a terminal, `$NO_COLOR`
+closest real one. `stats` drops colour when stdout isn't a terminal, `$NO_COLOR`
 is set, or `$TERM=dumb`; `--no-color` forces it off.
 
 `done`/`undone`/`rm` take one or more refs (id or index) and apply them as a

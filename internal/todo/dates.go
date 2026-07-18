@@ -74,14 +74,14 @@ func ParseDue(s string) string {
 			}
 		}
 	}
-	// explicit dates: accept DMY or ISO, normalize to ISO on disk
+	// explicit dates: accept DMY or ISO, normalise to ISO on disk
 	if t, err := time.Parse(dmyDate, s); err == nil {
 		return t.Format(dateFormat)
 	}
 	if t, err := time.Parse(dateFormat, s); err == nil {
 		return t.Format(dateFormat)
 	}
-	return "" // unrecognized: clear rather than store garbage
+	return "" // unrecognised: clear rather than store garbage
 }
 
 // DueLabel renders a due date relative to today, and whether it's due/overdue.

@@ -97,7 +97,7 @@ func ConfigPath() string {
 // Returns nil if unset/unreadable. This lets the CLI's stats respect the user's
 // configured status order instead of only count order.
 //
-// ponytail: a minimal read of one key, not the TUI's fuller loader in
+// a minimal read of one key, not the TUI's fuller loader in
 // internal/tui — kept separate so this can't destabilize the board. If more
 // config keys are ever needed CLI-side, promote the tui loader into store.
 func ConfigStatusOrder() []string {
@@ -515,7 +515,7 @@ func AssignMissingIDs(items []todo.Item) {
 }
 
 // WithLock runs fn while holding an exclusive advisory lock for path's board,
-// so concurrent shepherd processes serialize their whole read-modify-write. fn
+// so concurrent shepherd processes serialise their whole read-modify-write. fn
 // must do its own Load and Save inside: the lock spans both, which closes the
 // lost-update race that a bare Save (atomic, but last-writer-wins) leaves open —
 // A loads, B loads+saves, A saves, B's edit gone.
@@ -525,7 +525,7 @@ func AssignMissingIDs(items []todo.Item) {
 // board fd wouldn't carry across the swap. Readers take no lock — Save's atomic
 // rename means a reader always sees a whole file, old or new, never a torn one.
 //
-// ponytail: syscall.Flock is darwin+linux only (shepherd's platforms). Add a
+// syscall.Flock is darwin+linux only (shepherd's platforms). Add a
 // build-tagged no-op for Windows only if shepherd is ever ported there.
 func WithLock(path string, fn func() error) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -548,7 +548,7 @@ func WithLock(path string, fn func() error) error {
 // file in the same directory, fsync-free, renamed over path — so a crash or a
 // concurrent reader never observes a half-written board.
 //
-// ponytail: atomic single-writer replace, not an flock'd read-modify-write. It
+// atomic single-writer replace, not an flock'd read-modify-write. It
 // stops torn writes and corruption; it does NOT stop a lost update when two
 // processes load-then-save concurrently (last writer wins). Add a lock around
 // the whole load→mutate→save if parallel agents start clobbering each other.

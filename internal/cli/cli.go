@@ -77,7 +77,7 @@ var knownVerbs = []string{"help", "list", "projects", "project", "stats", "add",
 // Run handles one command-API invocation and returns a process exit code.
 //
 // Each mutating verb runs its load→mutate→save under store.WithLock, so
-// parallel shepherd processes (e.g. multiple agents) serialize and can't lose
+// parallel shepherd processes (e.g. multiple agents) serialise and can't lose
 // one another's edits. Reads (list/stats/projects) take no lock: Save's atomic
 // rename means a reader always sees a whole file.
 func Run(verb string, args []string) int {
@@ -130,7 +130,7 @@ func Run(verb string, args []string) int {
 // quiet suppresses state-change confirmation lines (clig -q/--quiet). It gates
 // only confirmations, never requested data (list/projects/stats output).
 //
-// ponytail: a process-lifetime global for a one-shot CLI — safe because each
+// a process-lifetime global for a one-shot CLI — safe because each
 // invocation is its own process; extractGlobals resets it so repeated in-process
 // Run calls (tests) don't leak state.
 var quiet bool
@@ -540,7 +540,7 @@ func cmdProject(args []string, w io.Writer) int {
 }
 
 // The mutating verbs run their whole load→mutate→save under store.WithLock, so
-// concurrent shepherd processes (parallel agents) serialize and never lose one
+// concurrent shepherd processes (parallel agents) serialise and never lose one
 // another's edits. Each captures its exit code from inside the locked closure;
 // a returned error is an IO/lock failure (exit 1 via saveErr).
 

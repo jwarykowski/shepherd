@@ -40,7 +40,7 @@ refs at once and apply them as one atomic write.
 
 Mutating verbs are safe to repeat: re-marking a done item keeps its original
 completion stamp, so a retried call after a timeout won't corrupt state. They're
-also safe to run concurrently — each mutation serializes under a board lock, so
+also safe to run concurrently — each mutation serialises under a board lock, so
 parallel agents never lose one another's writes.
 
 `--json` on a mutating verb echoes the resulting item(s) in the same shape as

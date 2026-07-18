@@ -12,7 +12,7 @@ import (
 // against collision even when many agents mint into the same board within one
 // millisecond). It's a package var so tests can pin it, mirroring Now/Today.
 //
-// ponytail: hex over ULID/base32 — stdlib, byte-order-preserving (so the sort
+// hex over ULID/base32 — stdlib, byte-order-preserving (so the sort
 // property holds), no hand-rolled Crockford alphabet. 32 chars is longer than a
 // ULID's 26, but agents address items by ID and never type it, so length is
 // free. Swap the encoding only if a human ever has to read one aloud.

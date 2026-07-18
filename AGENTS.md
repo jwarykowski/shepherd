@@ -27,7 +27,7 @@ due date going overdue), so an index from one call can point at a different item
 by the next — the id never moves. The 1-based index remains as a human
 convenience. `done`/`undone`/`rm` accept several refs in one atomic call, and
 are safe to repeat (re-marking a done item keeps its stamp). Mutations are also
-safe to run concurrently: each serializes under a board lock, so parallel agents
+safe to run concurrently: each serialises under a board lock, so parallel agents
 never lose one another's writes. `--json` on any mutating verb echoes the
 resulting item(s) like `list --json` and reports failures as `{"error":…}` on
 stdout.

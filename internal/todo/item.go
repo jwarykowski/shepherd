@@ -20,10 +20,10 @@ type Item struct {
 	Note      string
 	Link      string // reference URL, or empty
 	// Source is the board an item came from in an aggregated (global) view,
-	// e.g. "web" or "default". Derived from the filename; never serialized.
+	// e.g. "web" or "default". Derived from the filename; never serialised.
 	Source string
 	// Subs are one level of nested subtasks. A subtask is a full Item, but its
-	// own Subs and Source are never serialized — subtasks don't nest, and they
+	// own Subs and Source are never serialised — subtasks don't nest, and they
 	// inherit the parent's board. A slice field makes Item non-comparable; use
 	// Clone/positional lookups, never == or reflect.DeepEqual on Item.
 	Subs []Item
@@ -35,7 +35,7 @@ type Item struct {
 // clears that field: "@", "!", "due:", "defer:", "link:", "status:" reset
 // category / priority / due / defer / link / status respectively. Text is
 // replaced only when s carries plain (non-token) words, so a token-only edit
-// leaves the text alone. Unrecognized tokens count as plain words.
+// leaves the text alone. Unrecognised tokens count as plain words.
 //
 // note: is special — a note may contain spaces, so once seen it consumes the
 // rest of the line as the note value (a bare trailing "note:" clears it). Put
@@ -96,7 +96,7 @@ func noteIndex(s string) int {
 }
 
 // ParseQuickAdd builds a new item from an add line, splitting text from
-// @category, !h/!m/!l priority, due:/defer:/link: tokens. Unrecognized tokens
+// @category, !h/!m/!l priority, due:/defer:/link: tokens. Unrecognised tokens
 // stay part of the text.
 func ParseQuickAdd(s string) Item {
 	it := Item{Created: Now()}
