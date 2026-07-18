@@ -7,6 +7,7 @@ import "strings"
 
 // Item is a single todo entry.
 type Item struct {
+	ID        string // stable opaque id (see NewID); agents address items by it, not by list position
 	Done      bool
 	Status    string // named non-terminal status (e.g. "in-progress"); empty = first/default status; ignored when Done
 	Prio      byte   // 'H', 'M', 'L', or 0 for none

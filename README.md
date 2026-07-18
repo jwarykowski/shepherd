@@ -215,7 +215,9 @@ The two combine: `shepherd --project web --filter '!h'`.
 For scripts and agentic tools that can't drive the TUI. A leading non-flag
 argument switches shepherd from the board to a one-shot command that reads or
 mutates a board file and exits — the binary owns the file format, so writes are
-always valid. Indexes are 1-based and match `list` order.
+always valid. Items carry a stable `id` (in `list --json`); mutating verbs take
+either that id or the 1-based `list` index. Agents should use the id — the index
+shifts as the board reorders, the id never does.
 
 ```sh
 shepherd list [--json]              # show items with their index
@@ -233,15 +235,17 @@ shepherd stats --legend             # explain every chart and the aging numbers
 shepherd stats --no-color           # charts without ANSI color
 shepherd add "buy milk @home !h due:tomorrow"
 shepherd add "buy milk" -q          # add quietly (no confirmation line)
-shepherd sub 2 "chop onions !m"     # add a subtask to item 2
+shepherd add "buy milk" --json      # echo the new item (incl. its id) as JSON
+shepherd sub 2 "chop onions !m"     # add a subtask to item 2 (id or index)
 shepherd edit 2 "@work !h due:friday" # merge tokens onto item 2 (2.1 edits a subtask)
 shepherd done 2                     # mark item 2 done (cascades to its subtasks)
-shepherd done 2.1                   # mark subtask 1 of item 2 done
+shepherd done 2 5 7                 # mark several done in one atomic write
+shepherd done 2f3a…c1 --json        # mark by id; echo the result as JSON
 shepherd undone 2.1                 # reopen subtask 1 (also reopens the parent)
 shepherd edit 2 "status:in-progress" # set item 2's status (status:done|open recognised)
 shepherd edit 2 "note:waiting on infra" # set item 2's note (edit 2 "note:" clears it)
 shepherd rm 2                       # remove item 2 (rm 2.1 removes just the subtask)
-shepherd rm 2 --dry-run             # preview the removal without writing
+shepherd rm 2 5 --dry-run           # preview removing several without writing
 ```
 
 Global flags (any command):
@@ -251,12 +255,16 @@ Global flags (any command):
 - `-h`, `--help` — print a command's flags, exit 0.
 
 Exit codes: `0` success · `2` usage/input error (bad flag, unknown command,
-out-of-range index) · `1` runtime/IO failure. A mistyped command suggests the
+unknown ref) · `1` runtime/IO failure. A mistyped command suggests the
 closest real one. `stats` drops color when stdout isn't a terminal, `$NO_COLOR`
 is set, or `$TERM=dumb`; `--no-color` forces it off.
 
-`done`/`undone`/`rm`/`edit` take a dotted `n.m` reference for subtask `m` of
-item `n`; see [subtasks](#subtasks) for the cascade rules.
+`done`/`undone`/`rm` take one or more refs (id or index) and apply them as a
+single atomic write; they're safe to repeat, since re-marking a done item keeps
+its original completion stamp. A subtask is addressed by its own id or a dotted
+`n.m` reference (subtask `m` of item `n`); see [subtasks](#subtasks) for the
+cascade rules. `--json` on any mutating verb echoes the resulting item(s) in the
+`list --json` shape and reports failures as `{"error":…}` on stdout.
 
 `edit <n[.m]> "<tokens>"` sets only the fields its tokens carry — `@category`,
 `!h`/`!m`/`!l`, `due:`, `defer:`, `link:`, `status:`, `note:` — and replaces the
@@ -295,9 +303,10 @@ the archive. `--all` aggregates every board and adds a by-project breakdown;
 
 ```json
 [
-  { "index": 1, "done": false, "priority": "H", "text": "buy milk",
-    "category": "home", "created": "10-07-2026 13:40", "defer": "2026-07-11",
-    "due": "2026-07-15", "link": "https://…", "note": "", "completed": "" }
+  { "id": "019f7390…d901", "index": 1, "done": false, "priority": "H",
+    "text": "buy milk", "category": "home", "created": "10-07-2026 13:40",
+    "defer": "2026-07-11", "due": "2026-07-15", "link": "https://…",
+    "note": "", "completed": "" }
 ]
 ```
 
@@ -357,6 +366,7 @@ sub-lines:
 
 ```markdown
 - [ ] (H) ship the release
+  id: 019f7390ff8b0e369b6ed5540057c717
   created: 10-07-2026 13:40
   defer: 2026-07-11
   due: 2026-07-15
@@ -366,8 +376,10 @@ sub-lines:
   note: block on the migration first
 ```
 
-`completed` (a timestamp) is added automatically when an item is marked done and
-cleared if it's reopened.
+`id` is a stable, opaque handle minted when an item is first written (a legacy
+board without ids gets them the next time shepherd saves it); it's how scripts
+and agents address an item across reorderings. `completed` (a timestamp) is
+added automatically when an item is marked done and cleared if it's reopened.
 
 [Subtasks](#subtasks) nest as further-indented checklist lines — two spaces for
 the `- [ ]`, four for their own metadata — written after the parent's metadata:

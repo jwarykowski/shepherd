@@ -15,12 +15,12 @@ import (
 
 var (
 	lineRE = regexp.MustCompile(`^- \[([ xX])\] (?:\(([HMLhml])\) )?(.*)$`)
-	metaRE = regexp.MustCompile(`^  (created|completed|defer|note|category|due|link|status): (.*)$`)
+	metaRE = regexp.MustCompile(`^  (id|created|completed|defer|note|category|due|link|status): (.*)$`)
 	// subtask lines are the same checklist syntax indented two spaces, with
 	// their own meta indented four. They never collide with metaRE (which needs
 	// a bare `word:` at two spaces, never `- [`).
 	subLineRE = regexp.MustCompile(`^  - \[([ xX])\] (?:\(([HMLhml])\) )?(.*)$`)
-	subMetaRE = regexp.MustCompile(`^    (created|completed|defer|note|category|due|link|status): (.*)$`)
+	subMetaRE = regexp.MustCompile(`^    (id|created|completed|defer|note|category|due|link|status): (.*)$`)
 )
 
 // projectRE is the allowed project-name slug. Anchored and free of path
@@ -375,6 +375,8 @@ func parseCheck(m []string) todo.Item {
 // applyMeta sets one metadata field on an item from a meta-line key/value.
 func applyMeta(it *todo.Item, key, val string) {
 	switch key {
+	case "id":
+		it.ID = val
 	case "created":
 		it.Created = val
 	case "completed":
@@ -449,6 +451,9 @@ func writeItem(b *strings.Builder, it todo.Item, indent string) {
 	}
 	fmt.Fprintf(b, "%s- [%s] %s%s\n", indent, box, tag, it.Text)
 	meta := indent + "  "
+	if it.ID != "" {
+		fmt.Fprintf(b, "%sid: %s\n", meta, it.ID)
+	}
 	if it.Created != "" {
 		fmt.Fprintf(b, "%screated: %s\n", meta, it.Created)
 	}
@@ -490,10 +495,50 @@ func Serialize(items []todo.Item) string {
 	return b.String()
 }
 
-// Save writes items to path, creating the directory if needed.
+// AssignMissingIDs gives a stable todo.NewID to every item and subtask that
+// lacks one, in place. Called by Save, so every persisted board ends up fully
+// addressable by id — legacy boards (written before ids existed) are backfilled
+// the first time anything writes them, and each new item is minted an id
+// regardless of which writer (CLI or TUI) created it.
+func AssignMissingIDs(items []todo.Item) {
+	for i := range items {
+		if items[i].ID == "" {
+			items[i].ID = todo.NewID()
+		}
+		for j := range items[i].Subs {
+			if items[i].Subs[j].ID == "" {
+				items[i].Subs[j].ID = todo.NewID()
+			}
+		}
+	}
+}
+
+// Save writes items to path, creating the directory if needed. It backfills any
+// missing ids first (see AssignMissingIDs), then writes atomically: to a temp
+// file in the same directory, fsync-free, renamed over path — so a crash or a
+// concurrent reader never observes a half-written board.
+//
+// ponytail: atomic single-writer replace, not an flock'd read-modify-write. It
+// stops torn writes and corruption; it does NOT stop a lost update when two
+// processes load-then-save concurrently (last writer wins). Add a lock around
+// the whole load→mutate→save if parallel agents start clobbering each other.
 func Save(path string, items []todo.Item) error {
+	AssignMissingIDs(items)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(path, []byte(Serialize(items)), 0o644)
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".shepherd-*.tmp")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName) // no-op once the rename succeeds
+	if _, err := tmp.Write([]byte(Serialize(items))); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpName, path)
 }

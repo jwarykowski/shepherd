@@ -1,6 +1,7 @@
 package store
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -8,6 +9,46 @@ import (
 
 	"shepherd/internal/todo"
 )
+
+// TestMain pins NewID to empty so the byte-equality round-trip tests below
+// exercise the legacy (id-less) on-disk format unchanged. Tests that care about
+// ids set todo.NewID themselves and restore it.
+func TestMain(m *testing.M) {
+	todo.NewID = func() string { return "" }
+	os.Exit(m.Run())
+}
+
+// TestIDBackfillAndRoundTrip covers ids end to end: Save mints one for every
+// id-less item (legacy board), it persists as the first meta line, a reload
+// reads it back, and a second Save keeps it rather than regenerating.
+func TestIDBackfillAndRoundTrip(t *testing.T) {
+	n := 0
+	orig := todo.NewID
+	todo.NewID = func() string { n++; return fmt.Sprintf("id%02d", n) }
+	defer func() { todo.NewID = orig }()
+
+	p := filepath.Join(t.TempDir(), "todo.md")
+	if err := os.WriteFile(p, []byte("- [ ] parent\n  - [ ] step\n- [ ] solo\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := Save(p, Load(p)); err != nil { // Save backfills ids
+		t.Fatal(err)
+	}
+	got := Load(p)
+	if got[0].ID == "" || got[0].Subs[0].ID == "" || got[1].ID == "" {
+		t.Fatalf("ids not backfilled+persisted: %+v", got)
+	}
+	if !strings.Contains(string(mustRead(t, p)), "- [ ] parent\n  id: ") {
+		t.Fatalf("id not serialized as first meta line:\n%s", mustRead(t, p))
+	}
+	before := got[0].ID
+	if err := Save(p, got); err != nil {
+		t.Fatal(err)
+	}
+	if reloaded := Load(p); reloaded[0].ID != before {
+		t.Fatalf("id changed on re-save: %q -> %q", before, reloaded[0].ID)
+	}
+}
 
 func mustRead(t *testing.T, p string) []byte {
 	t.Helper()
