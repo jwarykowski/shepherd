@@ -44,7 +44,7 @@ Items (ref = an item's stable id from 'list --json', or its 1-based index n;
   Mutating verbs are safe to repeat: re-marking a done item keeps its stamp.
 
   syntax: @category  !h|!m|!l  due:<date>  defer:<date>  link:<url>
-          status:<name>  note:<text> (takes the rest of the line)
+          status:<name>  agentic  note:<text> (takes the rest of the line)
 
 Boards (the default board can't be renamed/deleted/archived):
   project rename <old> <new>
@@ -309,6 +309,7 @@ type itemJSON struct {
 	Index     int        `json:"index"`
 	Done      bool       `json:"done"`
 	Status    string     `json:"status,omitempty"`   // named non-terminal status; empty when open or done
+	Agentic   bool       `json:"agentic,omitempty"`  // task raised and driven by an autonomous agent
 	Priority  string     `json:"priority,omitempty"` // "H"/"M"/"L"
 	Text      string     `json:"text"`
 	Category  string     `json:"category,omitempty"`
@@ -323,7 +324,7 @@ type itemJSON struct {
 }
 
 func toJSON(it todo.Item, idx int) itemJSON {
-	j := itemJSON{ID: it.ID, Index: idx, Done: it.Done, Status: it.Status, Text: it.Text, Category: it.Category, Created: it.Created, Completed: it.Completed, Defer: it.Defer, Due: it.Due, Link: it.Link, Note: it.Note, Project: it.Source}
+	j := itemJSON{ID: it.ID, Index: idx, Done: it.Done, Status: it.Status, Agentic: it.Agentic, Text: it.Text, Category: it.Category, Created: it.Created, Completed: it.Completed, Defer: it.Defer, Due: it.Due, Link: it.Link, Note: it.Note, Project: it.Source}
 	if it.Prio != 0 {
 		j.Priority = string(it.Prio)
 	}
@@ -970,6 +971,9 @@ func formatLine(idx int, it todo.Item) string {
 	fmt.Fprintf(&b, " %s", it.Text)
 	if !it.Done && it.Status != "" {
 		fmt.Fprintf(&b, "  ~%s", it.Status)
+	}
+	if it.Agentic {
+		fmt.Fprintf(&b, "  *agentic")
 	}
 	if it.Source != "" {
 		fmt.Fprintf(&b, "  [%s]", it.Source)

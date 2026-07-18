@@ -136,6 +136,29 @@ func TestStatusRoundTrip(t *testing.T) {
 	}
 }
 
+func TestAgenticRoundTrip(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "todo.md")
+	src := "- [ ] deploy\n  status: hold\n  agentic: true\n"
+	if err := os.WriteFile(p, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	items := Load(p)
+	if !items[0].Agentic {
+		t.Fatalf("agentic not parsed: %+v", items[0])
+	}
+	if err := Save(p, items); err != nil {
+		t.Fatal(err)
+	}
+	if got := string(mustRead(t, p)); got != src {
+		t.Fatalf("agentic round-trip mismatch:\n%s", got)
+	}
+
+	// A non-agentic item never writes the line.
+	if strings.Contains(Serialize([]todo.Item{{Text: "x"}}), "agentic:") {
+		t.Fatalf("non-agentic item leaked agentic line")
+	}
+}
+
 func TestNoteMultilineRoundTrip(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "todo.md")
 	// a multi-line note serialises as one note: line per physical line.

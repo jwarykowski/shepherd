@@ -19,6 +19,10 @@ type Item struct {
 	Due       string // YYYY-MM-DD, or empty
 	Note      string
 	Link      string // reference URL, or empty
+	// Agentic marks a task raised and driven by an autonomous agent (e.g. drover).
+	// The status lifecycle (hold/go/running) is only meaningful on such tasks; a
+	// human toggles the status to hand work to, or hold it from, the agent.
+	Agentic bool
 	// Source is the board an item came from in an aggregated (global) view,
 	// e.g. "web" or "default". Derived from the filename; never serialised.
 	Source string
@@ -31,9 +35,10 @@ type Item struct {
 
 // ApplyEdit applies quick-add tokens onto an existing item, touching only the
 // fields present in s: @category, !h/!m/!l priority, due:<preset>,
-// defer:<preset>, link:<url>, status:<name>, and note:<text>. A bare key token
-// clears that field: "@", "!", "due:", "defer:", "link:", "status:" reset
-// category / priority / due / defer / link / status respectively. Text is
+// defer:<preset>, link:<url>, status:<name>, agentic, and note:<text>. A bare
+// key token clears that field: "@", "!", "due:", "defer:", "link:", "status:"
+// reset category / priority / due / defer / link / status respectively; a bare
+// "agentic" sets the agentic flag and "agentic:false" clears it. Text is
 // replaced only when s carries plain (non-token) words, so a token-only edit
 // leaves the text alone. Unrecognised tokens count as plain words.
 //
@@ -74,6 +79,10 @@ func ApplyEdit(it *Item, s string) {
 			SetStatus(it, "open")
 		case strings.HasPrefix(tok, "status:") && len(tok) > 7:
 			SetStatus(it, strings.ToLower(tok[7:]))
+		case tok == "agentic", tok == "agentic:true":
+			it.Agentic = true
+		case tok == "agentic:false":
+			it.Agentic = false
 		default:
 			words = append(words, tok)
 		}

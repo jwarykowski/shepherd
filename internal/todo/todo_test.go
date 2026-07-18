@@ -112,6 +112,18 @@ func TestQuickAddDeferLink(t *testing.T) {
 	}
 }
 
+func TestQuickAddAgentic(t *testing.T) {
+	it := ParseQuickAdd("deploy release agentic status:hold")
+	if it.Text != "deploy release" || !it.Agentic || it.Status != "hold" {
+		t.Fatalf("agentic quick-add wrong: %+v", it)
+	}
+	// The flag is reversible and leaves other fields alone.
+	ApplyEdit(&it, "agentic:false")
+	if it.Agentic || it.Status != "hold" || it.Text != "deploy release" {
+		t.Fatalf("agentic:false should clear only the flag: %+v", it)
+	}
+}
+
 func TestSortByPriorityView(t *testing.T) {
 	items := []Item{
 		{Text: "a", Category: "z", Prio: 'L'},
