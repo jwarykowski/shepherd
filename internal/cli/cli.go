@@ -27,6 +27,7 @@ Read:
   watch [--interval <dur>]                 stream board changes as NDJSON until killed
   projects [--json] [--archived]           list boards, done/total (--archived: archived)
   stats [--json] [--all] [--legend] [--no-color]  board metrics (charts, or --json numbers)
+  schema                                   print the item JSON Schema (fields, enums, tokens)
   help                                     print this help
 
 Items (ref = an item's stable id from 'list --json', or its 1-based index n;
@@ -74,7 +75,7 @@ func Usage() string { return cliUsage }
 // knownVerbs is the dispatch table, used both to route and to suggest a
 // correction for a mistyped verb. Version reporting is the `--version` board
 // flag (the clig standard), handled in main — not a subcommand here.
-var knownVerbs = []string{"help", "list", "watch", "projects", "project", "stats", "add", "sub", "edit", "done", "undone", "rm"}
+var knownVerbs = []string{"help", "list", "watch", "projects", "project", "stats", "schema", "add", "sub", "edit", "done", "undone", "rm"}
 
 // Run handles one command-API invocation and returns a process exit code.
 //
@@ -109,6 +110,8 @@ func Run(verb string, args []string) int {
 		return cmdProject(rest, os.Stdout)
 	case "stats":
 		return cmdStats(rest, project, os.Stdout)
+	case "schema":
+		return cmdSchema(rest, os.Stdout)
 	case "add":
 		return cmdAdd(rest, project, os.Stdout)
 	case "sub":

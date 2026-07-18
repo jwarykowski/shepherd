@@ -31,6 +31,8 @@ func version() string {
 }
 
 func main() {
+	cli.Version = version()
+
 	// A leading non-flag arg switches to the command API; bare `shepherd` and
 	// `shepherd --filter …` stay the interactive board.
 	if len(os.Args) > 1 && !strings.HasPrefix(os.Args[1], "-") {
