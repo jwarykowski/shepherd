@@ -10,6 +10,8 @@ syncable.
 No setup required — everything defaults under `~/.config/shepherd/` (or
 `$XDG_CONFIG_HOME/shepherd/` when that is set):
 
+<br clear="left">
+
 | What | Path |
 |------|------|
 | Default board | `~/.config/shepherd/todo.md` |
