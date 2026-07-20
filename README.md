@@ -1,6 +1,4 @@
-<p align="center">
-  <img src="assets/shepherd.png" alt="Shepherd" width="200">
-</p>
+<img src="assets/shepherd.png" alt="Shepherd" width="180" align="left">
 
 # 𓋾 Shepherd
 
