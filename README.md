@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/shepherd.png" alt="Shepherd" width="200">
+</p>
+
 # 𓋾 Shepherd
 
 Your todos herded. An interactive todo board that runs standalone in any
