@@ -1,6 +1,6 @@
-<img src="assets/shepherd.png" alt="Shepherd" width="180" align="left">
-
 # 𓋾 Shepherd
+
+<img src="assets/shepherd.png" alt="Shepherd" width="180" align="left">
 
 Your todos herded. An interactive todo board that runs standalone in any
 terminal, or as a [herdr](https://herdr.dev) plugin in a split, tab, overlay,
