@@ -36,9 +36,12 @@ func dueKey(d string) string {
 	return d
 }
 
-// less is the shared item ordering: overdue pinned first, then soonest due,
-// with category-then-priority (or priority-then-category when byPrio) between.
+// less is the shared item ordering: agentic pinned first, then overdue, then
+// category-then-priority (or priority-then-category when byPrio), then soonest due.
 func less(a, b Item, byPrio bool) bool {
+	if a.Agentic != b.Agentic {
+		return a.Agentic // agentic tasks pin to the very top, above overdue
+	}
 	if pa, pb := Pinned(a), Pinned(b); pa != pb {
 		return pa
 	}

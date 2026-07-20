@@ -987,6 +987,57 @@ func TestOverdueGroupLabel(t *testing.T) {
 	}
 }
 
+func TestAgenticGroupAndDetail(t *testing.T) {
+	m := model{input: textinput.New(), note: textarea.New(), w: 50, height: 24,
+		view: viewCategory, items: []todo.Item{
+			{Text: "manual task", Category: "work"},
+			{Text: "deploy release", Category: "work", Agentic: true, Action: "deploy-release"},
+		}}
+	m.resort()
+	// agentic pins to the very top, in its own group
+	if !m.items[0].Agentic {
+		t.Fatalf("agentic item not sorted first: %+v", m.items)
+	}
+	if _, label := m.groupOf(m.items[0]); label != "◆ agentic" {
+		t.Fatalf("agentic group label wrong: %q", label)
+	}
+	// action id surfaces in the detail view
+	m.mode, m.cursor = modeDetail, 0
+	out := m.detailView()
+	if !strings.Contains(out, "action") || !strings.Contains(out, "deploy-release") {
+		t.Fatalf("detail did not show the action id:\n%s", out)
+	}
+}
+
+func TestAgenticStatusToggle(t *testing.T) {
+	m := model{input: textinput.New(), note: textarea.New(), w: 50, height: 24,
+		statuses: []string{"open", "in-progress", "done"}, cursor: 0,
+		items: []todo.Item{{Text: "deploy", Agentic: true, Status: "hold"}}}
+	// space never mutates an agentic item
+	nm, _ := m.updateList(key(" "))
+	if got := nm.(model).items[0]; got.Done || got.Status != "hold" {
+		t.Fatalf("space mutated agentic item: done=%v status=%q", got.Done, got.Status)
+	}
+	// tab toggles only between the human states hold ↔ go
+	for i, want := range []string{"go", "hold", "go"} {
+		next, _ := m.updateList(key("tab"))
+		m = next.(model)
+		if got := m.items[0].Status; got != want {
+			t.Fatalf("tab %d: status=%q, want %q", i, got, want)
+		}
+	}
+	// running/done are the agent's: tab is locked once they're set
+	for _, s := range []todo.Item{{Text: "x", Agentic: true, Status: "running"}, {Text: "y", Agentic: true, Done: true}} {
+		lm := model{input: textinput.New(), note: textarea.New(), w: 50, height: 24,
+			statuses: []string{"open", "done"}, cursor: 0, items: []todo.Item{s}}
+		next, _ := lm.updateList(key("tab"))
+		got := next.(model).items[0]
+		if got.Status != s.Status || got.Done != s.Done {
+			t.Fatalf("tab changed locked agentic item %+v → %+v", s, got)
+		}
+	}
+}
+
 func TestGlobalReadOnly(t *testing.T) {
 	m := model{
 		input:  textinput.New(),

@@ -98,7 +98,9 @@ everything else is the task text.
 
 Items are ordered by **category, then priority, then soonest due**, grouped
 under headers, with a coloured priority label flush right. **Overdue** open
-items are pinned to a `⚠ overdue` group at the top. New items get a `created`
+items are pinned to a `⚠ overdue` group at the top, and [agentic](#agentic-tasks)
+items to a `◆ agentic` group above that (each row also carries a `◆` accent
+marker). New items get a `created`
 timestamp; due items show a relative label
 (`due 3d`, `overdue 2d` in red). Edits save on quit, autosave after a short
 idle pause (`autosave` seconds, default 60; `0` disables), or on demand with
@@ -361,6 +363,11 @@ hold  →  go  →  running  →  done
 The agent raises the task on `hold`; you toggle it to `go` when you're happy for
 it to run; the agent flips to `running`, then `done`. (`hold`/`go`/`running` are
 status names by convention — any name works.)
+
+In the board, `tab` toggles an agentic item between the two states that are
+yours to set — `hold ↔ go` — and nothing else; `space` is disabled on agentic
+items. Once the agent takes over (`running` or `done`), the item is locked from
+the board (`tab` does nothing) and dimmed to show it's agent-owned.
 
 An optional **action** names the effect the agent fires when the task is
 released:

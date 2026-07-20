@@ -17,6 +17,28 @@ func SetStatus(it *Item, name string) {
 	}
 }
 
+// The agentic hand-off vocabulary is hold → go → running → done. hold and go are
+// the human's to set (authorization); running and done are the agent's.
+
+// AgenticLocked reports whether an agentic item's status is owned by the agent
+// (running or done). Once set, the board must not change it — the agent drives
+// the rest of the lifecycle.
+func AgenticLocked(it Item) bool {
+	return it.Done || it.Status == "running"
+}
+
+// ToggleAgenticStatus flips an agentic item between the two human-settable
+// hand-off states, hold and go. Anything not already "go" (hold, unset, stale)
+// becomes "go"; "go" becomes "hold". Callers must check AgenticLocked first —
+// running/done are the agent's to set, not the board's.
+func ToggleAgenticStatus(it *Item) {
+	if it.Status == "go" {
+		SetStatus(it, "hold")
+	} else {
+		SetStatus(it, "go")
+	}
+}
+
 // CycleStatus advances an item to the next status in the configured order,
 // wrapping around. statuses is the ordered list from config with "done" last
 // (e.g. ["open", "in-progress", "done"]). The terminal "done" state is owned by

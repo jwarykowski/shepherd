@@ -374,7 +374,10 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.cursor--
 		}
 	case " ":
-		if idx >= 0 {
+		// Agentic items use the hand-off vocabulary (hold/go/running/done); tab
+		// cycles it. Block the done-toggle so tab is the sole status control and
+		// space can't skip straight to the terminal state.
+		if idx >= 0 && !m.items[idx].Agentic {
 			m.beforeMutate()
 			if ref.sub == -1 {
 				todo.SetParentDone(&m.items[idx], !m.items[idx].Done)
@@ -384,11 +387,19 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "tab":
 		if idx >= 0 {
-			m.beforeMutate()
-			if ref.sub == -1 {
-				todo.CycleStatus(&m.items[idx], m.statuses)
+			if m.items[idx].Agentic {
+				// item-level hold↔go toggle; running/done are the agent's, locked here
+				if ref.sub == -1 && !todo.AgenticLocked(m.items[idx]) {
+					m.beforeMutate()
+					todo.ToggleAgenticStatus(&m.items[idx])
+				}
 			} else {
-				todo.CycleSubStatus(&m.items[idx], ref.sub, m.statuses)
+				m.beforeMutate()
+				if ref.sub == -1 {
+					todo.CycleStatus(&m.items[idx], m.statuses)
+				} else {
+					todo.CycleSubStatus(&m.items[idx], ref.sub, m.statuses)
+				}
 			}
 		}
 	case "d":
@@ -969,7 +980,7 @@ func (m model) updateDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.note.Focus()
 		}
 	case " ":
-		if !m.global {
+		if !m.global && !m.items[ref.item].Agentic {
 			m.beforeMutate()
 			if ref.sub == -1 {
 				todo.SetParentDone(&m.items[ref.item], !m.items[ref.item].Done)

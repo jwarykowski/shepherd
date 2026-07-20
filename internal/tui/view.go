@@ -21,6 +21,7 @@ var (
 	progStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("4"))
 	matchStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("4"))
 	catStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("6"))
+	agentStyle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("5"))
 	countStyle  = lipgloss.NewStyle().Faint(true)
 	warnStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
 	ruleStyle   = lipgloss.NewStyle().Faint(true).Foreground(lipgloss.Color("240"))
@@ -85,6 +86,9 @@ func (m model) groupOf(it todo.Item) (id, label string) {
 		// group strictly by board (no overdue pin) so sources stay contiguous
 		return "s" + it.Source, it.Source
 	}
+	if it.Agentic {
+		return "\x00\x00agent", "◆ agentic"
+	}
 	if todo.Pinned(it) {
 		return "\x00pin", "⚠ overdue"
 	}
@@ -100,8 +104,9 @@ func (m model) groupOf(it todo.Item) (id, label string) {
 	return "c" + strings.ToLower(it.Category), it.Category
 }
 
-// groupCount returns done/total for the group an item belongs to. Pinned items
-// are excluded from their category/priority group (they show in overdue).
+// groupCount returns done/total for the group an item belongs to. Agentic and
+// pinned (overdue) items are excluded from their category/priority group (they
+// show in the agentic / overdue group instead).
 func (m model) groupCount(it todo.Item) (done, total int) {
 	switch {
 	case m.view == viewProject:
@@ -113,15 +118,24 @@ func (m model) groupCount(it todo.Item) (done, total int) {
 				}
 			}
 		}
+	case it.Agentic:
+		for _, x := range m.items {
+			if x.Agentic {
+				total++
+				if x.Done {
+					done++
+				}
+			}
+		}
 	case todo.Pinned(it):
 		for _, x := range m.items {
-			if todo.Pinned(x) {
+			if todo.Pinned(x) && !x.Agentic {
 				total++
 			}
 		}
 	case m.view == viewPriority:
 		for _, x := range m.items {
-			if !todo.Pinned(x) && x.Prio == it.Prio {
+			if !x.Agentic && !todo.Pinned(x) && x.Prio == it.Prio {
 				total++
 				if x.Done {
 					done++
@@ -130,7 +144,7 @@ func (m model) groupCount(it todo.Item) (done, total int) {
 		}
 	default:
 		for _, x := range m.items {
-			if !todo.Pinned(x) && x.Category == it.Category {
+			if !x.Agentic && !todo.Pinned(x) && x.Category == it.Category {
 				total++
 				if x.Done {
 					done++
@@ -159,6 +173,9 @@ func (m model) rowContent(it todo.Item, indent, badge string, isSub bool) string
 	} else if deferred {
 		text = dimStyle.Render(text) // not started yet
 	}
+	if it.Agentic && todo.AgenticLocked(it) && !it.Done {
+		text = dimStyle.Render(text) // agent-owned (running); locked from the board
+	}
 	if m.global && m.view != viewProject && it.Source != "" {
 		text += " " + dimStyle.Render("["+it.Source+"]")
 	}
@@ -169,7 +186,7 @@ func (m model) rowContent(it todo.Item, indent, badge string, isSub bool) string
 		if lbl := todo.DeferLabel(it.Defer); lbl != "" {
 			label = dimStyle.Render(lbl)
 		}
-	} else if it.Due != "" && (isSub || !todo.Pinned(it)) {
+	} else if it.Due != "" && (isSub || it.Agentic || !todo.Pinned(it)) {
 		// parents hide the label when pinned to the ⚠ overdue group; subs have no
 		// such group, so always show it (red when overdue).
 		lbl, over := todo.DueLabel(it.Due)
@@ -199,7 +216,15 @@ func (m model) rowContent(it todo.Item, indent, badge string, isSub bool) string
 			label = s
 		}
 	}
-	left := fmt.Sprintf("%s%s %s", indent, boxSt.Render(box), text)
+	mark := ""
+	if it.Agentic {
+		ms := agentStyle
+		if todo.AgenticLocked(it) {
+			ms = dimStyle // agent-owned; de-emphasise the marker too
+		}
+		mark = ms.Render("◆ ")
+	}
+	left := fmt.Sprintf("%s%s%s %s", indent, mark, boxSt.Render(box), text)
 	gap := w - lipgloss.Width(left) - lipgloss.Width(label)
 	if gap < 1 {
 		gap = 1
@@ -693,6 +718,9 @@ func (m model) tableView() string {
 		} else if d, t := todo.SubCount(it); t > 0 {
 			task = fmt.Sprintf("%s (%d/%d)", task, d, t)
 		}
+		if it.Agentic && r.sub < 0 {
+			task = "◆ " + task
+		}
 		row := table.Row{box, p, task}
 		if m.global {
 			row = append(row, it.Source)
@@ -887,6 +915,14 @@ func (m model) detailView() string {
 	b.WriteString(field("category", category))
 	if m.global && it.Source != "" {
 		b.WriteString(field("board", catStyle.Render(it.Source)))
+	}
+	if it.Agentic {
+		b.WriteString(field("agentic", agentStyle.Render("yes")))
+		action := dimStyle.Render("(none)")
+		if it.Action != "" {
+			action = matchStyle.Render(it.Action)
+		}
+		b.WriteString(field("action", action))
 	}
 	if it.Defer != "" {
 		defer_ := todo.DisplayDate(it.Defer)
