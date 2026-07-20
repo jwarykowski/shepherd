@@ -730,6 +730,38 @@ func TestArchive(t *testing.T) {
 	}
 }
 
+// C archives just the item under the cursor (any status), leaving the rest.
+func TestArchiveSelected(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "todo.md")
+	_ = os.WriteFile(p, []byte("- [ ] first\n- [ ] second\n"), 0o644)
+	m := model{path: p, input: textinput.New(), items: store.Load(p)}
+	m = drive(m, "j", "C") // cursor onto "second", archive it
+	if len(m.items) != 1 || m.items[0].Text != "first" {
+		t.Fatalf("C left wrong items: %+v", m.items)
+	}
+	arch, err := os.ReadFile(filepath.Join(dir, "archive.md"))
+	if err != nil || !strings.Contains(string(arch), "second") {
+		t.Fatalf("archive.md missing selected item: %q err=%v", arch, err)
+	}
+}
+
+// C is a no-op on a subtask row: the archive holds whole items only.
+func TestArchiveSelectedSkipsSubtask(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "todo.md")
+	m := model{path: p, input: textinput.New(), items: []todo.Item{
+		{Text: "parent", Subs: []todo.Item{{Text: "child"}}},
+	}}
+	m = drive(m, "j", "C") // cursor on the subtask row
+	if len(m.items) != 1 || len(m.items[0].Subs) != 1 {
+		t.Fatalf("C on a subtask must not archive: %+v", m.items)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "archive.md")); err == nil {
+		t.Fatal("C on a subtask wrote to the archive")
+	}
+}
+
 func TestArchiveSearch(t *testing.T) {
 	m := model{input: textinput.New(),
 		items:    []todo.Item{{Text: "active task"}},

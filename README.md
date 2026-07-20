@@ -82,7 +82,8 @@ herdr plugin install jwarykowski/shepherd
 | `ctrl+e` | open the markdown file in `$EDITOR` |
 | `,` | open settings — edit view, density, autosave, categories, statuses; changes save to `config.toml` |
 | `x` | delete item |
-| `c` | archive all done items to `archive.md` |
+| `c` | sweep all done items to `archive.md` |
+| `C` | archive the selected item to `archive.md` (whole items only — dimmed on a subtask row) |
 | `?` | full help page |
 | `q` | save + quit |
 
@@ -249,6 +250,7 @@ shepherd edit 2 "status:in-progress" # set item 2's status (status:done|open rec
 shepherd edit 2 "note:waiting on infra" # set item 2's note (edit 2 "note:" clears it)
 shepherd rm 2                       # remove item 2 (rm 2.1 removes just the subtask)
 shepherd rm 2 5 --dry-run           # preview removing several without writing
+shepherd archive 2                  # move item 2 off the board into archive.md (whole items only)
 ```
 
 Global flags (any command):
@@ -450,13 +452,16 @@ line, so existing files stay unchanged.
 
 ### archive
 
-Pressing `c` moves every done item off the board and **appends** it to a
+Pressing `c` sweeps every done item off the board and **appends** it to a
 sibling archive file (`todo.md` → `archive.md`, `projects/web.md` →
-`projects/web-archive.md`, created on first use). Same
-markdown format as `todo.md`, so it's greppable and hand-editable. It's
-append-only — shepherd never rewrites or prunes it; trim it yourself if it
-grows. The board doesn't display the archive, but `/` filtering also greps it
-and shows matches in a separate section, so archived items stay findable.
+`projects/web-archive.md`, created on first use). `C` archives just the
+selected item instead, whatever its status — whole items only, so it's a no-op
+(and dimmed in the legend) on a subtask row, matching the `shepherd archive
+<ref>` CLI. Same markdown format as `todo.md`, so it's greppable and
+hand-editable. It's append-only — shepherd never rewrites or prunes it; trim it
+yourself if it grows. The board doesn't display the archive, but `/` filtering
+also greps it and shows matches in a separate section, so archived items stay
+findable.
 
 ## herdr integration
 

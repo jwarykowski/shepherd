@@ -568,7 +568,7 @@ func (m model) helpGrid() string {
 		entries []entry
 	}{
 		{"move", []entry{{"j/k", "move"}, {"space", "toggle"}, {"d", "detail"}, {"v", "view"}, {"A", "global"}, {"e", "archive"}, {"p", "boards"}}},
-		{"edit", []entry{{"a", "add"}, {"S", "sub"}, {"u", "edit"}, {"tab", "status"}, {"x", "del"}, {"c", "arch"}}},
+		{"edit", []entry{{"a", "add"}, {"S", "sub"}, {"u", "edit"}, {"tab", "status"}, {"x", "del"}, {"c", "sweep"}, {"C", "arch"}}},
 		{"fields", []entry{{"h/m/l", "prio"}, {"g", "cat"}, {"t", "due"}, {"s", "defer"}, {"L", "link"}, {"o", "open"}}},
 		{"board", []entry{{"w", "save"}, {"^e", "editor"}, {"U", "undo"}, {"^r", "redo"}, {"/", "filter"}, {",", "settings"}, {"?", "help"}, {"q", "quit"}}},
 	}
@@ -578,10 +578,11 @@ func (m model) helpGrid() string {
 	globalActive := map[string]bool{"j/k": true, "d": true, "v": true, "/": true, "A": true, "e": true, "o": true, "p": true, "?": true, "q": true}
 
 	// On a subtask row category is parent-only (subs share the parent's board);
-	// dim it. Due / defer / link / status all work on subtasks. `o` opens the
-	// link, so dim it too when this subtask has none.
+	// dim it. Archive (C) takes whole items only, so it's inert on a subtask too.
+	// Due / defer / link / status all work on subtasks. `o` opens the link, so dim
+	// it too when this subtask has none.
 	onSub := !m.global && m.selRef().sub >= 0
-	subInert := map[string]bool{"g": true}
+	subInert := map[string]bool{"g": true, "C": true}
 	if onSub && m.rowItem(m.selRef()).Link == "" {
 		subInert["o"] = true
 	}
@@ -745,7 +746,8 @@ func (m model) helpBody() []string {
 	line("h/m/l — set priority high/medium/low (same key again clears; works on subtasks too)")
 	line("g — set category · t — set due date · s — set defer/start date")
 	line("L — set link · o — open the link in the browser")
-	line("space — toggle done · tab — cycle status · x — delete · c — archive done")
+	line("space — toggle done · tab — cycle status · x — delete")
+	line("c — archive all done items · C — archive the selected item (whole items only, not subtasks)")
 	line("subtasks: completing a parent completes its subtasks; completing the last subtask completes the parent")
 	blank()
 	sec("due dates")

@@ -432,6 +432,18 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.items = kept
 			m.clamp()
 		}
+	case "C":
+		// Archive just the selected item. Whole items only — subtasks live inside
+		// their parent, so a subtask row is a no-op (and dimmed in the legend),
+		// matching the CLI's `archive <ref>` which rejects subtask refs.
+		if idx >= 0 && ref.sub == -1 {
+			m.beforeMutate()
+			it := m.items[idx]
+			_ = store.AppendArchive(m.path, []todo.Item{it}) // to disk before the board rewrite, so an interrupt re-archives rather than loses
+			m.archived = append(m.archived, it)
+			m.items = append(m.items[:idx], m.items[idx+1:]...)
+			m.clamp()
+		}
 	case "U":
 		if n := len(m.past); n > 0 {
 			m.future = append(m.future, todo.Clone(m.items))
