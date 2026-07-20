@@ -1,7 +1,7 @@
 <table>
 <tr>
-<td width="200"><img src="assets/shepherd.png" alt="Shepherd" width="180"></td>
-<td>
+<td width="200" valign="top"><img src="assets/shepherd.png" alt="Shepherd" width="180"></td>
+<td valign="top">
 
 # 𓋾 Shepherd
 
