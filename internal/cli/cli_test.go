@@ -158,6 +158,76 @@ func TestDiffBoard(t *testing.T) {
 	}
 }
 
+// TestArchiveItem covers the per-item archive verb: the item leaves the live
+// board and lands in the sibling archive.md, --json echoes it, subtasks are
+// refused, and an unknown id is a structured not_found.
+func TestArchiveItem(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "todo.md")
+	t.Setenv("SHEPHERD_TODO_FILE", path)
+	for _, txt := range []string{"keep", "archive me"} {
+		cmdAdd([]string{txt}, "", &bytes.Buffer{})
+	}
+	id := store.Load(path)[1].ID
+
+	var buf bytes.Buffer
+	if code := cmdArchive([]string{id, "--json"}, "", &buf); code != 0 {
+		t.Fatalf("archive exit %d (%s)", code, buf.String())
+	}
+	var echoed []itemJSON
+	if err := json.Unmarshal(buf.Bytes(), &echoed); err != nil {
+		t.Fatalf("json echo: %v (%s)", err, buf.String())
+	}
+	if len(echoed) != 1 || echoed[0].Text != "archive me" {
+		t.Fatalf("echo wrong: %+v", echoed)
+	}
+	if live := store.Load(path); len(live) != 1 || live[0].Text != "keep" {
+		t.Fatalf("archived item still on board: %+v", live)
+	}
+	if arc := store.LoadArchive(path); len(arc) != 1 || arc[0].Text != "archive me" {
+		t.Fatalf("archive.md missing item: %+v", arc)
+	}
+
+	// subtasks can't be archived on their own.
+	cmdAdd([]string{"parent"}, "", &bytes.Buffer{})
+	cmdSub([]string{"1", "child"}, "", &bytes.Buffer{})
+	var sb bytes.Buffer
+	if code := cmdArchive([]string{"1.1", "--json"}, "", &sb); code != 2 {
+		t.Fatalf("archive subtask exit = %d, want 2", code)
+	}
+	var perr map[string]string
+	if err := json.Unmarshal(sb.Bytes(), &perr); err != nil || perr["error"] != "usage" {
+		t.Fatalf("want usage error, got %s (%v)", sb.String(), err)
+	}
+
+	// unknown id is a structured not_found.
+	var eb bytes.Buffer
+	if code := cmdArchive([]string{"deadbeef", "--json"}, "", &eb); code != 2 {
+		t.Fatalf("not_found exit = %d, want 2", code)
+	}
+	if err := json.Unmarshal(eb.Bytes(), &perr); err != nil || perr["error"] != "not_found" {
+		t.Fatalf("want not_found json, got %s (%v)", eb.String(), err)
+	}
+}
+
+// TestReclassifyArchived checks that a "removed" watch event is retagged
+// "archived" when its id is present in the sibling archive.md, while a plain
+// removal (id absent from the archive) stays "removed".
+func TestReclassifyArchived(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "todo.md")
+	if err := store.AppendArchive(path, []todo.Item{{ID: "arc", Text: "archived one"}}); err != nil {
+		t.Fatalf("seed archive: %v", err)
+	}
+	evs := []watchEvent{
+		{"removed", itemJSON{ID: "arc"}}, // in archive -> archived
+		{"removed", itemJSON{ID: "del"}}, // not in archive -> stays removed
+		{"added", itemJSON{ID: "new"}},   // untouched
+	}
+	reclassifyArchived(path, evs)
+	if evs[0].Type != "archived" || evs[1].Type != "removed" || evs[2].Type != "added" {
+		t.Fatalf("reclassify wrong: %+v", evs)
+	}
+}
+
 // TestCLIEdit checks that edit merges tokens onto an item (text preserved on a
 // token-only edit, replaced when plain words are given) and can target a subtask.
 func TestCLIEdit(t *testing.T) {

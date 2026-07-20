@@ -6,7 +6,7 @@ format.
 
 - `shepherd list --json` — read all items (machine-readable; prefer this)
 - `shepherd list --all --json` — read across every board; adds a `project` field per item
-- `shepherd watch [--interval <dur>]` — stream this board's changes as NDJSON until killed: a `snapshot` line, then `added`/`updated`/`removed` events keyed by item id (item shape = `list --json`). React without polling
+- `shepherd watch [--interval <dur>]` — stream this board's changes as NDJSON until killed: a `snapshot` line, then `added`/`updated`/`removed`/`archived` events keyed by item id (item shape = `list --json`). `archived` is a vanished item that landed in the archive (terminal, distinct from `removed`). React without polling
 - `shepherd projects [--json] [--archived]` — list boards with done/total counts (`--archived` lists archived boards instead); JSON marks the current board with `"current": true`
 - `shepherd project rename <old> <new>` / `archive <name>` / `unarchive <name>` / `delete <name> --force [--dry-run]` — whole-board actions (default board is not renamable/deletable/archivable; archive stashes under `projects/archived/`)
 - `shepherd stats [--json] [--all] [--legend]` — board metrics (charts, or `--json` numbers; `--legend` explains each chart)
@@ -15,6 +15,7 @@ format.
 - `shepherd edit <ref> "<tokens>" [--json]` — merge tokens onto an item (or subtask); only the given fields change. Tokens: `@category`, `!prio`, `due:`, `defer:`, `link:`, `status:`, `agentic`, `action:`, `note:`, and text. A bare key clears its field; `note:` takes the rest of the line
 - `shepherd list --filter <q>` — list only matching items (text/note/category/due/defer/link), keeping their real indexes for done/rm
 - `shepherd done <ref>... [--json]` / `shepherd undone <ref>...` — (un)complete one or more items/subtasks
+- `shepherd archive <ref>... [--json]` — move whole items off the live board into the sibling `archive.md` (per-item counterpart to whole-board `project archive`); subtasks can't be archived alone
 - `shepherd rm <ref>... [--dry-run] [--json]` — remove one or more items/subtasks (`--dry-run`/`-n` previews without writing)
 
 `edit` is the single setter for every field — status, note, category, priority,

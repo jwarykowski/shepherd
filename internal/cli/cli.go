@@ -37,6 +37,7 @@ Items (ref = an item's stable id from 'list --json', or its 1-based index n;
   sub <ref> "<text>" [--json]  add a subtask
   edit <ref> "<toks>" [--json] merge tokens onto an item (bare key clears)
   done|undone <ref>... [--json] mark one or more (not) done
+  archive <ref>... [--json]    move whole items off the board into archive.md
   rm <ref>... [--dry-run] [--json]  remove one or more (--dry-run/-n previews)
 
   --json  echo the resulting item(s) as JSON (like 'list --json'), and report
@@ -75,7 +76,7 @@ func Usage() string { return cliUsage }
 // knownVerbs is the dispatch table, used both to route and to suggest a
 // correction for a mistyped verb. Version reporting is the `--version` board
 // flag (the clig standard), handled in main — not a subcommand here.
-var knownVerbs = []string{"help", "list", "watch", "projects", "project", "stats", "schema", "add", "sub", "edit", "done", "undone", "rm"}
+var knownVerbs = []string{"help", "list", "watch", "projects", "project", "stats", "schema", "add", "sub", "edit", "done", "undone", "archive", "rm"}
 
 // Run handles one command-API invocation and returns a process exit code.
 //
@@ -122,6 +123,8 @@ func Run(verb string, args []string) int {
 		return cmdToggle(rest, project, true, os.Stdout)
 	case "undone":
 		return cmdToggle(rest, project, false, os.Stdout)
+	case "archive":
+		return cmdArchive(rest, project, os.Stdout)
 	case "rm":
 		return cmdRemove(rest, project, os.Stdout)
 	default:
@@ -414,9 +417,9 @@ func cmdList(args []string, project string, w io.Writer) int {
 }
 
 // watchEvent is one NDJSON line in the change stream: a type and the item it
-// concerns (the last-known item for a "removed").
+// concerns (the last-known item for a "removed"/"archived").
 type watchEvent struct {
-	Type string   `json:"type"` // added | updated | removed
+	Type string   `json:"type"` // added | updated | removed | archived
 	Item itemJSON `json:"item"`
 }
 
@@ -459,10 +462,13 @@ func diffBoard(prev, cur []todo.Item) []watchEvent {
 
 // cmdWatch streams a board's changes as NDJSON until the process is killed. It
 // emits a "snapshot" line first (a race-free baseline the consumer needn't
-// re-list for), then one "added"/"updated"/"removed" line per change. Detection
-// is mtime polling (--interval, default 1s) — the same mechanism the TUI uses,
-// no filesystem-watch dependency. Read-only, so it takes no board lock; Save's
-// atomic rename means a poll never sees a half-written file.
+// re-list for), then one "added"/"updated"/"removed"/"archived" line per change.
+// A vanished id that turns up in the sibling archive.md is reported as
+// "archived" (a terminal hand-off a consumer like drover distinguishes from a
+// plain "removed"). Detection is mtime polling (--interval, default 1s) — the
+// same mechanism the TUI uses, no filesystem-watch dependency. Read-only, so it
+// takes no board lock; Save's atomic rename means a poll never sees a
+// half-written file.
 func cmdWatch(args []string, project string, w io.Writer) int {
 	fs := flag.NewFlagSet("watch", flag.ContinueOnError)
 	interval := fs.Duration("interval", time.Second, "poll interval for change detection")
@@ -488,10 +494,42 @@ func cmdWatch(args []string, project string, w io.Writer) int {
 		}
 		lastMod = mod
 		cur := store.Load(path)
-		for _, ev := range diffBoard(prev, cur) {
+		evs := diffBoard(prev, cur)
+		reclassifyArchived(path, evs)
+		for _, ev := range evs {
 			emitLine(w, ev)
 		}
 		prev = cur
+	}
+}
+
+// reclassifyArchived retags "removed" events as "archived" when the vanished id
+// is now present in the sibling archive.md — the per-item `archive` verb rewrites
+// the board (id disappears) and appends to the archive in the same lock. The
+// archive is read only when a poll actually produced a removal.
+// ponytail: rescans the whole archive.md per removal-poll; fine at TUI scale,
+// index the archive by id if a huge archive ever makes this hot.
+func reclassifyArchived(path string, evs []watchEvent) {
+	hasRemoved := false
+	for _, ev := range evs {
+		if ev.Type == "removed" {
+			hasRemoved = true
+			break
+		}
+	}
+	if !hasRemoved {
+		return
+	}
+	arc := make(map[string]bool)
+	for _, it := range store.LoadArchive(path) {
+		if it.ID != "" {
+			arc[it.ID] = true
+		}
+	}
+	for i := range evs {
+		if evs[i].Type == "removed" && arc[evs[i].Item.ID] {
+			evs[i].Type = "archived"
+		}
 	}
 }
 
@@ -877,6 +915,63 @@ func cmdRemove(args []string, project string, w io.Writer) int {
 			for _, t := range removed {
 				say(w, fmt.Sprintf("removed %q", t))
 			}
+		}
+		return nil
+	})
+	if err != nil {
+		return saveErr(w, asJSON, err)
+	}
+	return exit
+}
+
+// cmdArchive moves one or more top-level items off the live board and into the
+// sibling archive.md: shepherd archive <ref>... [--json]. This is the per-item
+// counterpart to the TUI's "c" (which archives every done item at once) and to
+// `project archive` (which stashes a whole board). Subtask refs are rejected —
+// the archive holds whole items. Refs are resolved before any write, so a
+// multi-archive is index-shift-safe like rm.
+func cmdArchive(args []string, project string, w io.Writer) int {
+	asJSON, args := extractJSON(args)
+	path := store.TodoPathFor(project)
+	exit := 0
+	err := store.WithLock(path, func() error {
+		items := store.Load(path)
+		refs, bad, ok := parseRefs(args, items)
+		if !ok {
+			exit = refErr(w, asJSON, bad, len(items))
+			return nil
+		}
+		arcParent := map[int]bool{} // distinct parent indices to archive
+		for _, r := range refs {
+			if r[1] != 0 {
+				exit = usageErr(w, asJSON, "archive whole items, not subtasks")
+				return nil
+			}
+			arcParent[r[0]] = true
+		}
+		var archived []todo.Item
+		kept := make([]todo.Item, 0, len(items))
+		for i := range items {
+			if arcParent[i+1] {
+				archived = append(archived, items[i])
+			} else {
+				kept = append(kept, items[i])
+			}
+		}
+		// Append to the archive before rewriting the board: an interrupted run
+		// re-archives (a dup in archive.md) rather than losing the item.
+		if err := store.AppendArchive(path, archived); err != nil {
+			return err
+		}
+		if err := store.Save(path, kept); err != nil {
+			return err
+		}
+		if asJSON {
+			exit = emitJSON(w, affectedJSON(items, refs))
+			return nil
+		}
+		for _, it := range archived {
+			say(w, fmt.Sprintf("archived %q", it.Text))
 		}
 		return nil
 	})
