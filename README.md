@@ -98,9 +98,7 @@ everything else is the task text.
 
 Items are ordered by **category, then priority, then soonest due**, grouped
 under headers, with a coloured priority label flush right. **Overdue** open
-items are pinned to a `⚠ overdue` group at the top, and [agentic](#agentic-tasks)
-items to a `◆ agentic` group above that (each row also carries a `◆` accent
-marker). New items get a `created`
+items are pinned to a `⚠ overdue` group at the top. New items get a `created`
 timestamp; due items show a relative label
 (`due 3d`, `overdue 2d` in red). Edits save on quit, autosave after a short
 idle pause (`autosave` seconds, default 60; `0` disables), or on demand with
@@ -341,51 +339,6 @@ shepherd with the same verbs. Discovery is layered:
   tool's global rules / instructions slot.
 
 All three point at the same `shepherd` CLI — no per-tool server, no MCP.
-
-## agentic tasks
-
-Most items are yours. An item marked **agentic** is one raised and driven by an
-autonomous agent (e.g. drover) rather than by you — flagging it first-class lets
-tools tell agent-managed work from the board's own todos instead of overloading
-a category.
-
-On agentic items the status is a hand-off between you and the agent:
-
-```
-hold  →  go  →  running  →  done
-```
-
-- `hold` — the agent has raised the task and is waiting; it won't act
-- `go` — you've released it; the agent may proceed
-- `running` — the agent is working it
-- `done` — terminal
-
-The agent raises the task on `hold`; you toggle it to `go` when you're happy for
-it to run; the agent flips to `running`, then `done`. (`hold`/`go`/`running` are
-status names by convention — any name works.)
-
-In the board, `tab` toggles an agentic item between the two states that are
-yours to set — `hold ↔ go` — and nothing else; `space` is disabled on agentic
-items. Once the agent takes over (`running` or `done`), the item is locked from
-the board (`tab` does nothing) and dimmed to show it's agent-owned.
-
-An optional **action** names the effect the agent fires when the task is
-released:
-
-```sh
-shepherd add "deploy release agentic action:deploy-release status:hold"
-# 1  [ ] deploy release  ~hold  *agentic  →deploy-release
-```
-
-`action` is an **opaque label, never a command** — shepherd stores and echoes it
-and interprets nothing. The consuming agent maps the name to a command in its
-own trusted config and runs it only on release. That boundary is deliberate: the
-todo file is synced and hand-editable, so a command sitting in it would be a
-remote-code-execution vector, whereas a name resolved against the agent's
-allowlist is not. Both `agentic` and `action` appear in `list --json`.
-
-Quick-add: `agentic` sets the flag (`agentic:false` clears); `action:<name>`
-sets the effect (bare `action:` clears).
 
 ## configuration
 

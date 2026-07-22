@@ -41,7 +41,7 @@ func main() {
 
 	flag.Usage = func() { fmt.Fprintln(os.Stderr, cli.Usage()) }
 	filter := flag.String("filter", os.Getenv("SHEPHERD_FILTER"), "start with this filter applied (matches text/note/category/due)")
-	project := flag.String("project", "", "open this project's board (else $SHEPHERD_PROJECT, else the default)")
+	board := flag.String("board", "", "open this board's board (else $SHEPHERD_BOARD, else the default)")
 	all := flag.Bool("all", false, "open the read-only global view across all boards")
 	stats := flag.Bool("stats", false, "print board stats and exit")
 	legend := flag.Bool("legend", false, "explain each stats chart and exit")
@@ -63,8 +63,8 @@ func main() {
 		if *all {
 			a = append(a, "--all")
 		}
-		if *project != "" {
-			a = append(a, "--project", *project)
+		if *board != "" {
+			a = append(a, "--board", *board)
 		}
 		os.Exit(cli.Run("stats", a))
 	}
@@ -79,7 +79,7 @@ func main() {
 
 	tui.Version = version()
 
-	name, err := store.ResolveProject(*project)
+	name, err := store.ResolveBoard(*board)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "shepherd:", err)
 		os.Exit(2)

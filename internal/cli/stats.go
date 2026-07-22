@@ -18,7 +18,7 @@ import (
 
 // cmdStats summarises a board (or all boards with --all) as charts, or the raw
 // numbers with --json. Done-based counts include the archive.
-func cmdStats(args []string, project string, w io.Writer) int {
+func cmdStats(args []string, board string, w io.Writer) int {
 	fs := flag.NewFlagSet("stats", flag.ContinueOnError)
 	asJSON := fs.Bool("json", false, "machine-readable JSON output (no charts)")
 	all := fs.Bool("all", false, "aggregate across every board")
@@ -41,10 +41,10 @@ func cmdStats(args []string, project string, w io.Writer) int {
 		items = append(store.LoadAll(), store.LoadAllArchives()...)
 		title += " · all boards"
 	} else {
-		path := store.TodoPathFor(project)
+		path := store.TodoPathFor(board)
 		items = append(store.Load(path), store.LoadArchive(path)...)
-		if project != "" {
-			title += " · " + project
+		if board != "" {
+			title += " · " + board
 		}
 	}
 

@@ -20,10 +20,11 @@ import (
 )
 
 const (
-	appSubtitle = "your todos herded"
-	padX        = 2
-	padY        = 1
-	noteHeight  = 5 // visible rows in the note textarea editor
+	appName    = "shepherd"
+	appEmoji   = "𓋾"
+	padX       = 2
+	padY       = 1
+	noteHeight = 5 // visible rows in the note textarea editor
 )
 
 type config struct {
@@ -190,11 +191,13 @@ const (
 	modeDetail
 	modeHelp
 	modeArchive
-	modeProjects
+	modeBoards
 	modeSettings
 	modeSettingEdit
-	modeProjectNew
-	modeProjectRename
+	modeBoardNew
+	modeBoardDir    // capture/edit a board's working dir (creation, or 'e' in the detail view)
+	modeBoardDetail // board detail: name, dir, source + archive paths, counts
+	modeBoardRename
 	modeConfirmDelete
 )
 
@@ -227,10 +230,10 @@ const (
 	viewCategory viewMode = iota // grouped under category headers
 	viewPriority                 // grouped under priority headers
 	viewTable                    // flat bubbles/table
-	viewProject                  // grouped by source board (global view only)
+	viewBoard                    // grouped by source board (global view only)
 )
 
-var viewName = map[viewMode]string{viewCategory: "category", viewPriority: "priority", viewTable: "table", viewProject: "project"}
+var viewName = map[viewMode]string{viewCategory: "category", viewPriority: "priority", viewTable: "table", viewBoard: "board"}
 
 type model struct {
 	path          string
@@ -260,11 +263,13 @@ type model struct {
 	statuses      []string      // configured statuses, ordered, "done" last (Tab-cycle in list)
 	density       density       // spacing mode
 	global        bool          // read-only aggregate across all boards
-	project       string        // the board to return to when leaving global
-	projRows      []store.Board // board list for the picker (modeProjects)
+	board         string        // the board to return to when leaving global
+	projRows      []store.Board // board list for the picker (modeBoards)
 	projCur       int           // cursor into projRows
 	projArchived  bool          // picker is showing archived boards (unarchive-only)
 	projNotice    string        // transient picker error (e.g. invalid/duplicate board name)
+	projPending   string        // board whose working dir is being set (modeBoardDir)
+	projDirEdit   bool          // dir editor opened from the detail view (empty clears, return to detail); false = creation flow (empty skips)
 	settingsCur   int           // cursor into the settings rows (modeSettings)
 }
 
@@ -282,7 +287,7 @@ func (m model) currentConfig() config {
 
 // resort orders items for the active view.
 func (m *model) resort() {
-	if m.view == viewProject {
+	if m.view == viewBoard {
 		todo.SortBySource(m.items)
 		return
 	}
@@ -312,19 +317,19 @@ func (m *model) refreshDirty() { m.dirty = fingerprint(m.items) != m.saved }
 // 100 is plenty for a todo list; raise if anyone ever hits it.
 const histCap = 100
 
-// newModel builds the initial board for the given project ("" = default).
-func newModel(project string) model {
+// newModel builds the initial board for the given board ("" = default).
+func newModel(board string) model {
 	ti := textinput.New()
 	ti.Prompt = "› "
 	na := textarea.New()
 	na.ShowLineNumbers = false
 	na.Prompt = ""
 	na.CharLimit = 0 // notes can be long
-	p := store.TodoPathFor(project)
+	p := store.TodoPathFor(board)
 	cfg := loadConfig(store.ConfigPath())
 	m := model{
 		path:          p,
-		project:       project,
+		board:         board,
 		items:         store.Load(p),
 		archived:      store.Load(store.ArchivePath(p)),
 		input:         ti,
@@ -342,12 +347,12 @@ func newModel(project string) model {
 }
 
 // loadGlobal replaces the model's items with the read-only aggregate across
-// every board, grouped by project. Shared by --all launch and the A toggle.
+// every board, grouped by board. Shared by --all launch and the A toggle.
 func (m *model) loadGlobal() {
 	m.global = true
 	m.items = store.LoadAll()
 	m.archived = nil
-	m.view = viewProject
+	m.view = viewBoard
 	m.lastMod = store.BoardsLatestMod()
 	m.past, m.future = nil, nil
 	m.resort()
@@ -361,7 +366,7 @@ func (m *model) loadGlobal() {
 // reloads that board fresh from disk.
 func (m *model) toggleGlobal() {
 	if m.global {
-		nm := newModel(m.project)
+		nm := newModel(m.board)
 		nm.filter, nm.w, nm.height, nm.density = m.filter, m.w, m.height, m.density
 		nm.clamp()
 		*m = nm
@@ -373,10 +378,10 @@ func (m *model) toggleGlobal() {
 	m.loadGlobal()
 }
 
-// Run builds the board for a project (or the global view), applies an initial
+// Run builds the board for a board (or the global view), applies an initial
 // filter, and runs it to exit.
-func Run(filter, project string, global bool) error {
-	m := newModel(project)
+func Run(filter, board string, global bool) error {
+	m := newModel(board)
 	if global {
 		m.loadGlobal()
 	}

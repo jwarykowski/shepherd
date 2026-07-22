@@ -69,9 +69,9 @@ func TestCompute(t *testing.T) {
 	if len(s.DonePerDay) != 30 || len(s.DoneShort) != 14 || len(s.CreatedShort) != 14 {
 		t.Errorf("series lengths off: %d %d %d", len(s.DonePerDay), len(s.DoneShort), len(s.CreatedShort))
 	}
-	// by-category: infra (1 open) present, sorted; no Source so ByProject nil
-	if len(s.ByCategory) == 0 || s.ByProject != nil {
-		t.Errorf("category/project: %+v / %v", s.ByCategory, s.ByProject)
+	// by-category: infra (1 open) present, sorted; no Source so ByBoard nil
+	if len(s.ByCategory) == 0 || s.ByBoard != nil {
+		t.Errorf("category/board: %+v / %v", s.ByCategory, s.ByBoard)
 	}
 }
 
@@ -101,8 +101,8 @@ func TestAgeBucket(t *testing.T) {
 	}
 }
 
-// TestComputeByProject checks Source drives the by-project aggregate.
-func TestComputeByProject(t *testing.T) {
+// TestComputeByBoard checks Source drives the by-board aggregate.
+func TestComputeByBoard(t *testing.T) {
 	pinToday(t, "2026-07-13")
 	items := []Item{
 		{Text: "a", Source: "web", Created: "12-07-2026 09:00"},
@@ -111,10 +111,10 @@ func TestComputeByProject(t *testing.T) {
 		{Text: "d", Source: "api", Created: "12-07-2026 09:00"},
 	}
 	s := Compute(items)
-	if s.ByProject["web"].Open != 2 || s.ByProject["web"].Done != 1 {
-		t.Errorf("web = %+v", s.ByProject["web"])
+	if s.ByBoard["web"].Open != 2 || s.ByBoard["web"].Done != 1 {
+		t.Errorf("web = %+v", s.ByBoard["web"])
 	}
-	if s.ByProject["api"].Open != 1 {
-		t.Errorf("api = %+v", s.ByProject["api"])
+	if s.ByBoard["api"].Open != 1 {
+		t.Errorf("api = %+v", s.ByBoard["api"])
 	}
 }

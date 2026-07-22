@@ -47,14 +47,14 @@ func TestStatsJSON(t *testing.T) {
 	}
 }
 
-// TestStatsAll checks --all aggregates boards and populates ByProject.
+// TestStatsAll checks --all aggregates boards and populates ByBoard.
 func TestStatsAll(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", "")
 	t.Setenv("SHEPHERD_TODO_FILE", "") // don't let the override short-circuit boards
 	base := filepath.Join(home, ".config", "shepherd")
-	if err := os.MkdirAll(filepath.Join(base, "projects"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(base, "boards"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	write := func(p, body string) {
@@ -63,7 +63,7 @@ func TestStatsAll(t *testing.T) {
 		}
 	}
 	write("todo.md", "- [ ] a\n  created: 12-07-2026 09:00\n")
-	write("projects/web.md", "- [ ] b\n  created: 12-07-2026 09:00\n- [ ] c\n  created: 12-07-2026 09:00\n")
+	write("boards/web.md", "- [ ] b\n  created: 12-07-2026 09:00\n- [ ] c\n  created: 12-07-2026 09:00\n")
 
 	var buf bytes.Buffer
 	if code := cmdStats([]string{"--all", "--json"}, "", &buf); code != 0 {
@@ -73,8 +73,8 @@ func TestStatsAll(t *testing.T) {
 	if err := json.Unmarshal(buf.Bytes(), &s); err != nil {
 		t.Fatalf("json: %v", err)
 	}
-	if s.Total != 3 || s.ByProject["default"].Open != 1 || s.ByProject["web"].Open != 2 {
-		t.Errorf("all aggregate wrong: total %d, byProject %+v", s.Total, s.ByProject)
+	if s.Total != 3 || s.ByBoard["default"].Open != 1 || s.ByBoard["web"].Open != 2 {
+		t.Errorf("all aggregate wrong: total %d, byBoard %+v", s.Total, s.ByBoard)
 	}
 }
 

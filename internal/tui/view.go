@@ -2,6 +2,8 @@ package tui
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/table"
@@ -15,13 +17,13 @@ import (
 // ---- styles ----
 var (
 	dimStyle    = lipgloss.NewStyle().Faint(true)
+	brandStyle  = lipgloss.NewStyle().Bold(true)
 	doneStyle   = lipgloss.NewStyle().Faint(true).Strikethrough(true)
 	cursorStyle = lipgloss.NewStyle().Background(lipgloss.AdaptiveColor{Light: "254", Dark: "236"})
 	boxStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
 	progStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("4"))
 	matchStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("4"))
 	catStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("6"))
-	agentStyle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("5"))
 	countStyle  = lipgloss.NewStyle().Faint(true)
 	warnStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
 	ruleStyle   = lipgloss.NewStyle().Faint(true).Foreground(lipgloss.Color("240"))
@@ -40,8 +42,10 @@ func (m model) View() string {
 		content = m.helpView()
 	case m.mode == modeArchive:
 		content = m.archiveView()
-	case m.mode == modeProjects || m.mode == modeProjectNew || m.mode == modeProjectRename || m.mode == modeConfirmDelete:
-		content = m.projectsView()
+	case m.mode == modeBoardDetail || (m.mode == modeBoardDir && m.projDirEdit):
+		content = m.boardDetailView()
+	case m.mode == modeBoards || m.mode == modeBoardNew || m.mode == modeBoardDir || m.mode == modeBoardRename || m.mode == modeConfirmDelete:
+		content = m.boardsView()
 	case m.mode == modeSettings || m.mode == modeSettingEdit:
 		content = m.settingsView()
 	case m.mode == modeDetail || m.mode == modeNote:
@@ -82,12 +86,9 @@ func (m model) innerHeight() int {
 // groupOf returns a stable group id (for change detection) and display label
 // for an item under the active view; overdue items form a pinned top group.
 func (m model) groupOf(it todo.Item) (id, label string) {
-	if m.view == viewProject {
+	if m.view == viewBoard {
 		// group strictly by board (no overdue pin) so sources stay contiguous
 		return "s" + it.Source, it.Source
-	}
-	if it.Agentic {
-		return "\x00\x00agent", "◆ agentic"
 	}
 	if todo.Pinned(it) {
 		return "\x00pin", "⚠ overdue"
@@ -104,12 +105,12 @@ func (m model) groupOf(it todo.Item) (id, label string) {
 	return "c" + strings.ToLower(it.Category), it.Category
 }
 
-// groupCount returns done/total for the group an item belongs to. Agentic and
-// pinned (overdue) items are excluded from their category/priority group (they
-// show in the agentic / overdue group instead).
+// groupCount returns done/total for the group an item belongs to. Pinned
+// (overdue) items are excluded from their category/priority group (they show in
+// the overdue group instead).
 func (m model) groupCount(it todo.Item) (done, total int) {
 	switch {
-	case m.view == viewProject:
+	case m.view == viewBoard:
 		for _, x := range m.items {
 			if x.Source == it.Source {
 				total++
@@ -118,24 +119,15 @@ func (m model) groupCount(it todo.Item) (done, total int) {
 				}
 			}
 		}
-	case it.Agentic:
-		for _, x := range m.items {
-			if x.Agentic {
-				total++
-				if x.Done {
-					done++
-				}
-			}
-		}
 	case todo.Pinned(it):
 		for _, x := range m.items {
-			if todo.Pinned(x) && !x.Agentic {
+			if todo.Pinned(x) {
 				total++
 			}
 		}
 	case m.view == viewPriority:
 		for _, x := range m.items {
-			if !x.Agentic && !todo.Pinned(x) && x.Prio == it.Prio {
+			if !todo.Pinned(x) && x.Prio == it.Prio {
 				total++
 				if x.Done {
 					done++
@@ -144,7 +136,7 @@ func (m model) groupCount(it todo.Item) (done, total int) {
 		}
 	default:
 		for _, x := range m.items {
-			if !x.Agentic && !todo.Pinned(x) && x.Category == it.Category {
+			if !todo.Pinned(x) && x.Category == it.Category {
 				total++
 				if x.Done {
 					done++
@@ -173,10 +165,7 @@ func (m model) rowContent(it todo.Item, indent, badge string, isSub bool) string
 	} else if deferred {
 		text = dimStyle.Render(text) // not started yet
 	}
-	if it.Agentic && todo.AgenticLocked(it) && !it.Done {
-		text = dimStyle.Render(text) // agent-owned (running); locked from the board
-	}
-	if m.global && m.view != viewProject && it.Source != "" {
+	if m.global && m.view != viewBoard && it.Source != "" {
 		text += " " + dimStyle.Render("["+it.Source+"]")
 	}
 	// right cluster: due (left) then priority label flush far-right.
@@ -186,7 +175,7 @@ func (m model) rowContent(it todo.Item, indent, badge string, isSub bool) string
 		if lbl := todo.DeferLabel(it.Defer); lbl != "" {
 			label = dimStyle.Render(lbl)
 		}
-	} else if it.Due != "" && (isSub || it.Agentic || !todo.Pinned(it)) {
+	} else if it.Due != "" && (isSub || !todo.Pinned(it)) {
 		// parents hide the label when pinned to the ⚠ overdue group; subs have no
 		// such group, so always show it (red when overdue).
 		lbl, over := todo.DueLabel(it.Due)
@@ -216,15 +205,7 @@ func (m model) rowContent(it todo.Item, indent, badge string, isSub bool) string
 			label = s
 		}
 	}
-	mark := ""
-	if it.Agentic {
-		ms := agentStyle
-		if todo.AgenticLocked(it) {
-			ms = dimStyle // agent-owned; de-emphasise the marker too
-		}
-		mark = ms.Render("◆ ")
-	}
-	left := fmt.Sprintf("%s%s%s %s", indent, mark, boxSt.Render(box), text)
+	left := fmt.Sprintf("%s%s %s", indent, boxSt.Render(box), text)
 	gap := w - lipgloss.Width(left) - lipgloss.Width(label)
 	if gap < 1 {
 		gap = 1
@@ -285,7 +266,7 @@ func (m model) listView() string {
 	if am := m.archivedMatches(); len(am) > 0 {
 		out = append(out, "", dimStyle.Render(fmt.Sprintf("archive · %d match", len(am))))
 		for _, it := range am {
-			out = append(out, "  "+doneStyle.Render(it.Text))
+			out = append(out, "  "+dimStyle.Render(it.Text))
 		}
 	}
 
@@ -350,11 +331,11 @@ func (m model) archiveView() string {
 	return m.frame(body, footer)
 }
 
-// projectsView renders the board picker: one row per board with open/total
+// boardsView renders the board picker: one row per board with open/total
 // counts, the current board marked, windowed on the cursor.
-func (m model) projectsView() string {
+func (m model) boardsView() string {
 	w := m.width()
-	cur := m.project
+	cur := m.board
 	if cur == "" {
 		cur = "default"
 	}
@@ -388,9 +369,11 @@ func (m model) projectsView() string {
 	rule := ruleStyle.Render(strings.Repeat("┈", w))
 	var footer string
 	switch m.mode {
-	case modeProjectNew:
+	case modeBoardNew:
 		footer = rule + "\n" + m.input.View() + "  " + dimStyle.Render("(new board: enter=create esc=cancel)")
-	case modeProjectRename:
+	case modeBoardDir:
+		footer = rule + "\n" + m.input.View() + "  " + dimStyle.Render(fmt.Sprintf("(dir for %q: enter=save esc=skip)", m.projPending))
+	case modeBoardRename:
 		footer = rule + "\n" + m.input.View() + "  " + dimStyle.Render("(rename: enter=save esc=cancel)")
 	case modeConfirmDelete:
 		name := ""
@@ -403,7 +386,7 @@ func (m model) projectsView() string {
 		if m.projNotice != "" {
 			footer += warnStyle.Render(m.projNotice) + "\n"
 		}
-		footer += m.projectsHelp()
+		footer += m.boardsHelp()
 	}
 	out = m.windowRows(out, cursorLine, lines(footer))
 	title := "boards"
@@ -412,6 +395,61 @@ func (m model) projectsView() string {
 	}
 	body := m.headerWith(title, 0, len(m.projRows)) + "\n" + strings.Join(out, "\n")
 	return m.frame(body, footer)
+}
+
+// boardDetailView renders the read-only detail for the board under the picker
+// cursor: its name, working dir (with an on-disk existence marker), source file
+// and item counts. When the dir editor is open (modeBoardDir from here), the
+// input replaces the help line as the footer.
+func (m model) boardDetailView() string {
+	w := m.width()
+	b := m.selectedBoard()
+	if b == nil {
+		return m.frame(m.headerWith("board", 0, 0), dimStyle.Render("no board"))
+	}
+	open, total := store.BoardCounts(b.Path)
+	dir := store.BoardDir(b.Name)
+
+	field := func(k, v string) string {
+		return dimStyle.Render(fmt.Sprintf("%-8s", k)) + v + "\n"
+	}
+	dirVal := dimStyle.Render("(not set)")
+	if dir != "" {
+		// shepherd stores the dir as a plain string; it can't detect a move or
+		// rename, so surface whether the recorded path still exists on disk.
+		mark := ""
+		if _, err := os.Stat(expandHome(dir)); err != nil {
+			mark = "  " + warnStyle.Render("(missing)")
+		}
+		dirVal = dir + mark
+	}
+
+	var body strings.Builder
+	body.WriteString(m.headerWith("board", total-open, total) + "\n\n")
+	body.WriteString(field("name", brandStyle.Render(b.Name)))
+	body.WriteString(field("dir", dirVal))
+	body.WriteString(field("file", dimStyle.Render(b.Path)))
+	body.WriteString(field("archive", dimStyle.Render(store.ArchivePath(b.Path))))
+	body.WriteString(field("items", countStyle.Render(fmt.Sprintf("%d/%d", total-open, total))))
+
+	rule := ruleStyle.Render(strings.Repeat("┈", w))
+	var footer string
+	if m.mode == modeBoardDir { // editing this board's dir
+		footer = rule + "\n" + m.input.View() + "  " + dimStyle.Render("(dir: enter=save esc=cancel)")
+	} else {
+		footer = rule + "\n" + dimStyle.Render("e edit dir · esc back · q quit")
+	}
+	return m.frame(body.String(), footer)
+}
+
+// expandHome replaces a leading ~ with the user's home dir, for on-disk checks.
+func expandHome(p string) string {
+	if p == "~" || strings.HasPrefix(p, "~/") {
+		if home, err := os.UserHomeDir(); err == nil {
+			return filepath.Join(home, strings.TrimPrefix(p, "~"))
+		}
+	}
+	return p
 }
 
 // settingsView renders the settings screen: one row per editable config field,
@@ -445,7 +483,7 @@ func (m model) settingsView() string {
 	}
 
 	// header without the done/total count that headerWith always appends.
-	left := dimStyle.Render(appSubtitle)
+	left := titleLeft()
 	right := dimStyle.Render("settings")
 	gap := w - lipgloss.Width(left) - lipgloss.Width(right)
 	if gap < 1 {
@@ -464,10 +502,10 @@ func (m model) settingsView() string {
 	return m.frame(body, footer)
 }
 
-// projectsHelp renders the picker's key hints, dimming the board actions
+// boardsHelp renders the picker's key hints, dimming the board actions
 // (rename/archive/delete) when the default board is selected — they don't apply
 // to it.
-func (m model) projectsHelp() string {
+func (m model) boardsHelp() string {
 	tok := func(s string) string { return dimStyle.Render(s) }
 	if m.projArchived {
 		parts := []string{
@@ -487,7 +525,7 @@ func (m model) projectsHelp() string {
 		return dimStyle.Render(s)
 	}
 	parts := []string{
-		tok("j/k move"), tok("enter open"), tok("a new"),
+		tok("j/k move"), tok("enter open"), tok("d detail"), tok("a new"),
 		action("r rename"), action("A archive"), action("x delete"),
 		tok("e archived"), tok("esc back"), tok("q quit"),
 	}
@@ -514,12 +552,17 @@ func (m model) header() string {
 	return m.headerWith(ctx, done, total)
 }
 
+// titleLeft is the left side of every header: the branded app name.
+func titleLeft() string {
+	return brandStyle.Render(appEmoji + " " + appName)
+}
+
 // headerWith renders the shared title block used by every view: the subtitle
 // (left) with the context label + done/total count (and active filter)
 // flush-right, then a full-width rule.
 func (m model) headerWith(context string, done, total int) string {
 	w := m.width()
-	left := dimStyle.Render(appSubtitle)
+	left := titleLeft()
 
 	right := dimStyle.Render(context) + "  " + countStyle.Render(fmt.Sprintf("%d/%d", done, total))
 	if m.filter != "" || m.mode == modeFilter {
@@ -592,7 +635,7 @@ func (m model) helpGrid() string {
 		head    string
 		entries []entry
 	}{
-		{"move", []entry{{"j/k", "move"}, {"space", "toggle"}, {"d", "detail"}, {"v", "view"}, {"A", "global"}, {"e", "archive"}, {"p", "boards"}}},
+		{"move", []entry{{"j/k", "move"}, {"space", "toggle"}, {"d", "detail"}, {"v", "view"}, {"A", "global"}, {"e", "archive"}, {"b", "boards"}}},
 		{"edit", []entry{{"a", "add"}, {"S", "sub"}, {"u", "edit"}, {"tab", "status"}, {"x", "del"}, {"c", "sweep"}, {"C", "arch"}}},
 		{"fields", []entry{{"h/m/l", "prio"}, {"g", "cat"}, {"t", "due"}, {"s", "defer"}, {"L", "link"}, {"o", "open"}}},
 		{"board", []entry{{"w", "save"}, {"^e", "editor"}, {"U", "undo"}, {"^r", "redo"}, {"/", "filter"}, {",", "settings"}, {"?", "help"}, {"q", "quit"}}},
@@ -600,7 +643,7 @@ func (m model) helpGrid() string {
 
 	// In the read-only global view most actions are inert; dim them so only the
 	// keys that do something (navigate / inspect / leave) read as live.
-	globalActive := map[string]bool{"j/k": true, "d": true, "v": true, "/": true, "A": true, "e": true, "o": true, "p": true, "?": true, "q": true}
+	globalActive := map[string]bool{"j/k": true, "d": true, "v": true, "/": true, "A": true, "e": true, "o": true, "b": true, "?": true, "q": true}
 
 	// On a subtask row category is parent-only (subs share the parent's board);
 	// dim it. Archive (C) takes whole items only, so it's inert on a subtask too.
@@ -688,7 +731,7 @@ func (m model) tableView() string {
 		{Title: "task", Width: taskW},
 	}
 	if m.global {
-		cols = append(cols, table.Column{Title: "project", Width: projW})
+		cols = append(cols, table.Column{Title: "board", Width: projW})
 	}
 	cols = append(cols,
 		table.Column{Title: "category", Width: catW},
@@ -717,9 +760,6 @@ func (m model) tableView() string {
 			cat = ""
 		} else if d, t := todo.SubCount(it); t > 0 {
 			task = fmt.Sprintf("%s (%d/%d)", task, d, t)
-		}
-		if it.Agentic && r.sub < 0 {
-			task = "◆ " + task
 		}
 		row := table.Row{box, p, task}
 		if m.global {
@@ -915,14 +955,6 @@ func (m model) detailView() string {
 	b.WriteString(field("category", category))
 	if m.global && it.Source != "" {
 		b.WriteString(field("board", catStyle.Render(it.Source)))
-	}
-	if it.Agentic {
-		b.WriteString(field("agentic", agentStyle.Render("yes")))
-		action := dimStyle.Render("(none)")
-		if it.Action != "" {
-			action = matchStyle.Render(it.Action)
-		}
-		b.WriteString(field("action", action))
 	}
 	if it.Defer != "" {
 		defer_ := todo.DisplayDate(it.Defer)

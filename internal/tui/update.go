@@ -241,7 +241,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var res tea.Model
 		var cmd tea.Cmd
 		switch m.mode {
-		case modeAdd, modeAddSub, modeEdit, modeCategory, modeDue, modeDefer, modeLink, modeFilter, modeProjectRename, modeProjectNew:
+		case modeAdd, modeAddSub, modeEdit, modeCategory, modeDue, modeDefer, modeLink, modeFilter, modeBoardRename, modeBoardNew, modeBoardDir:
 			res, cmd = m.updateInput(msg)
 		case modeConfirmDelete:
 			res, cmd = m.updateConfirmDelete(msg)
@@ -253,8 +253,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			res, cmd = m.updateHelp(msg)
 		case modeArchive:
 			res, cmd = m.updateArchive(msg)
-		case modeProjects:
-			res, cmd = m.updateProjects(msg)
+		case modeBoards:
+			res, cmd = m.updateBoards(msg)
+		case modeBoardDetail:
+			res, cmd = m.updateBoardDetail(msg)
 		case modeSettings:
 			res, cmd = m.updateSettings(msg)
 		case modeSettingEdit:
@@ -315,8 +317,8 @@ func (m model) updateGlobal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "e":
 		m.enterArchive()
-	case "p":
-		m.enterProjects()
+	case "b":
+		m.enterBoards()
 	case "?":
 		m.mode = modeHelp
 	case "/":
@@ -374,10 +376,7 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.cursor--
 		}
 	case " ":
-		// Agentic items use the hand-off vocabulary (hold/go/running/done); tab
-		// cycles it. Block the done-toggle so tab is the sole status control and
-		// space can't skip straight to the terminal state.
-		if idx >= 0 && !m.items[idx].Agentic {
+		if idx >= 0 {
 			m.beforeMutate()
 			if ref.sub == -1 {
 				todo.SetParentDone(&m.items[idx], !m.items[idx].Done)
@@ -387,19 +386,11 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "tab":
 		if idx >= 0 {
-			if m.items[idx].Agentic {
-				// item-level hold↔go toggle; running/done are the agent's, locked here
-				if ref.sub == -1 && !todo.AgenticLocked(m.items[idx]) {
-					m.beforeMutate()
-					todo.ToggleAgenticStatus(&m.items[idx])
-				}
+			m.beforeMutate()
+			if ref.sub == -1 {
+				todo.CycleStatus(&m.items[idx], m.statuses)
 			} else {
-				m.beforeMutate()
-				if ref.sub == -1 {
-					todo.CycleStatus(&m.items[idx], m.statuses)
-				} else {
-					todo.CycleSubStatus(&m.items[idx], ref.sub, m.statuses)
-				}
+				todo.CycleSubStatus(&m.items[idx], ref.sub, m.statuses)
 			}
 		}
 	case "d":
@@ -569,8 +560,8 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "e":
 		m.enterArchive()
-	case "p":
-		m.enterProjects()
+	case "b":
+		m.enterBoards()
 	case ",":
 		m.mode = modeSettings
 		m.settingsCur = 0
@@ -580,14 +571,14 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// enterProjects opens the board picker, listing every board with the current
+// enterBoards opens the board picker, listing every board with the current
 // one (default when unnamed) under the cursor.
-func (m *model) enterProjects() {
+func (m *model) enterBoards() {
 	m.projRows = store.Boards()
 	m.projCur = 0
 	m.projArchived = false
 	m.projNotice = ""
-	cur := m.project
+	cur := m.board
 	if cur == "" {
 		cur = "default"
 	}
@@ -597,12 +588,12 @@ func (m *model) enterProjects() {
 			break
 		}
 	}
-	m.mode = modeProjects
+	m.mode = modeBoards
 }
 
-// updateProjects handles keys in the board picker: navigate, enter to jump to
+// updateBoards handles keys in the board picker: navigate, enter to jump to
 // the selected board (flushing any unsaved edits first), esc to return.
-func (m model) updateProjects(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m model) updateBoards(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "q":
 		return m.quit()
@@ -663,12 +654,20 @@ func (m model) updateProjects(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		nm.w, nm.height, nm.density = m.w, m.height, m.density
 		nm.clamp()
 		return nm, nil
+	case "d": // detail view for the selected board (name, dir, paths, counts)
+		if m.projArchived {
+			break
+		}
+		if m.selectedBoard() != nil {
+			m.projNotice = ""
+			m.mode = modeBoardDetail
+		}
 	case "a": // create a new board
 		if m.projArchived {
 			break
 		}
 		m.projNotice = ""
-		m.mode = modeProjectNew
+		m.mode = modeBoardNew
 		m.input.SetValue("")
 		m.input.Placeholder = "new board name"
 		m.input.Focus()
@@ -678,7 +677,7 @@ func (m model) updateProjects(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		if b := m.selectedBoard(); b != nil && b.Name != "default" {
 			m.projNotice = ""
-			m.mode = modeProjectRename
+			m.mode = modeBoardRename
 			m.input.SetValue(b.Name)
 			m.input.Placeholder = "new board name"
 			m.input.Focus()
@@ -690,7 +689,7 @@ func (m model) updateProjects(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if b := m.selectedBoard(); b != nil && b.Name != "default" {
 			m.mode = modeConfirmDelete
 		}
-	case "A": // archive the selected board into projects/archived/
+	case "A": // archive the selected board into boards/archived/
 		if m.projArchived {
 			break
 		}
@@ -700,6 +699,27 @@ func (m model) updateProjects(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			} else {
 				return m.afterBoardChange(b.Name, ""), nil
 			}
+		}
+	}
+	return m, nil
+}
+
+// updateBoardDetail handles the board detail screen: e opens the dir editor
+// for this board (reusing modeBoardDir), esc returns to the picker.
+func (m model) updateBoardDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "q":
+		return m.quit()
+	case "esc":
+		m.mode = modeBoards
+	case "e": // edit this board's working dir
+		if b := m.selectedBoard(); b != nil {
+			m.projPending = b.Name
+			m.projDirEdit = true
+			m.mode = modeBoardDir
+			m.input.SetValue(store.BoardDir(b.Name))
+			m.input.Placeholder = "working dir (empty to clear)"
+			m.input.Focus()
 		}
 	}
 	return m, nil
@@ -716,10 +736,10 @@ func (m model) selectedBoard() *store.Board {
 // currentBoardName is the name of the board currently open ("default" when the
 // unnamed board).
 func (m model) currentBoardName() string {
-	if m.project == "" {
+	if m.board == "" {
 		return "default"
 	}
-	return m.project
+	return m.board
 }
 
 // afterBoardChange refreshes the picker after a rename/delete/archive. If the
@@ -734,7 +754,7 @@ func (m model) afterBoardChange(oldName, newName string) model {
 		}
 		nm := newModel(proj)
 		nm.w, nm.height, nm.density = m.w, m.height, m.density
-		nm.enterProjects()
+		nm.enterBoards()
 		return nm
 	}
 	m.projRows = store.Boards()
@@ -744,7 +764,7 @@ func (m model) afterBoardChange(oldName, newName string) model {
 	if m.projCur < 0 {
 		m.projCur = 0
 	}
-	m.mode = modeProjects
+	m.mode = modeBoards
 	return m
 }
 
@@ -760,9 +780,9 @@ func (m model) updateConfirmDelete(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m.afterBoardChange(b.Name, ""), nil
 			}
 		}
-		m.mode = modeProjects
+		m.mode = modeBoards
 	default:
-		m.mode = modeProjects
+		m.mode = modeBoards
 	}
 	return m, nil
 }
@@ -898,7 +918,7 @@ func parseCommaList(v string, lower bool) []string {
 	return out
 }
 
-// enterArchive opens the read-only archive browser. On a project board it shows
+// enterArchive opens the read-only archive browser. On a board board it shows
 // that board's archive; in the global view it aggregates every board's archive.
 func (m *model) enterArchive() {
 	m.mode = modeArchive
@@ -980,7 +1000,7 @@ func (m model) updateDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.note.Focus()
 		}
 	case " ":
-		if !m.global && !m.items[ref.item].Agentic {
+		if !m.global {
 			m.beforeMutate()
 			if ref.sub == -1 {
 				todo.SetParentDone(&m.items[ref.item], !m.items[ref.item].Done)
@@ -1036,8 +1056,15 @@ func (m model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.filter = ""
 			m.clamp()
 			m.mode = modeList
-		case modeProjectRename, modeProjectNew:
-			m.mode = modeProjects
+		case modeBoardRename, modeBoardNew:
+			m.mode = modeBoards
+		case modeBoardDir: // dir edit/skip cancelled; leave the board's dir unchanged
+			if m.projDirEdit { // opened from detail: return there
+				m.projDirEdit = false
+				m.mode = modeBoardDetail
+			} else {
+				m.mode = modeBoards
+			}
 		default:
 			m.mode = modeList
 		}
@@ -1113,7 +1140,7 @@ func (m model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.mode = modeList
 		case modeFilter:
 			m.mode = modeList // keep the filter applied
-		case modeProjectRename:
+		case modeBoardRename:
 			old := ""
 			if b := m.selectedBoard(); b != nil {
 				old = b.Name
@@ -1126,24 +1153,49 @@ func (m model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					return m.afterBoardChange(old, v), nil
 				}
 			}
-			m.mode = modeProjects // no-op / invalid name: return to the picker
+			m.mode = modeBoards // no-op / invalid name: return to the picker
 			return m, nil
-		case modeProjectNew:
+		case modeBoardNew:
+			if v == "" {
+				m.input.Blur()
+				m.mode = modeBoards
+				return m, nil
+			}
+			if err := store.CreateBoard(v); err != nil {
+				m.input.Blur()
+				m.mode = modeBoards
+				m.projNotice = err.Error()
+				return m, nil
+			}
+			// board made — ask for its working dir before returning to the picker.
+			m.projPending = v
+			m.mode = modeBoardDir
+			m.input.SetValue("")
+			m.input.Placeholder = "working dir (optional, enter to skip)"
+			m.input.Focus()
+			return m, nil
+		case modeBoardDir:
 			m.input.Blur()
-			m.mode = modeProjects
-			if v != "" {
-				if err := store.CreateBoard(v); err != nil {
+			// 'd' edit: empty clears the dir; creation flow: empty just skips it.
+			if v != "" || m.projDirEdit {
+				if err := store.SetBoardDir(m.projPending, v); err != nil {
 					m.projNotice = err.Error()
-				} else {
-					m.projRows = store.Boards()
-					for i, b := range m.projRows { // land on the new board
-						if b.Name == v {
-							m.projCur = i
-							break
-						}
-					}
 				}
 			}
+			m.projRows = store.Boards()
+			for i, b := range m.projRows { // land on the board
+				if b.Name == m.projPending {
+					m.projCur = i
+					break
+				}
+			}
+			if m.projDirEdit { // opened from detail: return there to show the change
+				m.projDirEdit = false
+				m.mode = modeBoardDetail
+			} else {
+				m.mode = modeBoards
+			}
+			m.projPending = ""
 			return m, nil
 		}
 		m.input.Blur()

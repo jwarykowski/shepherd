@@ -110,8 +110,8 @@ func renderStats(s todo.Stats, title string, width int) string {
 	b.WriteString(status + "\n")
 	b.WriteString(thr + "\n")
 
-	if len(s.ByProject) > 1 {
-		b.WriteString(panel("open by project", projectBars(s, innerW(width)), width) + "\n")
+	if len(s.ByBoard) > 1 {
+		b.WriteString(panel("open by board", boardBars(s, innerW(width)), width) + "\n")
 	}
 
 	b.WriteString(panel(fmt.Sprintf("backlog · created vs done 14d · net %+d/mo", s.Net30),
@@ -139,7 +139,7 @@ func statsLegend() string {
 		entry("open by age", "open items by how long ago they were created: <1d · 1-3d · 4-7d · 8-30d · >30d (>30d flagged red — the stale tail)."),
 		entry("by status", "all items by status: open, any named status (e.g. in-progress), and done."),
 		entry("done/day 30d", "sparkline of items completed per day over 30 days; 7d/30d are the totals."),
-		entry("open by project", "open items per board (only with --all)."),
+		entry("open by board", "open items per board (only with --all)."),
 		entry("backlog · created vs done 14d", "two lines over 14 days — items created vs completed; net +/-per month is the 30-day created-minus-done balance (positive = backlog growing)."),
 		entry("backlog health", "oldest open — age of the oldest open item · avg open — mean age of open items · stale >30d — open items created over 30 days ago · time to done — mean create→complete time for finished items."),
 	}
@@ -278,23 +278,23 @@ func trend(created, done []int, width int) string {
 	return tc.View() + "\n" + faintStyle.Render(legend)
 }
 
-func projectBars(s todo.Stats, width int) string {
-	rows := make([]barRow, 0, len(s.ByProject))
-	names := make([]string, 0, len(s.ByProject))
-	for n := range s.ByProject {
+func boardBars(s todo.Stats, width int) string {
+	rows := make([]barRow, 0, len(s.ByBoard))
+	names := make([]string, 0, len(s.ByBoard))
+	for n := range s.ByBoard {
 		names = append(names, n)
 	}
 	// stable order: most open first, name tiebreak
 	for i := 0; i < len(names); i++ {
 		for j := i + 1; j < len(names); j++ {
-			a, b := s.ByProject[names[i]], s.ByProject[names[j]]
+			a, b := s.ByBoard[names[i]], s.ByBoard[names[j]]
 			if b.Open > a.Open || (b.Open == a.Open && names[j] < names[i]) {
 				names[i], names[j] = names[j], names[i]
 			}
 		}
 	}
 	for _, n := range names {
-		rows = append(rows, barRow{n, s.ByProject[n].Open, colInfo})
+		rows = append(rows, barRow{n, s.ByBoard[n].Open, colInfo})
 	}
 	return hbar(rows, width)
 }

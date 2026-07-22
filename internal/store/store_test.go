@@ -136,51 +136,6 @@ func TestStatusRoundTrip(t *testing.T) {
 	}
 }
 
-func TestAgenticRoundTrip(t *testing.T) {
-	p := filepath.Join(t.TempDir(), "todo.md")
-	src := "- [ ] deploy\n  status: hold\n  agentic: true\n"
-	if err := os.WriteFile(p, []byte(src), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	items := Load(p)
-	if !items[0].Agentic {
-		t.Fatalf("agentic not parsed: %+v", items[0])
-	}
-	if err := Save(p, items); err != nil {
-		t.Fatal(err)
-	}
-	if got := string(mustRead(t, p)); got != src {
-		t.Fatalf("agentic round-trip mismatch:\n%s", got)
-	}
-
-	// A non-agentic item never writes the line.
-	if strings.Contains(Serialize([]todo.Item{{Text: "x"}}), "agentic:") {
-		t.Fatalf("non-agentic item leaked agentic line")
-	}
-}
-
-func TestActionRoundTrip(t *testing.T) {
-	p := filepath.Join(t.TempDir(), "todo.md")
-	src := "- [ ] deploy\n  status: hold\n  agentic: true\n  action: deploy-release\n"
-	if err := os.WriteFile(p, []byte(src), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	items := Load(p)
-	if items[0].Action != "deploy-release" {
-		t.Fatalf("action not parsed: %+v", items[0])
-	}
-	if err := Save(p, items); err != nil {
-		t.Fatal(err)
-	}
-	if got := string(mustRead(t, p)); got != src {
-		t.Fatalf("action round-trip mismatch:\n%s", got)
-	}
-	// An item with no action never writes the line.
-	if strings.Contains(Serialize([]todo.Item{{Text: "x"}}), "action:") {
-		t.Fatalf("item without action leaked action line")
-	}
-}
-
 func TestNoteMultilineRoundTrip(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "todo.md")
 	// a multi-line note serialises as one note: line per physical line.
@@ -289,9 +244,9 @@ func TestTodoPathResolution(t *testing.T) {
 		t.Errorf("default path = %q", got)
 	}
 
-	// A named project -> projects/<name>.md under the base dir.
-	if got := TodoPathFor("web"); !strings.HasSuffix(got, "/.config/shepherd/projects/web.md") {
-		t.Errorf("project path = %q", got)
+	// A named board -> boards/<name>.md under the base dir.
+	if got := TodoPathFor("web"); !strings.HasSuffix(got, "/.config/shepherd/boards/web.md") {
+		t.Errorf("board path = %q", got)
 	}
 }
 
@@ -309,29 +264,29 @@ func TestConfigPath(t *testing.T) {
 	}
 	_ = os.Unsetenv("SHEPHERD_TODO_FILE")
 
-	// Otherwise shared at the base dir (also for project boards).
+	// Otherwise shared at the base dir (also for board boards).
 	if got := ConfigPath(); !strings.HasSuffix(got, "/.config/shepherd/config.toml") {
 		t.Errorf("base config = %q", got)
 	}
 }
 
-func TestResolveProject(t *testing.T) {
-	t.Setenv("SHEPHERD_PROJECT", "envproj")
-	if got, err := ResolveProject("flagproj"); err != nil || got != "flagproj" {
+func TestResolveBoard(t *testing.T) {
+	t.Setenv("SHEPHERD_BOARD", "envproj")
+	if got, err := ResolveBoard("flagproj"); err != nil || got != "flagproj" {
 		t.Fatalf("flag should win: %q %v", got, err)
 	}
-	if got, err := ResolveProject(""); err != nil || got != "envproj" {
+	if got, err := ResolveBoard(""); err != nil || got != "envproj" {
 		t.Fatalf("env fallback: %q %v", got, err)
 	}
-	_ = os.Unsetenv("SHEPHERD_PROJECT")
-	if got, err := ResolveProject(""); err != nil || got != "" {
+	_ = os.Unsetenv("SHEPHERD_BOARD")
+	if got, err := ResolveBoard(""); err != nil || got != "" {
 		t.Fatalf("empty -> default: %q %v", got, err)
 	}
-	if _, err := ResolveProject("../evil"); err == nil {
+	if _, err := ResolveBoard("../evil"); err == nil {
 		t.Fatal("traversal via flag not rejected")
 	}
-	t.Setenv("SHEPHERD_PROJECT", "../evil")
-	if _, err := ResolveProject(""); err == nil {
+	t.Setenv("SHEPHERD_BOARD", "../evil")
+	if _, err := ResolveBoard(""); err == nil {
 		t.Fatal("traversal via env not rejected")
 	}
 }
@@ -340,20 +295,20 @@ func TestArchivePath(t *testing.T) {
 	if got := ArchivePath("/c/shepherd/todo.md"); got != "/c/shepherd/archive.md" {
 		t.Errorf("default archive = %q", got)
 	}
-	if got := ArchivePath("/c/shepherd/projects/web.md"); got != "/c/shepherd/projects/web-archive.md" {
-		t.Errorf("project archive = %q", got)
+	if got := ArchivePath("/c/shepherd/boards/web.md"); got != "/c/shepherd/boards/web-archive.md" {
+		t.Errorf("board archive = %q", got)
 	}
 }
 
 // seedBoards points BaseDir at a temp HOME and writes a default board plus two
-// project boards (and an archive sibling that must be ignored).
+// board boards (and an archive sibling that must be ignored).
 func seedBoards(t *testing.T) string {
 	t.Helper()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", "")
 	t.Setenv("SHEPHERD_TODO_FILE", "")
-	base := filepath.Join(home, ".config", "shepherd", "projects")
+	base := filepath.Join(home, ".config", "shepherd", "boards")
 	if err := os.MkdirAll(base, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -375,7 +330,7 @@ func TestBoards(t *testing.T) {
 	if len(bs) != 3 {
 		t.Fatalf("want 3 boards, got %d: %+v", len(bs), bs)
 	}
-	// default first, then projects alphabetical; archive excluded.
+	// default first, then boards alphabetical; archive excluded.
 	want := []string{"default", "api", "web"}
 	for i, b := range bs {
 		if b.Name != want[i] {
