@@ -500,6 +500,8 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.clamp()
 	case "A":
 		m.toggleGlobal()
+	case "F":
+		m.hideFooter = !m.hideFooter
 	case "?":
 		m.mode = modeHelp
 	case "/":
@@ -651,7 +653,7 @@ func (m model) updateBoards(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			_ = store.Save(m.path, m.items)
 		}
 		nm := newModel(proj) // jump: rebuild the board fresh, like toggleGlobal
-		nm.w, nm.height, nm.density = m.w, m.height, m.density
+		nm.w, nm.height, nm.density, nm.hideFooter = m.w, m.height, m.density, m.hideFooter
 		nm.clamp()
 		return nm, nil
 	case "d": // detail view for the selected board (name, dir, paths, counts)
@@ -753,7 +755,7 @@ func (m model) afterBoardChange(oldName, newName string) model {
 			proj = ""
 		}
 		nm := newModel(proj)
-		nm.w, nm.height, nm.density = m.w, m.height, m.density
+		nm.w, nm.height, nm.density, nm.hideFooter = m.w, m.height, m.density, m.hideFooter
 		nm.enterBoards()
 		return nm
 	}
@@ -788,8 +790,9 @@ func (m model) updateConfirmDelete(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 // numSettings is the count of editable rows in the settings screen, in the
-// order settingsView renders them: view, density, autosave, categories, statuses.
-const numSettings = 5
+// order settingsView renders them: view, density, autosave, categories,
+// statuses, footer.
+const numSettings = 6
 
 func (m *model) saveSettings() { _ = saveConfig(store.ConfigPath(), m.currentConfig()) }
 
@@ -812,8 +815,8 @@ func (m model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "enter":
 		switch m.settingsCur {
-		case 0, 1:
-			m.cycleSetting() // enum rows cycle in place
+		case 0, 1, 5:
+			m.cycleSetting() // enum/bool rows cycle in place
 		default:
 			m.mode = modeSettingEdit
 			m.input.SetValue(m.settingValue(m.settingsCur))
@@ -838,6 +841,9 @@ func (m *model) cycleSetting() {
 		} else {
 			m.density = comfort
 		}
+		m.saveSettings()
+	case 5: // footer: shown <-> hidden
+		m.hideFooter = !m.hideFooter
 		m.saveSettings()
 	}
 }

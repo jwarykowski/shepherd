@@ -1050,15 +1050,38 @@ func TestGlobalReadOnly(t *testing.T) {
 // loadConfig reads them back unchanged.
 func TestSaveConfigRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.toml")
-	want := config{view: viewTable, density: comfort, autosave: 30, categories: []string{"work"}, statuses: []string{"open", "done"}}
+	want := config{view: viewTable, density: comfort, autosave: 30, categories: []string{"work"}, statuses: []string{"open", "done"}, hideFooter: true}
 	if err := saveConfig(path, want); err != nil {
 		t.Fatal(err)
 	}
 	got := loadConfig(path)
-	if got.view != want.view || got.density != want.density || got.autosave != want.autosave {
+	if got.view != want.view || got.density != want.density || got.autosave != want.autosave || got.hideFooter != want.hideFooter {
 		t.Fatalf("scalar keys round-trip wrong: %+v", got)
 	}
 	if strings.Join(got.categories, ",") != "work" || strings.Join(got.statuses, ",") != "open,done" {
 		t.Fatalf("list keys round-trip wrong: %+v", got)
+	}
+}
+
+// TestFooterToggle checks F drops the help grid but keeps the repo/version line.
+func TestFooterToggle(t *testing.T) {
+	m := model{input: textinput.New(), items: []todo.Item{{Text: "a"}}}
+	if m.hideFooter || !strings.Contains(m.listFooter(), "toggle") {
+		t.Fatal("help grid should be shown by default")
+	}
+	m = drive(m, "F")
+	if !m.hideFooter {
+		t.Fatal("F should set hideFooter")
+	}
+	foot := m.listFooter()
+	if strings.Contains(foot, "toggle") {
+		t.Fatalf("help grid should be hidden; footer=%q", foot)
+	}
+	if !strings.Contains(foot, repoName) {
+		t.Fatalf("repo/version line should stay visible; footer=%q", foot)
+	}
+	m = drive(m, "F")
+	if m.hideFooter || !strings.Contains(m.listFooter(), "toggle") {
+		t.Fatal("F should toggle the help grid back on")
 	}
 }

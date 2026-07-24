@@ -453,8 +453,8 @@ func expandHome(p string) string {
 }
 
 // settingsView renders the settings screen: one row per editable config field,
-// the enum rows (view/density) cycled in place, the text rows opened in the
-// shared input. Changes are written to config.toml as they are made.
+// the enum/bool rows (view/density/footer) cycled in place, the text rows opened
+// in the shared input. Changes are written to config.toml as they are made.
 func (m model) settingsView() string {
 	w := m.width()
 	cfg := m.currentConfig()
@@ -462,12 +462,17 @@ func (m model) settingsView() string {
 	if cfg.density == comfort {
 		den = "comfort"
 	}
+	foot := "shown"
+	if cfg.hideFooter {
+		foot = "hidden"
+	}
 	rows := []struct{ k, v string }{
 		{"view", viewName[cfg.view]},
 		{"density", den},
 		{"autosave", fmt.Sprintf("%ds", cfg.autosave)},
 		{"categories", strings.Join(cfg.categories, ", ")},
 		{"statuses", strings.Join(cfg.statuses, ", ")},
+		{"footer", foot},
 	}
 	var out []string
 	for i, r := range rows {
@@ -608,6 +613,10 @@ func (m model) bottomBar() string {
 	if gap < 1 {
 		gap = 1
 	}
+	// Link the version to its GitHub release; skip when unbuilt ("dev"/"unknown").
+	if Version != "dev" && Version != "unknown" && Version != "" {
+		right = osc8(right, repoURL+"/releases/tag/v"+Version)
+	}
 	return osc8(left, repoURL) + strings.Repeat(" ", gap) + right
 }
 
@@ -622,6 +631,9 @@ func (m model) listFooter() string {
 		verb := map[mode]string{modeAdd: "add", modeAddSub: "subtask", modeEdit: "edit", modeCategory: "category", modeDue: "due", modeDefer: "defer", modeLink: "link"}[m.mode]
 		return rule + "\n" + m.input.View() + "  " + dimStyle.Render("("+verb+": enter=save esc=cancel)")
 	default:
+		if m.hideFooter { // keep the repo/version line; drop the help grid
+			return rule + "\n" + m.bottomBar()
+		}
 		return rule + "\n" + m.helpGrid() + "\n" + rule + "\n" + m.bottomBar()
 	}
 }
@@ -635,7 +647,7 @@ func (m model) helpGrid() string {
 		head    string
 		entries []entry
 	}{
-		{"move", []entry{{"j/k", "move"}, {"space", "toggle"}, {"d", "detail"}, {"v", "view"}, {"A", "global"}, {"e", "archive"}, {"b", "boards"}}},
+		{"move", []entry{{"j/k", "move"}, {"space", "toggle"}, {"d", "detail"}, {"v", "view"}, {"A", "global"}, {"e", "archive"}, {"b", "boards"}, {"F", "footer"}}},
 		{"edit", []entry{{"a", "add"}, {"S", "sub"}, {"u", "edit"}, {"tab", "status"}, {"x", "del"}, {"c", "sweep"}, {"C", "arch"}}},
 		{"fields", []entry{{"h/m/l", "prio"}, {"g", "cat"}, {"t", "due"}, {"s", "defer"}, {"L", "link"}, {"o", "open"}}},
 		{"board", []entry{{"w", "save"}, {"^e", "editor"}, {"U", "undo"}, {"^r", "redo"}, {"/", "filter"}, {",", "settings"}, {"?", "help"}, {"q", "quit"}}},
@@ -643,7 +655,7 @@ func (m model) helpGrid() string {
 
 	// In the read-only global view most actions are inert; dim them so only the
 	// keys that do something (navigate / inspect / leave) read as live.
-	globalActive := map[string]bool{"j/k": true, "d": true, "v": true, "/": true, "A": true, "e": true, "o": true, "b": true, "?": true, "q": true}
+	globalActive := map[string]bool{"j/k": true, "d": true, "v": true, "/": true, "A": true, "e": true, "o": true, "b": true, "F": true, "?": true, "q": true}
 
 	// On a subtask row category is parent-only (subs share the parent's board);
 	// dim it. Archive (C) takes whole items only, so it's inert on a subtask too.
@@ -827,6 +839,7 @@ func (m model) helpBody() []string {
 	line("A — toggle the read-only global view across all boards (esc to leave)")
 	line("e — browse the archive (read-only; all boards in the global view; esc to leave)")
 	line("d — detail view · ? — this help")
+	line("F — hide/show the footer help grid (the repo/version line stays; config: hidefooter = true starts hidden)")
 	blank()
 	sec("history & files")
 	line("U — undo · ^r — redo (multi-level)")
