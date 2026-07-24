@@ -33,6 +33,7 @@ type config struct {
 	categories []string
 	statuses   []string // ordered, normalized so "done" is present and last
 	autosave   int      // seconds of idle before autosaving; 0 disables
+	hideFooter bool     // start with the list footer (help grid + version) hidden
 }
 
 // loadConfig reads a tiny key=value config (leniently TOML-ish):
@@ -92,6 +93,8 @@ func loadConfig(path string) config {
 			if n, err := strconv.Atoi(strings.Trim(v, `"`)); err == nil {
 				c.autosave = n
 			}
+		case "hidefooter":
+			c.hideFooter = strings.Trim(strings.ToLower(v), `"`) == "true"
 		}
 	}
 	c.statuses = normalizeStatuses(c.statuses)
@@ -118,6 +121,7 @@ func saveConfig(path string, c config) error {
 	fmt.Fprintf(&b, "autosave = %d\n", c.autosave)
 	fmt.Fprintf(&b, "categories = %s\n", list(c.categories))
 	fmt.Fprintf(&b, "statuses = %s\n", list(c.statuses))
+	fmt.Fprintf(&b, "hidefooter = %v\n", c.hideFooter)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
@@ -240,6 +244,7 @@ type model struct {
 	projPending   string        // board whose working dir is being set (modeBoardDir)
 	projDirEdit   bool          // dir editor opened from the detail view (empty clears, return to detail); false = creation flow (empty skips)
 	settingsCur   int           // cursor into the settings rows (modeSettings)
+	hideFooter    bool          // hide the list footer (help grid + version line)
 }
 
 // currentConfig snapshots the live, editable settings for the settings screen
@@ -251,6 +256,7 @@ func (m model) currentConfig() config {
 		categories: m.categories,
 		statuses:   m.statuses,
 		autosave:   int(m.autosaveEvery / time.Second),
+		hideFooter: m.hideFooter,
 	}
 }
 
@@ -309,6 +315,7 @@ func newModel(board string) model {
 		categories:    cfg.categories,
 		statuses:      cfg.statuses,
 		autosaveEvery: time.Duration(cfg.autosave) * time.Second,
+		hideFooter:    cfg.hideFooter,
 	}
 	m.resort()
 	m.markSaved()
@@ -336,7 +343,7 @@ func (m *model) loadGlobal() {
 func (m *model) toggleGlobal() {
 	if m.global {
 		nm := newModel(m.board)
-		nm.filter, nm.w, nm.height, nm.density = m.filter, m.w, m.height, m.density
+		nm.filter, nm.w, nm.height, nm.density, nm.hideFooter = m.filter, m.w, m.height, m.density, m.hideFooter
 		nm.clamp()
 		*m = nm
 		return

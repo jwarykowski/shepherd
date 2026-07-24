@@ -82,6 +82,7 @@ herdr plugin install jwarykowski/shepherd
 | `u` | edit item (or subtask) text |
 | `d` | open detail view (shows every field) |
 | `v` | cycle view: category / priority / table |
+| `F` | hide / show the footer help grid (the `jwarykowski/shepherd` · version line stays); `hidefooter` config sets the default |
 | `A` | toggle the [global view](#global-view) across all boards |
 | `p` | open the board picker — every board with done/total counts; `enter` jumps, `a` creates a board, `r` renames, `A` archives, `x` deletes (confirmed) the selected board (rename/archive/delete don't apply to the default board); `e` toggles the archived-boards view where `u` unarchives the selected board |
 | `e` | browse the archive (read-only; all boards in the global view; `esc` to leave) |
@@ -89,7 +90,7 @@ herdr plugin install jwarykowski/shepherd
 | `U` / `ctrl+r` | undo / redo (multi-level) |
 | `w` | save now (the header shows `● unsaved` / `● saved`) |
 | `ctrl+e` | open the markdown file in `$EDITOR` |
-| `,` | open settings — edit view, density, autosave, categories, statuses; changes save to `config.toml` |
+| `,` | open settings — edit view, density, autosave, categories, statuses, footer; changes save to `config.toml` |
 | `x` | delete item |
 | `c` | sweep all done items to `archive.md` |
 | `C` | archive the selected item to `archive.md` (whole items only — dimmed on a subtask row) |
@@ -357,6 +358,7 @@ density = "compact"                        # compact (default) | comfort
 autosave = 60                              # seconds idle before writing; 0 disables
 categories = ["work", "home", "personal"]  # tab-cycles in the category prompt
 statuses = ["open", "in-progress", "done"] # tab cycles item status in the list
+hidefooter = false                         # true starts with the footer help grid hidden (F toggles at runtime)
 ```
 
 - `view` — default grouping/layout on launch (`v` still cycles at runtime).
@@ -364,8 +366,9 @@ statuses = ["open", "in-progress", "done"] # tab cycles item status in the list
 - `autosave` — idle seconds before an unsaved board is written to disk (default 60); `0` disables it, so only `w` and quit save.
 - `categories` — press `tab` in the category prompt (`g`) to cycle through them.
 - `statuses` — ordered list `tab` cycles through in the list; `done` is always kept and forced last. Defaults to `["open", "done"]`. Intermediate statuses persist as a `status:` line and show a `◐` glyph; the stats page (board and `shepherd stats`) breaks items down by status in this order.
+- `hidefooter` — start with the footer help grid hidden for a cleaner board (the `jwarykowski/shepherd` · version line stays); `F` toggles it at runtime.
 
-Edit these in the running board with `,` (settings): `tab` cycles `view`/`density`, `enter` edits `autosave`/`categories`/`statuses`, and each change is written straight back to `config.toml`. shepherd owns the file — a settings save rewrites the managed keys.
+Edit these in the running board with `,` (settings): `enter` cycles `view`/`density`/`footer` and edits `autosave`/`categories`/`statuses`, and each change is written straight back to `config.toml`. shepherd owns the file — a settings save rewrites the managed keys.
 
 herdr pane placement (`placement` / `direction`) lives in the same file — see
 [herdr integration](#herdr-integration).
