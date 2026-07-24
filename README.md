@@ -84,7 +84,7 @@ herdr plugin install jwarykowski/shepherd
 | `v` | cycle view: category / priority / table |
 | `F` | hide / show the footer help grid (the `jwarykowski/shepherd` · version line stays); `hidefooter` config sets the default |
 | `A` | toggle the [global view](#global-view) across all boards |
-| `p` | open the board picker — every board with done/total counts; `enter` jumps, `a` creates a board, `r` renames, `A` archives, `x` deletes (confirmed) the selected board (rename/archive/delete don't apply to the default board); `e` toggles the archived-boards view where `u` unarchives the selected board |
+| `b` | open the board picker — every board with done/total counts; `enter` jumps, `a` creates a board, `r` renames, `A` archives, `x` deletes (confirmed), `d` shows detail (name, dir, paths, counts) for the selected board (rename/archive/delete don't apply to the default board); `e` toggles the archived-boards view where `u` unarchives the selected board |
 | `e` | browse the archive (read-only; all boards in the global view; `esc` to leave) |
 | `/` | filter (text/note/category/due/defer/link — also greps `archive.md`) |
 | `U` / `ctrl+r` | undo / redo (multi-level) |

@@ -5,17 +5,17 @@ the user's todos through it — never hand-edit the todo file; the binary owns t
 format.
 
 - `shepherd list --json` — read all items (machine-readable; prefer this)
-- `shepherd list --all --json` — read across every board; adds a `project` field per item
+- `shepherd list --all --json` — read across every board; adds a `board` field per item
 - `shepherd watch [--interval <dur>]` — stream this board's changes as NDJSON until killed: a `snapshot` line, then `added`/`updated`/`removed`/`archived` events keyed by item id (item shape = `list --json`). `archived` is a vanished item that landed in the archive (terminal, distinct from `removed`). React without polling
-- `shepherd projects [--json] [--archived]` — list boards with done/total counts (`--archived` lists archived boards instead); JSON marks the current board with `"current": true`
-- `shepherd project rename <old> <new>` / `archive <name>` / `unarchive <name>` / `delete <name> --force [--dry-run]` — whole-board actions (default board is not renamable/deletable/archivable; archive stashes under `projects/archived/`)
+- `shepherd boards [--json] [--archived]` — list boards with done/total counts (`--archived` lists archived boards instead); JSON per board is `name`/`open`/`total`/`current`/`dir`, and marks the active board with `"current": true`
+- `shepherd board rename <old> <new>` / `archive <name>` / `unarchive <name>` / `delete <name> --force [--dry-run]` / `dir <name> [<path>]` — whole-board actions (default board is not renamable/deletable/archivable; archive stashes under `boards/archived/`; `dir` shows or sets a board's working directory)
 - `shepherd stats [--json] [--all] [--legend]` — board metrics (charts, or `--json` numbers; `--legend` explains each chart)
 - `shepherd add "buy milk @home !h due:tomorrow" [--json]` — add an item
 - `shepherd sub <ref> "<text>" [--json]` — add a subtask to an item (same quick-add tokens)
 - `shepherd edit <ref> "<tokens>" [--json]` — merge tokens onto an item (or subtask); only the given fields change. Tokens: `@category`, `!prio`, `due:`, `defer:`, `link:`, `status:`, `note:`, and text. A bare key clears its field; `note:` takes the rest of the line
 - `shepherd list --filter <q>` — list only matching items (text/note/category/due/defer/link), keeping their real indexes for done/rm
 - `shepherd done <ref>... [--json]` / `shepherd undone <ref>...` — (un)complete one or more items/subtasks
-- `shepherd archive <ref>... [--json]` — move whole items off the live board into the sibling `archive.md` (per-item counterpart to whole-board `project archive`); subtasks can't be archived alone
+- `shepherd archive <ref>... [--json]` — move whole items off the live board into the sibling `archive.md` (per-item counterpart to whole-board `board archive`); subtasks can't be archived alone
 - `shepherd rm <ref>... [--dry-run] [--json]` — remove one or more items/subtasks (`--dry-run`/`-n` previews without writing)
 
 `edit` is the single setter for every field — status, note, category, priority,
@@ -55,14 +55,14 @@ field is empty for a plain open or done item, else the named status. Set it with
 recognised as the terminal/default ends, and `done`/`undone` are shorthands for
 them); `tab` cycles the configured list in the interactive board.
 
-Boards are per-project: add `--project <name>` after the verb to target a
-project's board (`shepherd list --project web`, `shepherd add "…" --project web`,
-`shepherd done 2 --project web`), else the default board is used.
+Add `--board <name>` after the verb (or set `$SHEPHERD_BOARD`) to target a
+named board (`shepherd list --board web`, `shepherd add "…" --board web`,
+`shepherd done 2 --board web`), else the default board is used.
 
 `shepherd list --all` reads across every board and is read-only; its indexes are
 aggregate and **not** valid for `done`/`rm`. To act on an item seen via `--all`,
-mutate with the same `--project` as its board — its `id` works directly, or
-re-list that board (`list --project <name>`) for its local index.
+mutate with the same `--board` as its board — its `id` works directly, or
+re-list that board (`list --board <name>`) for its local index.
 
 Exit codes for scripting: `0` success, `2` usage/input error (bad flag, unknown
 command, unknown ref), `1` runtime/IO failure. `-q`/`--quiet` on a
