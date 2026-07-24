@@ -19,8 +19,8 @@ func TestSchemaMatchesItemJSON(t *testing.T) {
 		if name == "" || name == "-" {
 			continue
 		}
-		// "project" only appears in --all aggregation, not a per-item property.
-		if name == "project" {
+		// "board" only appears in --all aggregation, not a per-item property.
+		if name == "board" {
 			continue
 		}
 		want[name] = true

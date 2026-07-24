@@ -19,8 +19,8 @@ type CatCount struct {
 	Open int    `json:"open"`
 }
 
-// ProjectStat is one board's open/done counts, for the --all by-project chart.
-type ProjectStat struct {
+// BoardStat is one board's open/done counts, for the --all by-board chart.
+type BoardStat struct {
 	Open int `json:"open"`
 	Done int `json:"done"`
 }
@@ -67,9 +67,9 @@ type Stats struct {
 	CreatedShort []int `json:"created_per_day_14"` // 14 days, trend
 	DoneShort    []int `json:"done_per_day_14"`    // 14 days, trend
 
-	ByCategory []CatCount             `json:"by_category"`          // open, desc by count
-	ByStatus   []StatusCount          `json:"by_status"`            // all items, desc by count
-	ByProject  map[string]ProjectStat `json:"by_project,omitempty"` // only in --all
+	ByCategory []CatCount           `json:"by_category"`        // open, desc by count
+	ByStatus   []StatusCount        `json:"by_status"`          // all items, desc by count
+	ByBoard    map[string]BoardStat `json:"by_board,omitempty"` // only in --all
 }
 
 // Compute buckets the full item set (open + done, incl. archived) into Stats.
@@ -203,16 +203,16 @@ func Compute(items []Item) Stats {
 		}
 
 		if it.Source != "" {
-			if s.ByProject == nil {
-				s.ByProject = map[string]ProjectStat{}
+			if s.ByBoard == nil {
+				s.ByBoard = map[string]BoardStat{}
 			}
-			ps := s.ByProject[it.Source]
+			ps := s.ByBoard[it.Source]
 			if it.Done {
 				ps.Done++
 			} else {
 				ps.Open++
 			}
-			s.ByProject[it.Source] = ps
+			s.ByBoard[it.Source] = ps
 		}
 	}
 

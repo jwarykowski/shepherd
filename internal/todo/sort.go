@@ -36,8 +36,8 @@ func dueKey(d string) string {
 	return d
 }
 
-// less is the shared item ordering: overdue pinned first, then soonest due,
-// with category-then-priority (or priority-then-category when byPrio) between.
+// less is the shared item ordering: overdue pinned first, then
+// category-then-priority (or priority-then-category when byPrio), then soonest due.
 func less(a, b Item, byPrio bool) bool {
 	if pa, pb := Pinned(a), Pinned(b); pa != pb {
 		return pa
@@ -63,7 +63,7 @@ func Sort(items []Item, byPrio bool) {
 	sort.SliceStable(items, func(i, j int) bool { return less(items[i], items[j], byPrio) })
 }
 
-// SortBySource orders items by Source first (the global project view), then by
+// SortBySource orders items by Source first (the global board view), then by
 // the shared intra-group order, so each board's items stay contiguous.
 func SortBySource(items []Item) {
 	sort.SliceStable(items, func(i, j int) bool {

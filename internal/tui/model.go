@@ -20,10 +20,11 @@ import (
 )
 
 const (
-	appSubtitle = "your todos herded"
-	padX        = 2
-	padY        = 1
-	noteHeight  = 5 // visible rows in the note textarea editor
+	appName    = "shepherd"
+	appEmoji   = "𓋾"
+	padX       = 2
+	padY       = 1
+	noteHeight = 5 // visible rows in the note textarea editor
 )
 
 type config struct {
@@ -97,10 +98,8 @@ func loadConfig(path string) config {
 	return c
 }
 
-// saveConfig writes the known config keys back to config.toml. It rewrites
-// managed keys in place and keeps every other line (comments, blanks, unknown
-// keys) verbatim, so user annotations survive a settings change. Managed keys
-// absent from the file are appended.
+// saveConfig writes the managed config keys to config.toml. shepherd owns the
+// file (every key has a settings-UI control), so it's a plain rewrite.
 func saveConfig(path string, c config) error {
 	den := "compact"
 	if c.density == comfort {
@@ -113,41 +112,12 @@ func saveConfig(path string, c config) error {
 		}
 		return "[" + strings.Join(q, ", ") + "]"
 	}
-	// Ordered so appended-when-missing keys keep a stable, readable layout.
-	managed := []struct{ key, val string }{
-		{"view", fmt.Sprintf("%q", viewName[c.view])},
-		{"density", fmt.Sprintf("%q", den)},
-		{"autosave", strconv.Itoa(c.autosave)},
-		{"categories", list(c.categories)},
-		{"statuses", list(c.statuses)},
-	}
-	want := make(map[string]string, len(managed))
-	for _, m := range managed {
-		want[m.key] = m.val
-	}
-
-	existing, _ := os.ReadFile(path)
-	emitted := map[string]bool{}
 	var b strings.Builder
-	if len(existing) > 0 {
-		for _, ln := range strings.Split(strings.TrimRight(string(existing), "\n"), "\n") {
-			trimmed := strings.TrimSpace(ln)
-			if k, _, ok := strings.Cut(trimmed, "="); ok {
-				key := strings.TrimSpace(k)
-				if v, managed := want[key]; managed && !emitted[key] {
-					fmt.Fprintf(&b, "%s = %s\n", key, v)
-					emitted[key] = true
-					continue
-				}
-			}
-			b.WriteString(ln + "\n")
-		}
-	}
-	for _, m := range managed {
-		if !emitted[m.key] {
-			fmt.Fprintf(&b, "%s = %s\n", m.key, m.val)
-		}
-	}
+	fmt.Fprintf(&b, "view = %q\n", viewName[c.view])
+	fmt.Fprintf(&b, "density = %q\n", den)
+	fmt.Fprintf(&b, "autosave = %d\n", c.autosave)
+	fmt.Fprintf(&b, "categories = %s\n", list(c.categories))
+	fmt.Fprintf(&b, "statuses = %s\n", list(c.statuses))
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
@@ -190,11 +160,13 @@ const (
 	modeDetail
 	modeHelp
 	modeArchive
-	modeProjects
+	modeBoards
 	modeSettings
 	modeSettingEdit
-	modeProjectNew
-	modeProjectRename
+	modeBoardNew
+	modeBoardDir    // capture/edit a board's working dir (creation, or 'e' in the detail view)
+	modeBoardDetail // board detail: name, dir, source + archive paths, counts
+	modeBoardRename
 	modeConfirmDelete
 )
 
@@ -227,10 +199,10 @@ const (
 	viewCategory viewMode = iota // grouped under category headers
 	viewPriority                 // grouped under priority headers
 	viewTable                    // flat bubbles/table
-	viewProject                  // grouped by source board (global view only)
+	viewBoard                    // grouped by source board (global view only)
 )
 
-var viewName = map[viewMode]string{viewCategory: "category", viewPriority: "priority", viewTable: "table", viewProject: "project"}
+var viewName = map[viewMode]string{viewCategory: "category", viewPriority: "priority", viewTable: "table", viewBoard: "board"}
 
 type model struct {
 	path          string
@@ -260,11 +232,13 @@ type model struct {
 	statuses      []string      // configured statuses, ordered, "done" last (Tab-cycle in list)
 	density       density       // spacing mode
 	global        bool          // read-only aggregate across all boards
-	project       string        // the board to return to when leaving global
-	projRows      []store.Board // board list for the picker (modeProjects)
+	board         string        // the board to return to when leaving global
+	projRows      []store.Board // board list for the picker (modeBoards)
 	projCur       int           // cursor into projRows
 	projArchived  bool          // picker is showing archived boards (unarchive-only)
 	projNotice    string        // transient picker error (e.g. invalid/duplicate board name)
+	projPending   string        // board whose working dir is being set (modeBoardDir)
+	projDirEdit   bool          // dir editor opened from the detail view (empty clears, return to detail); false = creation flow (empty skips)
 	settingsCur   int           // cursor into the settings rows (modeSettings)
 }
 
@@ -282,7 +256,7 @@ func (m model) currentConfig() config {
 
 // resort orders items for the active view.
 func (m *model) resort() {
-	if m.view == viewProject {
+	if m.view == viewBoard {
 		todo.SortBySource(m.items)
 		return
 	}
@@ -312,19 +286,19 @@ func (m *model) refreshDirty() { m.dirty = fingerprint(m.items) != m.saved }
 // 100 is plenty for a todo list; raise if anyone ever hits it.
 const histCap = 100
 
-// newModel builds the initial board for the given project ("" = default).
-func newModel(project string) model {
+// newModel builds the initial board for the given board ("" = default).
+func newModel(board string) model {
 	ti := textinput.New()
 	ti.Prompt = "› "
 	na := textarea.New()
 	na.ShowLineNumbers = false
 	na.Prompt = ""
 	na.CharLimit = 0 // notes can be long
-	p := store.TodoPathFor(project)
+	p := store.TodoPathFor(board)
 	cfg := loadConfig(store.ConfigPath())
 	m := model{
 		path:          p,
-		project:       project,
+		board:         board,
 		items:         store.Load(p),
 		archived:      store.Load(store.ArchivePath(p)),
 		input:         ti,
@@ -342,12 +316,12 @@ func newModel(project string) model {
 }
 
 // loadGlobal replaces the model's items with the read-only aggregate across
-// every board, grouped by project. Shared by --all launch and the A toggle.
+// every board, grouped by board. Shared by --all launch and the A toggle.
 func (m *model) loadGlobal() {
 	m.global = true
 	m.items = store.LoadAll()
 	m.archived = nil
-	m.view = viewProject
+	m.view = viewBoard
 	m.lastMod = store.BoardsLatestMod()
 	m.past, m.future = nil, nil
 	m.resort()
@@ -361,7 +335,7 @@ func (m *model) loadGlobal() {
 // reloads that board fresh from disk.
 func (m *model) toggleGlobal() {
 	if m.global {
-		nm := newModel(m.project)
+		nm := newModel(m.board)
 		nm.filter, nm.w, nm.height, nm.density = m.filter, m.w, m.height, m.density
 		nm.clamp()
 		*m = nm
@@ -373,10 +347,10 @@ func (m *model) toggleGlobal() {
 	m.loadGlobal()
 }
 
-// Run builds the board for a project (or the global view), applies an initial
+// Run builds the board for a board (or the global view), applies an initial
 // filter, and runs it to exit.
-func Run(filter, project string, global bool) error {
-	m := newModel(project)
+func Run(filter, board string, global bool) error {
+	m := newModel(board)
 	if global {
 		m.loadGlobal()
 	}

@@ -50,34 +50,35 @@ func pinToday(t *testing.T, iso string) {
 	t.Cleanup(func() { todo.Today = func() string { return time.Now().Format("2006-01-02") } })
 }
 
-// TestProjectsPickerJump checks p opens the board picker and enter jumps to the
+// TestBoardsPickerJump checks b opens the board picker and enter jumps to the
 // selected board, rebuilding the model against that board's file.
-func TestProjectsPickerJump(t *testing.T) {
+func TestBoardsPickerJump(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", "")
 	t.Setenv("SHEPHERD_TODO_FILE", "")
-	t.Setenv("SHEPHERD_PROJECT", "")
+	t.Setenv("SHEPHERD_BOARD", "")
+	t.Setenv("SHEPHERD_CONFIG", "") // else config/boards writes hit the real config dir
 	base := filepath.Join(home, ".config", "shepherd")
-	if err := os.MkdirAll(filepath.Join(base, "projects"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(base, "boards"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	_ = os.WriteFile(filepath.Join(base, "todo.md"), []byte("- [ ] alpha\n"), 0o644)
-	_ = os.WriteFile(filepath.Join(base, "projects", "web.md"), []byte("- [ ] beta\n"), 0o644)
+	_ = os.WriteFile(filepath.Join(base, "boards", "web.md"), []byte("- [ ] beta\n"), 0o644)
 
-	m := model{path: filepath.Join(base, "todo.md"), project: "", input: textinput.New(),
+	m := model{path: filepath.Join(base, "todo.md"), board: "", input: textinput.New(),
 		items: store.Load(filepath.Join(base, "todo.md"))}
 
-	m = drive(m, "p") // open picker
-	if m.mode != modeProjects {
-		t.Fatalf("p did not open picker, mode=%d", m.mode)
+	m = drive(m, "b") // open picker
+	if m.mode != modeBoards {
+		t.Fatalf("b did not open picker, mode=%d", m.mode)
 	}
 	if len(m.projRows) != 2 || m.projCur != 0 {
 		t.Fatalf("picker rows/cursor wrong: rows=%d cur=%d", len(m.projRows), m.projCur)
 	}
 	m = drive(m, "j", "enter") // select web, jump
-	if m.project != "web" || m.mode != modeList {
-		t.Fatalf("jump failed: project=%q mode=%d", m.project, m.mode)
+	if m.board != "web" || m.mode != modeList {
+		t.Fatalf("jump failed: board=%q mode=%d", m.board, m.mode)
 	}
 	if len(m.items) != 1 || m.items[0].Text != "beta" {
 		t.Fatalf("did not load web board: %+v", m.items)
@@ -150,33 +151,34 @@ func TestSettingsEditor(t *testing.T) {
 	}
 }
 
-// TestProjectPickerActions checks archive and delete from the picker act on the
+// TestBoardPickerActions checks archive and delete from the picker act on the
 // selected board and refresh the list.
-func TestProjectPickerActions(t *testing.T) {
+func TestBoardPickerActions(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", "")
 	t.Setenv("SHEPHERD_TODO_FILE", "")
-	t.Setenv("SHEPHERD_PROJECT", "")
+	t.Setenv("SHEPHERD_BOARD", "")
+	t.Setenv("SHEPHERD_CONFIG", "") // else config/boards writes hit the real config dir
 	base := filepath.Join(home, ".config", "shepherd")
-	if err := os.MkdirAll(filepath.Join(base, "projects"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(base, "boards"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	_ = os.WriteFile(filepath.Join(base, "todo.md"), []byte("- [ ] a\n"), 0o644)
-	_ = os.WriteFile(filepath.Join(base, "projects", "web.md"), []byte("- [ ] b\n"), 0o644)
-	_ = os.WriteFile(filepath.Join(base, "projects", "api.md"), []byte("- [ ] c\n"), 0o644)
+	_ = os.WriteFile(filepath.Join(base, "boards", "web.md"), []byte("- [ ] b\n"), 0o644)
+	_ = os.WriteFile(filepath.Join(base, "boards", "api.md"), []byte("- [ ] c\n"), 0o644)
 
 	// current board = default; picker rows: default, api, web
-	m := model{path: filepath.Join(base, "todo.md"), project: "", input: textinput.New(),
+	m := model{path: filepath.Join(base, "todo.md"), board: "", input: textinput.New(),
 		items: store.Load(filepath.Join(base, "todo.md"))}
 
 	// archive: move cursor to api (row 1) and press A
-	m = drive(m, "p", "j", "A")
+	m = drive(m, "b", "j", "A")
 	if _, err := os.Stat(store.TodoPathFor("api")); err == nil {
 		t.Fatal("A did not archive the selected board")
 	}
-	if _, err := os.Stat(filepath.Join(base, "projects", "archived", "api.md")); err != nil {
-		t.Fatal("archived file not in projects/archived/")
+	if _, err := os.Stat(filepath.Join(base, "boards", "archived", "api.md")); err != nil {
+		t.Fatal("archived file not in boards/archived/")
 	}
 	if len(m.projRows) != 2 { // default, web
 		t.Fatalf("picker not refreshed after archive: %+v", m.projRows)
@@ -191,12 +193,18 @@ func TestProjectPickerActions(t *testing.T) {
 		t.Fatalf("expected only default left, got %+v", m.projRows)
 	}
 
-	// create: press a, type a name, enter
+	// create: press a, type a name, enter → board made, then prompts for a dir
 	m = drive(m, "a")
 	m.input.SetValue("fresh")
 	m = drive(m, "enter")
 	if _, err := os.Stat(store.TodoPathFor("fresh")); err != nil {
 		t.Fatal("a+enter did not create the board")
+	}
+	// dir step: type a working dir, enter → saved and picker lands on the board
+	m.input.SetValue("/tmp/fresh-src")
+	m = drive(m, "enter")
+	if got := store.BoardDir("fresh"); got != "/tmp/fresh-src" {
+		t.Fatalf("board dir not saved: %q", got)
 	}
 	if len(m.projRows) != 2 || m.projRows[m.projCur].Name != "fresh" {
 		t.Fatalf("picker not refreshed onto new board: cur=%d rows=%+v", m.projCur, m.projRows)
@@ -214,25 +222,26 @@ func TestProjectPickerActions(t *testing.T) {
 	}
 }
 
-// TestProjectUnarchive archives a board, toggles the picker to the archived view
+// TestBoardUnarchive archives a board, toggles the picker to the archived view
 // with e, and restores it with u.
-func TestProjectUnarchive(t *testing.T) {
+func TestBoardUnarchive(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", "")
 	t.Setenv("SHEPHERD_TODO_FILE", "")
-	t.Setenv("SHEPHERD_PROJECT", "")
+	t.Setenv("SHEPHERD_BOARD", "")
+	t.Setenv("SHEPHERD_CONFIG", "") // else config/boards writes hit the real config dir
 	base := filepath.Join(home, ".config", "shepherd")
-	if err := os.MkdirAll(filepath.Join(base, "projects"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(base, "boards"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	_ = os.WriteFile(filepath.Join(base, "todo.md"), []byte("- [ ] a\n"), 0o644)
-	_ = os.WriteFile(filepath.Join(base, "projects", "web.md"), []byte("- [ ] b\n"), 0o644)
+	_ = os.WriteFile(filepath.Join(base, "boards", "web.md"), []byte("- [ ] b\n"), 0o644)
 
-	m := model{path: filepath.Join(base, "todo.md"), project: "", input: textinput.New()}
+	m := model{path: filepath.Join(base, "todo.md"), board: "", input: textinput.New()}
 
 	// archive web (row 1), then toggle to the archived view with e
-	m = drive(m, "p", "j", "A", "e")
+	m = drive(m, "b", "j", "A", "e")
 	if !m.projArchived || len(m.projRows) != 1 || m.projRows[0].Name != "web" {
 		t.Fatalf("archived view not showing web: archived=%v rows=%+v", m.projArchived, m.projRows)
 	}
@@ -244,7 +253,7 @@ func TestProjectUnarchive(t *testing.T) {
 	if _, err := os.Stat(store.TodoPathFor("web")); err != nil {
 		t.Fatal("u did not restore the board file")
 	}
-	if _, err := os.Stat(filepath.Join(base, "projects", "archived", "web.md")); err == nil {
+	if _, err := os.Stat(filepath.Join(base, "boards", "archived", "web.md")); err == nil {
 		t.Fatal("archived copy still present after unarchive")
 	}
 }
@@ -485,7 +494,7 @@ func TestQuitKeys(t *testing.T) {
 		_, cmd := m.Update(key(s))
 		return cmd != nil && cmd() == tea.Quit()
 	}
-	for _, mode := range []mode{modeList, modeDetail, modeHelp, modeArchive, modeProjects, modeSettings, modeConfirmDelete} {
+	for _, mode := range []mode{modeList, modeDetail, modeHelp, modeArchive, modeBoards, modeSettings, modeConfirmDelete} {
 		if !isQuit(model{input: textinput.New()}, mode, "q") {
 			t.Errorf("q did not quit from mode %d", mode)
 		}
@@ -542,8 +551,8 @@ func TestView(t *testing.T) {
 	nm, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")})
 	m = nm.(model)
 	v := m.View()
-	if !strings.Contains(v, appSubtitle) {
-		t.Fatal("subtitle missing")
+	if !strings.Contains(v, appName) {
+		t.Fatal("brand missing")
 	}
 	if !strings.Contains(v, strings.Repeat("┈", 46)) { // 50 - 2*padX
 		t.Fatal("divider not inner width")
@@ -577,15 +586,15 @@ func TestListScroll(t *testing.T) {
 }
 
 func TestFilterFarRight(t *testing.T) {
-	m := model{input: textinput.New(), w: 60, height: 10, filter: "bank",
+	m := model{input: textinput.New(), w: 80, height: 10, filter: "bank",
 		items: []todo.Item{{Text: "call bank"}}}
 	head := m.header()
 	first := strings.SplitN(head, "\n", 2)[0]
-	if !strings.Contains(first, appSubtitle) || !strings.Contains(first, "/bank") || !strings.Contains(first, "0/1") || !strings.HasSuffix(first, "● saved") {
+	if !strings.Contains(first, appName) || !strings.Contains(first, "/bank") || !strings.Contains(first, "0/1") || !strings.HasSuffix(first, "● saved") {
 		t.Fatalf("header layout wrong: %q", first)
 	}
-	if lipgloss.Width(first) != 56 { // 60 - 2*padX
-		t.Fatalf("header line width = %d, want 56", lipgloss.Width(first))
+	if lipgloss.Width(first) != 76 { // 80 - 2*padX
+		t.Fatalf("header line width = %d, want 76", lipgloss.Width(first))
 	}
 }
 
@@ -727,6 +736,38 @@ func TestArchive(t *testing.T) {
 	arch, err := os.ReadFile(filepath.Join(dir, "archive.md"))
 	if err != nil || !strings.Contains(string(arch), "done one") {
 		t.Fatalf("archive.md missing done item: %q err=%v", arch, err)
+	}
+}
+
+// C archives just the item under the cursor (any status), leaving the rest.
+func TestArchiveSelected(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "todo.md")
+	_ = os.WriteFile(p, []byte("- [ ] first\n- [ ] second\n"), 0o644)
+	m := model{path: p, input: textinput.New(), items: store.Load(p)}
+	m = drive(m, "j", "C") // cursor onto "second", archive it
+	if len(m.items) != 1 || m.items[0].Text != "first" {
+		t.Fatalf("C left wrong items: %+v", m.items)
+	}
+	arch, err := os.ReadFile(filepath.Join(dir, "archive.md"))
+	if err != nil || !strings.Contains(string(arch), "second") {
+		t.Fatalf("archive.md missing selected item: %q err=%v", arch, err)
+	}
+}
+
+// C is a no-op on a subtask row: the archive holds whole items only.
+func TestArchiveSelectedSkipsSubtask(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "todo.md")
+	m := model{path: p, input: textinput.New(), items: []todo.Item{
+		{Text: "parent", Subs: []todo.Item{{Text: "child"}}},
+	}}
+	m = drive(m, "j", "C") // cursor on the subtask row
+	if len(m.items) != 1 || len(m.items[0].Subs) != 1 {
+		t.Fatalf("C on a subtask must not archive: %+v", m.items)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "archive.md")); err == nil {
+		t.Fatal("C on a subtask wrote to the archive")
 	}
 }
 
@@ -879,8 +920,8 @@ func TestRenderAllViews(t *testing.T) {
 	for _, v := range []viewMode{viewCategory, viewPriority, viewTable} {
 		m := base
 		m.view = v
-		if !strings.Contains(m.View(), appSubtitle) {
-			t.Errorf("view %d missing subtitle", v)
+		if !strings.Contains(m.View(), appName) {
+			t.Errorf("view %d missing brand", v)
 		}
 	}
 	dm := base
@@ -955,11 +996,30 @@ func TestOverdueGroupLabel(t *testing.T) {
 	}
 }
 
+func TestStatusCycleAndDoneToggle(t *testing.T) {
+	newModel := func() model {
+		return model{input: textinput.New(), note: textarea.New(), w: 50, height: 24,
+			statuses: []string{"open", "in-progress", "done"}, cursor: 0,
+			items: []todo.Item{{Text: "deploy"}}}
+	}
+	// space toggles done on any item
+	nm, _ := newModel().updateList(key(" "))
+	if got := nm.(model).items[0]; !got.Done {
+		t.Fatalf("space did not toggle done: %+v", got)
+	}
+	// tab advances the configured status order: open → in-progress (fresh model,
+	// since updateList mutates the shared items backing array in place)
+	next, _ := newModel().updateList(key("tab"))
+	if got := next.(model).items[0].Status; got != "in-progress" {
+		t.Fatalf("tab did not advance to in-progress: %q", got)
+	}
+}
+
 func TestGlobalReadOnly(t *testing.T) {
 	m := model{
 		input:  textinput.New(),
 		global: true,
-		view:   viewProject,
+		view:   viewBoard,
 		items: []todo.Item{
 			{Text: "a", Source: "default"},
 			{Text: "b", Source: "web"},
@@ -972,38 +1032,33 @@ func TestGlobalReadOnly(t *testing.T) {
 		t.Fatal("space toggled done in read-only global view")
 	}
 
-	// v cycles through all 4 modes back to project
-	if got := drive(m, "v", "v", "v", "v"); got.view != viewProject {
-		t.Fatalf("v cycle did not return to project after 4 steps: %v", got.view)
+	// v cycles through all 4 modes back to board
+	if got := drive(m, "v", "v", "v", "v"); got.view != viewBoard {
+		t.Fatalf("v cycle did not return to board after 4 steps: %v", got.view)
 	}
 
 	// items group by source; header id/label is the board name
 	if id, label := m.groupOf(m.items[0]); id != "sdefault" || label != "default" {
-		t.Fatalf("project group wrong: %q %q", id, label)
+		t.Fatalf("board group wrong: %q %q", id, label)
 	}
 	if d, tot := m.groupCount(m.items[1]); d != 0 || tot != 1 {
-		t.Fatalf("project group count wrong: %d/%d", d, tot)
+		t.Fatalf("board group count wrong: %d/%d", d, tot)
 	}
 }
 
-// TestSaveConfigPreservesComments checks saveConfig keeps user comments and
-// unknown keys while rewriting managed keys in place.
-func TestSaveConfigPreservesComments(t *testing.T) {
+// TestSaveConfigRoundTrip checks saveConfig writes the managed keys so
+// loadConfig reads them back unchanged.
+func TestSaveConfigRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.toml")
-	if err := os.WriteFile(path, []byte("# my notes\nview = \"table\"\n# keep me\ncustom = 1\n"), 0o644); err != nil {
+	want := config{view: viewTable, density: comfort, autosave: 30, categories: []string{"work"}, statuses: []string{"open", "done"}}
+	if err := saveConfig(path, want); err != nil {
 		t.Fatal(err)
 	}
-	if err := saveConfig(path, loadConfig(path)); err != nil {
-		t.Fatal(err)
+	got := loadConfig(path)
+	if got.view != want.view || got.density != want.density || got.autosave != want.autosave {
+		t.Fatalf("scalar keys round-trip wrong: %+v", got)
 	}
-	b, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	s := string(b)
-	for _, want := range []string{"# my notes", "# keep me", "custom = 1", `view = "table"`} {
-		if !strings.Contains(s, want) {
-			t.Fatalf("saveConfig dropped %q:\n%s", want, s)
-		}
+	if strings.Join(got.categories, ",") != "work" || strings.Join(got.statuses, ",") != "open,done" {
+		t.Fatalf("list keys round-trip wrong: %+v", got)
 	}
 }

@@ -41,10 +41,8 @@ func main() {
 
 	flag.Usage = func() { fmt.Fprintln(os.Stderr, cli.Usage()) }
 	filter := flag.String("filter", os.Getenv("SHEPHERD_FILTER"), "start with this filter applied (matches text/note/category/due)")
-	project := flag.String("project", "", "open this project's board (else $SHEPHERD_PROJECT, else the default)")
+	board := flag.String("board", "", "open this board's board (else $SHEPHERD_BOARD, else the default)")
 	all := flag.Bool("all", false, "open the read-only global view across all boards")
-	stats := flag.Bool("stats", false, "print board stats and exit")
-	legend := flag.Bool("legend", false, "explain each stats chart and exit")
 	ver := flag.Bool("version", false, "print the version and exit")
 	flag.Parse()
 
@@ -53,21 +51,6 @@ func main() {
 		return
 	}
 
-	// --legend is static glossary text — print it regardless of --stats/--all.
-	if *legend {
-		os.Exit(cli.Run("stats", []string{"--legend"}))
-	}
-
-	if *stats {
-		var a []string
-		if *all {
-			a = append(a, "--all")
-		}
-		if *project != "" {
-			a = append(a, "--project", *project)
-		}
-		os.Exit(cli.Run("stats", a))
-	}
 	// The interactive board needs a real terminal on both ends. When either
 	// stdin or stdout is redirected (piped, cron, CI), degrade gracefully to the
 	// help text and point at the command API instead of letting Bubble Tea crash.
@@ -79,7 +62,7 @@ func main() {
 
 	tui.Version = version()
 
-	name, err := store.ResolveProject(*project)
+	name, err := store.ResolveBoard(*board)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "shepherd:", err)
 		os.Exit(2)

@@ -6,7 +6,7 @@ format.
 
 - `shepherd list --json` — read all items (machine-readable; prefer this)
 - `shepherd list --all --json` — read across every board; adds a `project` field per item
-- `shepherd watch [--interval <dur>]` — stream this board's changes as NDJSON until killed: a `snapshot` line, then `added`/`updated`/`removed` events keyed by item id (item shape = `list --json`). React without polling
+- `shepherd watch [--interval <dur>]` — stream this board's changes as NDJSON until killed: a `snapshot` line, then `added`/`updated`/`removed`/`archived` events keyed by item id (item shape = `list --json`). `archived` is a vanished item that landed in the archive (terminal, distinct from `removed`). React without polling
 - `shepherd projects [--json] [--archived]` — list boards with done/total counts (`--archived` lists archived boards instead); JSON marks the current board with `"current": true`
 - `shepherd project rename <old> <new>` / `archive <name>` / `unarchive <name>` / `delete <name> --force [--dry-run]` — whole-board actions (default board is not renamable/deletable/archivable; archive stashes under `projects/archived/`)
 - `shepherd stats [--json] [--all] [--legend]` — board metrics (charts, or `--json` numbers; `--legend` explains each chart)
@@ -15,6 +15,7 @@ format.
 - `shepherd edit <ref> "<tokens>" [--json]` — merge tokens onto an item (or subtask); only the given fields change. Tokens: `@category`, `!prio`, `due:`, `defer:`, `link:`, `status:`, `note:`, and text. A bare key clears its field; `note:` takes the rest of the line
 - `shepherd list --filter <q>` — list only matching items (text/note/category/due/defer/link), keeping their real indexes for done/rm
 - `shepherd done <ref>... [--json]` / `shepherd undone <ref>...` — (un)complete one or more items/subtasks
+- `shepherd archive <ref>... [--json]` — move whole items off the live board into the sibling `archive.md` (per-item counterpart to whole-board `project archive`); subtasks can't be archived alone
 - `shepherd rm <ref>... [--dry-run] [--json]` — remove one or more items/subtasks (`--dry-run`/`-n` previews without writing)
 
 `edit` is the single setter for every field — status, note, category, priority,
@@ -35,10 +36,10 @@ stdout.
 
 Quick-add tokens (shared by `add`, `sub`, `edit`): `@category`, `!h`/`!m`/`!l`
 priority, `due:<today|tomorrow|+3d|15-07-2026>`, `defer:<same date forms>`
-(start/defer date), `link:<url>`, `status:<name>`, and `note:<text>` (holds
-spaces, takes the rest of the line — put it last). `list --json` reports `id`
-(the stable handle), `completed` (done timestamp), `defer`, `link`, and `status`
-per item.
+(start/defer date), `link:<url>`, `status:<name>`,
+and `note:<text>` (holds spaces, takes the rest of the line — put it last).
+`list --json` reports `id` (the stable handle), `completed` (done timestamp),
+`defer`, `link`, and `status` per item.
 
 Subtasks nest one level under an item. `list --json` puts them in each item's
 `subtasks` array (1-based within the parent); address them by id or as `n.m`. Completion

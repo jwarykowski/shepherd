@@ -31,6 +31,7 @@ Run `shepherd help` for the authoritative command list. Summary:
 | `shepherd edit <ref> "<tokens>" [--json]` | the single setter — merge @category/!prio/due:/defer:/link:/status:/note:/text onto an item (or subtask); bare key clears, note: takes the rest |
 | `shepherd done <ref>... [--json]` / `undone <ref>...` | (un)complete one or more items/subtasks (shorthand for `edit … status:done`/`status:open`) |
 | `shepherd rm <ref>... [--dry-run] [--json]` | remove one or more items/subtasks (`--dry-run`/`-n` previews) |
+| `shepherd archive <ref>... [--json]` | move whole items off the board into `archive.md` (subtasks can't be archived alone) |
 
 A `<ref>` is either an item's **stable id** (the `id` field from `list --json`)
 or its 1-based index. **Prefer the id**: the index shifts whenever the board

@@ -24,13 +24,13 @@ var (
 	subMetaRE = regexp.MustCompile(`^    (id|created|completed|defer|note|category|due|link|status): (.*)$`)
 )
 
-// projectRE is the allowed project-name slug. Anchored and free of path
-// separators or dots-only names, so a project can never escape BaseDir.
-var projectRE = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]*$`)
+// boardRE is the allowed board-name slug. Anchored and free of path
+// separators or dots-only names, so a board can never escape BaseDir.
+var boardRE = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]*$`)
 
 // BaseDir is where every board lives: $XDG_CONFIG_HOME/shepherd, else
 // ~/.config/shepherd (the XDG default). shepherd does not follow
-// $HERDR_PLUGIN_STATE_DIR, so the default and all project boards stay in one
+// $HERDR_PLUGIN_STATE_DIR, so the default and all board boards stay in one
 // dotfiles-syncable directory.
 func BaseDir() string {
 	if x := os.Getenv("XDG_CONFIG_HOME"); x != "" {
@@ -46,42 +46,42 @@ func todoFileOverride() string {
 	return os.Getenv("SHEPHERD_TODO_FILE")
 }
 
-// ResolveProject picks the effective project name: the flag if non-empty, else
-// $SHEPHERD_PROJECT, else "". A non-empty name must be a safe slug — this is
+// ResolveBoard picks the effective board name: the flag if non-empty, else
+// $SHEPHERD_BOARD, else "". A non-empty name must be a safe slug — this is
 // the one validation point, so the env path can't smuggle path traversal.
-func ResolveProject(flag string) (string, error) {
+func ResolveBoard(flag string) (string, error) {
 	name := flag
 	if name == "" {
-		name = os.Getenv("SHEPHERD_PROJECT")
+		name = os.Getenv("SHEPHERD_BOARD")
 	}
-	if name != "" && !projectRE.MatchString(name) {
-		return "", fmt.Errorf("invalid project name %q (use letters, digits, . _ -)", name)
+	if name != "" && !boardRE.MatchString(name) {
+		return "", fmt.Errorf("invalid board name %q (use letters, digits, . _ -)", name)
 	}
 	return name, nil
 }
 
-// TodoPathFor resolves the todo file for a (validated) project. The override
-// wins; else an empty project is the default todo.md and a named project is
-// projects/<name>.md — both under BaseDir.
+// TodoPathFor resolves the todo file for a (validated) board. The override
+// wins; else an empty board is the default todo.md and a named board is
+// boards/<name>.md — both under BaseDir.
 //
-// a future "global view" would glob BaseDir()/projects/*.md
+// a future "global view" would glob BaseDir()/boards/*.md
 // (skipping *-archive.md).
-func TodoPathFor(project string) string {
+func TodoPathFor(board string) string {
 	if p := todoFileOverride(); p != "" {
 		return p
 	}
-	if project != "" {
-		return filepath.Join(BaseDir(), "projects", project+".md")
+	if board != "" {
+		return filepath.Join(BaseDir(), "boards", board+".md")
 	}
 	return filepath.Join(BaseDir(), "todo.md")
 }
 
-// TodoPath resolves the default todo file (no project).
+// TodoPath resolves the default todo file (no board).
 func TodoPath() string { return TodoPathFor("") }
 
 // ConfigPath resolves the shared config file: $SHEPHERD_CONFIG, else a sibling
 // of the whole-file override if one is set, else BaseDir/config.toml. It stays
-// at BaseDir for project boards so every board shares one config.
+// at BaseDir for board boards so every board shares one config.
 func ConfigPath() string {
 	if p := os.Getenv("SHEPHERD_CONFIG"); p != "" {
 		return p
@@ -126,7 +126,7 @@ func ConfigStatusOrder() []string {
 }
 
 // ArchivePath is the archive sibling of the todo file: todo.md -> archive.md,
-// projects/web.md -> projects/web-archive.md.
+// boards/web.md -> boards/web-archive.md.
 func ArchivePath(todoFile string) string {
 	dir := filepath.Dir(todoFile)
 	base := strings.TrimSuffix(filepath.Base(todoFile), ".md")
@@ -140,33 +140,35 @@ func ArchivePath(todoFile string) string {
 type Board struct {
 	Name string
 	Path string
+	Dir  string // optional working directory (see boarddir.go); "" if unset
 }
 
 // Boards lists the default board (if its file exists) then each
-// projects/<name>.md, skipping archive siblings. filepath.Glob returns sorted
-// paths, so the projects come out alphabetical.
+// boards/<name>.md, skipping archive siblings. filepath.Glob returns sorted
+// paths, so the boards come out alphabetical.
 func Boards() []Board {
+	dirs := loadBoardDirs()
 	var bs []Board
 	def := filepath.Join(BaseDir(), "todo.md")
 	if _, err := os.Stat(def); err == nil {
-		bs = append(bs, Board{Name: "default", Path: def})
+		bs = append(bs, Board{Name: "default", Path: def, Dir: dirs["default"]})
 	}
-	matches, _ := filepath.Glob(filepath.Join(BaseDir(), "projects", "*.md"))
+	matches, _ := filepath.Glob(filepath.Join(BaseDir(), "boards", "*.md"))
 	for _, p := range matches {
 		name := strings.TrimSuffix(filepath.Base(p), ".md")
 		if strings.HasSuffix(name, "-archive") {
 			continue
 		}
-		bs = append(bs, Board{Name: name, Path: p})
+		bs = append(bs, Board{Name: name, Path: p, Dir: dirs[name]})
 	}
 	return bs
 }
 
-// ValidProject returns an error if name is not a safe project slug. Exported so
+// ValidBoard returns an error if name is not a safe board slug. Exported so
 // the TUI and CLI can validate a rename/unarchive target before touching files.
-func ValidProject(name string) error {
-	if name == "" || !projectRE.MatchString(name) {
-		return fmt.Errorf("invalid project name %q (use letters, digits, . _ -)", name)
+func ValidBoard(name string) error {
+	if name == "" || !boardRE.MatchString(name) {
+		return fmt.Errorf("invalid board name %q (use letters, digits, . _ -)", name)
 	}
 	return nil
 }
@@ -174,13 +176,13 @@ func ValidProject(name string) error {
 func fileExists(p string) bool { _, err := os.Stat(p); return err == nil }
 
 // archivedDir holds whole boards stashed by ArchiveBoard. Boards() never lists
-// it because its glob (projects/*.md) is non-recursive.
-func archivedDir() string { return filepath.Join(BaseDir(), "projects", "archived") }
+// it because its glob (boards/*.md) is non-recursive.
+func archivedDir() string { return filepath.Join(BaseDir(), "boards", "archived") }
 
-// CreateBoard creates a new, empty named project board. It refuses an invalid
+// CreateBoard creates a new, empty named board board. It refuses an invalid
 // name or one that already exists (live or archived).
 func CreateBoard(name string) error {
-	if err := ValidProject(name); err != nil {
+	if err := ValidBoard(name); err != nil {
 		return err
 	}
 	p := TodoPathFor(name)
@@ -196,13 +198,13 @@ func CreateBoard(name string) error {
 	return os.WriteFile(p, []byte{}, 0o644)
 }
 
-// RenameBoard renames a named project board and its archive sibling. It refuses
+// RenameBoard renames a named board board and its archive sibling. It refuses
 // the default board, an invalid target, a missing source, or an existing target.
 func RenameBoard(oldName, newName string) error {
 	if oldName == "" || oldName == "default" {
 		return fmt.Errorf("cannot rename the default board")
 	}
-	if err := ValidProject(newName); err != nil {
+	if err := ValidBoard(newName); err != nil {
 		return err
 	}
 	src, dst := TodoPathFor(oldName), TodoPathFor(newName)
@@ -224,7 +226,7 @@ func RenameBoard(oldName, newName string) error {
 	return nil
 }
 
-// DeleteBoard removes a named project board and its archive sibling. It refuses
+// DeleteBoard removes a named board board and its archive sibling. It refuses
 // the default board.
 func DeleteBoard(name string) error {
 	if name == "" || name == "default" {
@@ -244,7 +246,7 @@ func DeleteBoard(name string) error {
 }
 
 // ArchiveBoard moves a whole board (and its archive sibling) into
-// projects/archived/, hiding it from Boards(). Reversible via UnarchiveBoard.
+// boards/archived/, hiding it from Boards(). Reversible via UnarchiveBoard.
 func ArchiveBoard(name string) error {
 	if name == "" || name == "default" {
 		return fmt.Errorf("cannot archive the default board")
@@ -270,9 +272,9 @@ func ArchiveBoard(name string) error {
 }
 
 // UnarchiveBoard moves an archived board (and its archive sibling) back into
-// projects/, making it live again.
+// boards/, making it live again.
 func UnarchiveBoard(name string) error {
-	if err := ValidProject(name); err != nil {
+	if err := ValidBoard(name); err != nil {
 		return err
 	}
 	src := filepath.Join(archivedDir(), name+".md")
@@ -292,8 +294,8 @@ func UnarchiveBoard(name string) error {
 	return nil
 }
 
-// ArchivedBoards lists boards stashed under projects/archived/ (archive siblings
-// skipped), for the `project unarchive` listing.
+// ArchivedBoards lists boards stashed under boards/archived/ (archive siblings
+// skipped), for the `board unarchive` listing.
 func ArchivedBoards() []Board {
 	var bs []Board
 	matches, _ := filepath.Glob(filepath.Join(archivedDir(), "*.md"))
@@ -308,7 +310,7 @@ func ArchivedBoards() []Board {
 }
 
 // BoardCounts returns the open and total top-level item counts for a board file
-// (subtasks not counted), for the picker and `projects` listing.
+// (subtasks not counted), for the picker and `boards` listing.
 func BoardCounts(path string) (open, total int) {
 	items := Load(path)
 	for _, it := range items {

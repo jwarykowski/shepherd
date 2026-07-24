@@ -1,5 +1,5 @@
 // Package cli is shepherd's non-interactive command API, used by scripts and
-// agentic tools. It reuses store + todo, so the file format has a single owner.
+// other tools. It reuses store + todo, so the file format has a single owner.
 package cli
 
 import (
@@ -25,7 +25,7 @@ Usage:
 Read:
   list [--json] [--all] [--filter <t>]     list items (--all aggregates every board)
   watch [--interval <dur>]                 stream board changes as NDJSON until killed
-  projects [--json] [--archived]           list boards, done/total (--archived: archived)
+  boards [--json] [--archived]           list boards, done/total (--archived: archived)
   stats [--json] [--all] [--legend] [--no-color]  board metrics (charts, or --json numbers)
   schema                                   print the item JSON Schema (fields, enums, tokens)
   help                                     print this help
@@ -37,6 +37,7 @@ Items (ref = an item's stable id from 'list --json', or its 1-based index n;
   sub <ref> "<text>" [--json]  add a subtask
   edit <ref> "<toks>" [--json] merge tokens onto an item (bare key clears)
   done|undone <ref>... [--json] mark one or more (not) done
+  archive <ref>... [--json]    move whole items off the board into archive.md
   rm <ref>... [--dry-run] [--json]  remove one or more (--dry-run/-n previews)
 
   --json  echo the resulting item(s) as JSON (like 'list --json'), and report
@@ -47,13 +48,14 @@ Items (ref = an item's stable id from 'list --json', or its 1-based index n;
           status:<name>  note:<text> (takes the rest of the line)
 
 Boards (the default board can't be renamed/deleted/archived):
-  project rename <old> <new>
-  project archive <name>            stash under projects/archived/ (reversible)
-  project unarchive <name>          restore an archived board
-  project delete <name> --force [--dry-run]
+  board rename <old> <new>
+  board archive <name>            stash under boards/archived/ (reversible)
+  board unarchive <name>          restore an archived board
+  board delete <name> --force [--dry-run]
+  board dir <name> [<path>]       show/set a board's working directory
 
 Global flags (any command):
-  --project <name>  act on a project's board (or set $SHEPHERD_PROJECT)
+  --board <name>  act on a board's board (or set $SHEPHERD_BOARD)
   -q, --quiet       suppress state-change confirmation lines
   --no-input        never prompt (accepted for script-compat; this API never prompts)
   -h, --help        print a command's flags
@@ -61,8 +63,6 @@ Global flags (any command):
 Board flags (bare shepherd):
   --filter <text>   start pre-filtered
   --all             read-only view across all boards
-  --stats           print stats and exit
-  --legend          explain the stats charts and exit
   --version         print the version and exit
 
 Flags follow the verb. Indexes are 1-based, matching 'list' order.
@@ -75,13 +75,13 @@ func Usage() string { return cliUsage }
 // knownVerbs is the dispatch table, used both to route and to suggest a
 // correction for a mistyped verb. Version reporting is the `--version` board
 // flag (the clig standard), handled in main — not a subcommand here.
-var knownVerbs = []string{"help", "list", "watch", "projects", "project", "stats", "schema", "add", "sub", "edit", "done", "undone", "rm"}
+var knownVerbs = []string{"help", "list", "watch", "boards", "board", "stats", "schema", "add", "sub", "edit", "done", "undone", "archive", "rm"}
 
 // Run handles one command-API invocation and returns a process exit code.
 //
 // Each mutating verb runs its load→mutate→save under store.WithLock, so
 // parallel shepherd processes (e.g. multiple agents) serialise and can't lose
-// one another's edits. Reads (list/stats/projects) take no lock: Save's atomic
+// one another's edits. Reads (list/stats/boards) take no lock: Save's atomic
 // rename means a reader always sees a whole file.
 func Run(verb string, args []string) int {
 	if verb == "help" {
@@ -89,41 +89,43 @@ func Run(verb string, args []string) int {
 		return 0
 	}
 	args = extractGlobals(args)
-	flagVal, rest, err := extractProject(args)
+	flagVal, rest, err := extractBoard(args)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "shepherd:", err)
 		return 2
 	}
-	project, err := store.ResolveProject(flagVal)
+	board, err := store.ResolveBoard(flagVal)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "shepherd:", err)
 		return 2
 	}
 	switch verb {
 	case "list":
-		return cmdList(rest, project, os.Stdout)
+		return cmdList(rest, board, os.Stdout)
 	case "watch":
-		return cmdWatch(rest, project, os.Stdout)
-	case "projects":
-		return cmdProjects(rest, project, os.Stdout)
-	case "project":
-		return cmdProject(rest, os.Stdout)
+		return cmdWatch(rest, board, os.Stdout)
+	case "boards":
+		return cmdBoards(rest, board, os.Stdout)
+	case "board":
+		return cmdBoard(rest, os.Stdout)
 	case "stats":
-		return cmdStats(rest, project, os.Stdout)
+		return cmdStats(rest, board, os.Stdout)
 	case "schema":
 		return cmdSchema(rest, os.Stdout)
 	case "add":
-		return cmdAdd(rest, project, os.Stdout)
+		return cmdAdd(rest, board, os.Stdout)
 	case "sub":
-		return cmdSub(rest, project, os.Stdout)
+		return cmdSub(rest, board, os.Stdout)
 	case "edit":
-		return cmdEdit(rest, project, os.Stdout)
+		return cmdEdit(rest, board, os.Stdout)
 	case "done":
-		return cmdToggle(rest, project, true, os.Stdout)
+		return cmdToggle(rest, board, true, os.Stdout)
 	case "undone":
-		return cmdToggle(rest, project, false, os.Stdout)
+		return cmdToggle(rest, board, false, os.Stdout)
+	case "archive":
+		return cmdArchive(rest, board, os.Stdout)
 	case "rm":
-		return cmdRemove(rest, project, os.Stdout)
+		return cmdRemove(rest, board, os.Stdout)
 	default:
 		fmt.Fprintf(os.Stderr, "shepherd: unknown command %q\n", verb)
 		if s := suggest(verb); s != "" {
@@ -135,7 +137,7 @@ func Run(verb string, args []string) int {
 }
 
 // quiet suppresses state-change confirmation lines (clig -q/--quiet). It gates
-// only confirmations, never requested data (list/projects/stats output).
+// only confirmations, never requested data (list/boards/stats output).
 //
 // a process-lifetime global for a one-shot CLI — safe because each
 // invocation is its own process; extractGlobals resets it so repeated in-process
@@ -164,7 +166,7 @@ func extractGlobals(args []string) []string {
 }
 
 // extractDryRun pulls -n/--dry-run out of args (for the destructive verbs that
-// support a preview: rm and project delete).
+// support a preview: rm and board delete).
 func extractDryRun(args []string) (bool, []string) {
 	dry := false
 	rest := make([]string, 0, len(args))
@@ -278,29 +280,29 @@ func levenshtein(a, b string) int {
 	return prev[len(b)]
 }
 
-// extractProject pulls a --project <name> / --project=<name> flag out of args
+// extractBoard pulls a --board <name> / --board=<name> flag out of args
 // (flags follow the verb), returning its value and the remaining args. This
 // runs before the per-command FlagSets, which would reject it as unknown, and
 // before `add` joins its args into text. Last occurrence wins.
-func extractProject(args []string) (string, []string, error) {
-	project := ""
+func extractBoard(args []string) (string, []string, error) {
+	board := ""
 	rest := make([]string, 0, len(args))
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		switch {
-		case a == "--project":
+		case a == "--board":
 			if i+1 >= len(args) {
-				return "", nil, fmt.Errorf("--project needs a name")
+				return "", nil, fmt.Errorf("--board needs a name")
 			}
-			project = args[i+1]
+			board = args[i+1]
 			i++
-		case strings.HasPrefix(a, "--project="):
-			project = strings.TrimPrefix(a, "--project=")
+		case strings.HasPrefix(a, "--board="):
+			board = strings.TrimPrefix(a, "--board=")
 		default:
 			rest = append(rest, a)
 		}
 	}
-	return project, rest, nil
+	return board, rest, nil
 }
 
 // itemJSON is the machine-readable view agents read via `list --json`.
@@ -318,12 +320,12 @@ type itemJSON struct {
 	Due       string     `json:"due,omitempty"`   // ISO YYYY-MM-DD
 	Link      string     `json:"link,omitempty"`
 	Note      string     `json:"note,omitempty"`
-	Project   string     `json:"project,omitempty"`  // board name, only in --all
+	Board     string     `json:"board,omitempty"`    // board name, only in --all
 	Subtasks  []itemJSON `json:"subtasks,omitempty"` // Index is the 1-based position under the parent (n.m)
 }
 
 func toJSON(it todo.Item, idx int) itemJSON {
-	j := itemJSON{ID: it.ID, Index: idx, Done: it.Done, Status: it.Status, Text: it.Text, Category: it.Category, Created: it.Created, Completed: it.Completed, Defer: it.Defer, Due: it.Due, Link: it.Link, Note: it.Note, Project: it.Source}
+	j := itemJSON{ID: it.ID, Index: idx, Done: it.Done, Status: it.Status, Text: it.Text, Category: it.Category, Created: it.Created, Completed: it.Completed, Defer: it.Defer, Due: it.Due, Link: it.Link, Note: it.Note, Board: it.Source}
 	if it.Prio != 0 {
 		j.Priority = string(it.Prio)
 	}
@@ -347,7 +349,7 @@ func parseExit(err error) int {
 }
 
 // say writes a state-change confirmation, suppressed by -q/--quiet. Requested
-// data (list/projects/stats output) uses emit and is never suppressed.
+// data (list/boards/stats output) uses emit and is never suppressed.
 func say(w io.Writer, s string) {
 	if quiet {
 		return
@@ -355,7 +357,7 @@ func say(w io.Writer, s string) {
 	emit(w, s)
 }
 
-func cmdList(args []string, project string, w io.Writer) int {
+func cmdList(args []string, board string, w io.Writer) int {
 	fs := flag.NewFlagSet("list", flag.ContinueOnError)
 	asJSON := fs.Bool("json", false, "machine-readable JSON output")
 	all := fs.Bool("all", false, "aggregate items across every board (read-only)")
@@ -367,7 +369,7 @@ func cmdList(args []string, project string, w io.Writer) int {
 	if *all {
 		items = store.LoadAll()
 	} else {
-		items = store.Load(store.TodoPathFor(project))
+		items = store.Load(store.TodoPathFor(board))
 	}
 	// Match after loading so the printed index stays the item's real position
 	// on the board — the one done/rm expect. q is lowercased for todo.Match.
@@ -381,13 +383,7 @@ func cmdList(args []string, project string, w io.Writer) int {
 			}
 			out = append(out, toJSON(it, i+1))
 		}
-		b, err := json.MarshalIndent(out, "", "  ")
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "shepherd:", err)
-			return 1
-		}
-		emit(w, string(b))
-		return 0
+		return emitJSON(w, out)
 	}
 
 	if len(items) == 0 {
@@ -412,9 +408,9 @@ func cmdList(args []string, project string, w io.Writer) int {
 }
 
 // watchEvent is one NDJSON line in the change stream: a type and the item it
-// concerns (the last-known item for a "removed").
+// concerns (the last-known item for a "removed"/"archived").
 type watchEvent struct {
-	Type string   `json:"type"` // added | updated | removed
+	Type string   `json:"type"` // added | updated | removed | archived
 	Item itemJSON `json:"item"`
 }
 
@@ -457,11 +453,14 @@ func diffBoard(prev, cur []todo.Item) []watchEvent {
 
 // cmdWatch streams a board's changes as NDJSON until the process is killed. It
 // emits a "snapshot" line first (a race-free baseline the consumer needn't
-// re-list for), then one "added"/"updated"/"removed" line per change. Detection
-// is mtime polling (--interval, default 1s) — the same mechanism the TUI uses,
-// no filesystem-watch dependency. Read-only, so it takes no board lock; Save's
-// atomic rename means a poll never sees a half-written file.
-func cmdWatch(args []string, project string, w io.Writer) int {
+// re-list for), then one "added"/"updated"/"removed"/"archived" line per change.
+// A vanished id that turns up in the sibling archive.md is reported as
+// "archived" (a terminal hand-off a consumer like drover distinguishes from a
+// plain "removed"). Detection is mtime polling (--interval, default 1s) — the
+// same mechanism the TUI uses, no filesystem-watch dependency. Read-only, so it
+// takes no board lock; Save's atomic rename means a poll never sees a
+// half-written file.
+func cmdWatch(args []string, board string, w io.Writer) int {
 	fs := flag.NewFlagSet("watch", flag.ContinueOnError)
 	interval := fs.Duration("interval", time.Second, "poll interval for change detection")
 	if err := fs.Parse(args); err != nil {
@@ -470,7 +469,7 @@ func cmdWatch(args []string, project string, w io.Writer) int {
 	if *interval <= 0 {
 		*interval = time.Second
 	}
-	path := store.TodoPathFor(project)
+	path := store.TodoPathFor(board)
 	prev := store.Load(path)
 	snap := make([]itemJSON, 0, len(prev))
 	for i, it := range prev {
@@ -486,23 +485,55 @@ func cmdWatch(args []string, project string, w io.Writer) int {
 		}
 		lastMod = mod
 		cur := store.Load(path)
-		for _, ev := range diffBoard(prev, cur) {
+		evs := diffBoard(prev, cur)
+		reclassifyArchived(path, evs)
+		for _, ev := range evs {
 			emitLine(w, ev)
 		}
 		prev = cur
 	}
 }
 
-// cmdProjects lists every board with its open/total counts, marking the
-// effective project (--project / $SHEPHERD_PROJECT, else default).
-func cmdProjects(args []string, project string, w io.Writer) int {
-	fs := flag.NewFlagSet("projects", flag.ContinueOnError)
+// reclassifyArchived retags "removed" events as "archived" when the vanished id
+// is now present in the sibling archive.md — the per-item `archive` verb rewrites
+// the board (id disappears) and appends to the archive in the same lock. The
+// archive is read only when a poll actually produced a removal.
+// ponytail: rescans the whole archive.md per removal-poll; fine at TUI scale,
+// index the archive by id if a huge archive ever makes this hot.
+func reclassifyArchived(path string, evs []watchEvent) {
+	hasRemoved := false
+	for _, ev := range evs {
+		if ev.Type == "removed" {
+			hasRemoved = true
+			break
+		}
+	}
+	if !hasRemoved {
+		return
+	}
+	arc := make(map[string]bool)
+	for _, it := range store.LoadArchive(path) {
+		if it.ID != "" {
+			arc[it.ID] = true
+		}
+	}
+	for i := range evs {
+		if evs[i].Type == "removed" && arc[evs[i].Item.ID] {
+			evs[i].Type = "archived"
+		}
+	}
+}
+
+// cmdBoards lists every board with its open/total counts, marking the
+// effective board (--board / $SHEPHERD_BOARD, else default).
+func cmdBoards(args []string, board string, w io.Writer) int {
+	fs := flag.NewFlagSet("boards", flag.ContinueOnError)
 	asJSON := fs.Bool("json", false, "machine-readable JSON output")
 	archived := fs.Bool("archived", false, "list archived boards instead")
 	if err := fs.Parse(args); err != nil {
 		return parseExit(err)
 	}
-	cur := project
+	cur := board
 	if cur == "" {
 		cur = "default"
 	}
@@ -517,19 +548,14 @@ func cmdProjects(args []string, project string, w io.Writer) int {
 			Open    int    `json:"open"`
 			Total   int    `json:"total"`
 			Current bool   `json:"current"`
+			Dir     string `json:"dir,omitempty"`
 		}
 		out := make([]row, 0, len(boards))
 		for _, b := range boards {
 			open, total := store.BoardCounts(b.Path)
-			out = append(out, row{b.Name, open, total, b.Name == cur})
+			out = append(out, row{b.Name, open, total, b.Name == cur, b.Dir})
 		}
-		b, err := json.MarshalIndent(out, "", "  ")
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "shepherd:", err)
-			return 1
-		}
-		emit(w, string(b))
-		return 0
+		return emitJSON(w, out)
 	}
 	if len(boards) == 0 {
 		if *archived {
@@ -550,19 +576,38 @@ func cmdProjects(args []string, project string, w io.Writer) int {
 	return 0
 }
 
-// cmdProject groups whole-board actions: rename, delete, archive, unarchive.
-// Board names are explicit positional args (not the --project flag); the default
+// cmdBoard groups whole-board actions: rename, delete, archive, unarchive.
+// Board names are explicit positional args (not the --board flag); the default
 // board cannot be renamed, deleted, or archived.
-func cmdProject(args []string, w io.Writer) int {
+func cmdBoard(args []string, w io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "shepherd: project needs a subcommand: rename|delete|archive|unarchive")
+		fmt.Fprintln(os.Stderr, "shepherd: board needs a subcommand: rename|delete|archive|unarchive|dir")
 		return 2
 	}
 	sub, rest := args[0], args[1:]
 	switch sub {
+	case "dir":
+		if len(rest) < 1 || len(rest) > 2 {
+			fmt.Fprintln(os.Stderr, `shepherd: board dir <name> [<path>]  (omit path to show, "" to clear)`)
+			return 2
+		}
+		if len(rest) == 1 { // show
+			if d := store.BoardDir(rest[0]); d != "" {
+				emit(w, d)
+			} else {
+				emit(w, "(no dir set)")
+			}
+			return 0
+		}
+		if err := store.SetBoardDir(rest[0], rest[1]); err != nil {
+			fmt.Fprintln(os.Stderr, "shepherd:", err)
+			return 1
+		}
+		say(w, fmt.Sprintf("set dir for board %q -> %s", rest[0], rest[1]))
+		return 0
 	case "rename":
 		if len(rest) != 2 {
-			fmt.Fprintln(os.Stderr, `shepherd: project rename <old> <new>`)
+			fmt.Fprintln(os.Stderr, `shepherd: board rename <old> <new>`)
 			return 2
 		}
 		if err := store.RenameBoard(rest[0], rest[1]); err != nil {
@@ -583,7 +628,7 @@ func cmdProject(args []string, w io.Writer) int {
 			}
 		}
 		if name == "" {
-			fmt.Fprintln(os.Stderr, `shepherd: project delete <name> --force`)
+			fmt.Fprintln(os.Stderr, `shepherd: board delete <name> --force`)
 			return 2
 		}
 		if dry {
@@ -602,7 +647,7 @@ func cmdProject(args []string, w io.Writer) int {
 		return 0
 	case "archive":
 		if len(rest) != 1 {
-			fmt.Fprintln(os.Stderr, `shepherd: project archive <name>`)
+			fmt.Fprintln(os.Stderr, `shepherd: board archive <name>`)
 			return 2
 		}
 		if err := store.ArchiveBoard(rest[0]); err != nil {
@@ -613,7 +658,7 @@ func cmdProject(args []string, w io.Writer) int {
 		return 0
 	case "unarchive":
 		if len(rest) != 1 {
-			fmt.Fprintln(os.Stderr, `shepherd: project unarchive <name>`)
+			fmt.Fprintln(os.Stderr, `shepherd: board unarchive <name>`)
 			return 2
 		}
 		if err := store.UnarchiveBoard(rest[0]); err != nil {
@@ -623,7 +668,7 @@ func cmdProject(args []string, w io.Writer) int {
 		say(w, fmt.Sprintf("unarchived board %q", rest[0]))
 		return 0
 	default:
-		fmt.Fprintf(os.Stderr, "shepherd: unknown project subcommand %q (rename|delete|archive|unarchive)\n", sub)
+		fmt.Fprintf(os.Stderr, "shepherd: unknown board subcommand %q (rename|delete|archive|unarchive|dir)\n", sub)
 		return 2
 	}
 }
@@ -633,7 +678,7 @@ func cmdProject(args []string, w io.Writer) int {
 // another's edits. Each captures its exit code from inside the locked closure;
 // a returned error is an IO/lock failure (exit 1 via saveErr).
 
-func cmdAdd(args []string, project string, w io.Writer) int {
+func cmdAdd(args []string, board string, w io.Writer) int {
 	asJSON, args := extractJSON(args)
 	text := strings.TrimSpace(strings.Join(args, " "))
 	if text == "" {
@@ -643,7 +688,7 @@ func cmdAdd(args []string, project string, w io.Writer) int {
 	if it.Text == "" {
 		return usageErr(w, asJSON, "nothing to add after parsing tokens")
 	}
-	path := store.TodoPathFor(project)
+	path := store.TodoPathFor(board)
 	exit := 0
 	err := store.WithLock(path, func() error {
 		items := append(store.Load(path), it)
@@ -667,9 +712,9 @@ func cmdAdd(args []string, project string, w io.Writer) int {
 // cmdSub adds a subtask to item <ref>: shepherd sub <ref> "<text>". The text
 // takes the same quick-add tokens as `add`. Adding an open subtask reopens the
 // parent (it's no longer all-done). <ref> must resolve to a top-level item.
-func cmdSub(args []string, project string, w io.Writer) int {
+func cmdSub(args []string, board string, w io.Writer) int {
 	asJSON, args := extractJSON(args)
-	path := store.TodoPathFor(project)
+	path := store.TodoPathFor(board)
 	exit := 0
 	err := store.WithLock(path, func() error {
 		items := store.Load(path)
@@ -715,9 +760,9 @@ func cmdSub(args []string, project string, w io.Writer) int {
 // shepherd edit <ref> "<tokens>". Only the fields present in the tokens change;
 // a bare key token clears its field, note: takes the rest of the line, and text
 // is replaced only when plain words are given (see todo.ApplyEdit).
-func cmdEdit(args []string, project string, w io.Writer) int {
+func cmdEdit(args []string, board string, w io.Writer) int {
 	asJSON, args := extractJSON(args)
-	path := store.TodoPathFor(project)
+	path := store.TodoPathFor(board)
 	exit := 0
 	err := store.WithLock(path, func() error {
 		items := store.Load(path)
@@ -765,9 +810,9 @@ func cmdEdit(args []string, project string, w io.Writer) int {
 // Multiple refs are a single atomic write — agents mark a burst of subtasks done
 // in one call. Marking done never reorders the in-memory slice, so every ref
 // stays valid through the loop.
-func cmdToggle(args []string, project string, done bool, w io.Writer) int {
+func cmdToggle(args []string, board string, done bool, w io.Writer) int {
 	asJSON, args := extractJSON(args)
-	path := store.TodoPathFor(project)
+	path := store.TodoPathFor(board)
 	exit := 0
 	err := store.WithLock(path, func() error {
 		items := store.Load(path)
@@ -807,10 +852,10 @@ func cmdToggle(args []string, project string, done bool, w io.Writer) int {
 // cmdRemove deletes one or more items/subtasks: shepherd rm <ref>... [--dry-run].
 // Refs are resolved to an identity set before any deletion, so a multi-remove is
 // order- and index-shift-safe (removing item 2 never renumbers item 3 mid-op).
-func cmdRemove(args []string, project string, w io.Writer) int {
+func cmdRemove(args []string, board string, w io.Writer) int {
 	asJSON, args := extractJSON(args)
 	dry, args := extractDryRun(args)
-	path := store.TodoPathFor(project)
+	path := store.TodoPathFor(board)
 	exit := 0
 	err := store.WithLock(path, func() error {
 		items := store.Load(path)
@@ -875,6 +920,63 @@ func cmdRemove(args []string, project string, w io.Writer) int {
 			for _, t := range removed {
 				say(w, fmt.Sprintf("removed %q", t))
 			}
+		}
+		return nil
+	})
+	if err != nil {
+		return saveErr(w, asJSON, err)
+	}
+	return exit
+}
+
+// cmdArchive moves one or more top-level items off the live board and into the
+// sibling archive.md: shepherd archive <ref>... [--json]. This is the per-item
+// counterpart to the TUI's "c" (which archives every done item at once) and to
+// `board archive` (which stashes a whole board). Subtask refs are rejected —
+// the archive holds whole items. Refs are resolved before any write, so a
+// multi-archive is index-shift-safe like rm.
+func cmdArchive(args []string, board string, w io.Writer) int {
+	asJSON, args := extractJSON(args)
+	path := store.TodoPathFor(board)
+	exit := 0
+	err := store.WithLock(path, func() error {
+		items := store.Load(path)
+		refs, bad, ok := parseRefs(args, items)
+		if !ok {
+			exit = refErr(w, asJSON, bad, len(items))
+			return nil
+		}
+		arcParent := map[int]bool{} // distinct parent indices to archive
+		for _, r := range refs {
+			if r[1] != 0 {
+				exit = usageErr(w, asJSON, "archive whole items, not subtasks")
+				return nil
+			}
+			arcParent[r[0]] = true
+		}
+		var archived []todo.Item
+		kept := make([]todo.Item, 0, len(items))
+		for i := range items {
+			if arcParent[i+1] {
+				archived = append(archived, items[i])
+			} else {
+				kept = append(kept, items[i])
+			}
+		}
+		// Append to the archive before rewriting the board: an interrupted run
+		// re-archives (a dup in archive.md) rather than losing the item.
+		if err := store.AppendArchive(path, archived); err != nil {
+			return err
+		}
+		if err := store.Save(path, kept); err != nil {
+			return err
+		}
+		if asJSON {
+			exit = emitJSON(w, affectedJSON(items, refs))
+			return nil
+		}
+		for _, it := range archived {
+			say(w, fmt.Sprintf("archived %q", it.Text))
 		}
 		return nil
 	})
