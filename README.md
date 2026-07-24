@@ -11,7 +11,7 @@ No setup required — everything defaults under `~/.config/shepherd/` (or
 | What | Path |
 |------|------|
 | Default board | `~/.config/shepherd/todo.md` |
-| Project board | `~/.config/shepherd/projects/<name>.md` — via `--project <name>` |
+| Named board | `~/.config/shepherd/boards/<name>.md` — via `--board <name>` |
 | Archive | sibling of the board: `archive.md` / `<name>-archive.md` |
 | Config (optional, shared) | `~/.config/shepherd/config.toml` |
 
@@ -21,7 +21,7 @@ file). See [storage](#storage).
 - [install](#install)
 - [usage](#usage)
 - [subtasks](#subtasks)
-- [projects](#projects)
+- [boards](#boards)
 - [global view](#global-view)
 - [launch filter](#launch-filter)
 - [command api](#command-api)
@@ -148,19 +148,19 @@ shepherd rm 2.1                   # remove just that subtask
 `index` within the parent). `stats` counts top-level items only — subtasks are
 decomposition, not separate board work.
 
-## projects
+## boards
 
-Each project gets its own board file at
-`~/.config/shepherd/projects/<name>.md`; with no project selected you're on the
+Each named board gets its own file at
+`~/.config/shepherd/boards/<name>.md`; with no board selected you're on the
 default `todo.md`. `config.toml` is shared across every board.
 
 ```sh
-shepherd --project web            # open the web board
-SHEPHERD_PROJECT=web shepherd     # same, via env
+shepherd --board web            # open the web board
+SHEPHERD_BOARD=web shepherd     # same, via env
 ```
 
 Names are a simple slug — letters, digits, `.` `_` `-`. The archive is
-per-board (`projects/web.md` → `projects/web-archive.md`); see
+per-board (`boards/web.md` → `boards/web-archive.md`); see
 [storage](#storage). This also works from the command API (below) and as a
 herdr pane entrypoint:
 
@@ -169,12 +169,12 @@ herdr pane entrypoint:
 id = "shepherd-work"
 title = "todo: work"
 placement = "tab"
-command = ["./bin/shepherd", "--project", "work"]
+command = ["./bin/shepherd", "--board", "work"]
 ```
 
 ## global view
 
-See every board at once — the default plus all projects — in one **read-only**
+See every board at once — the default plus all named boards — in one **read-only**
 view. Launch with `--all`, or press `A` from any board to toggle in and out
 (your board is saved first, and `A` again drops you back on it).
 
@@ -182,17 +182,17 @@ view. Launch with `--all`, or press `A` from any board to toggle in and out
 shepherd --all        # aggregate of every board
 ```
 
-`v` cycles four groupings: **project → category → priority → table**. In the
-project grouping each board is a header; in the others every row carries a
-`[project]` tag (the table gets a `project` column). It's read-only by design —
+`v` cycles four groupings: **board → category → priority → table**. In the
+board grouping each board is a header; in the others every row carries a
+`[board]` tag (the table gets a `board` column). It's read-only by design —
 editing stays on the focused board, so the aggregate is never written back.
-`/` filters across boards (including by project name).
+`/` filters across boards (including by board name).
 
 The command API mirrors it: `shepherd list --all` (see [command api](#command-api)).
 
 ## launch filter
 
-`--project` gives a project its own file; `--filter` is a saved *view* over one
+`--board` gives a board its own file; `--filter` is a saved *view* over one
 board — start it pre-filtered by text/note/category/due/defer/link:
 
 ```sh
@@ -203,11 +203,7 @@ When the filter names a category (one you've configured or already use), items
 you add while it's active inherit that category — so a task added on a
 `--filter work` board lands in `work` and stays in view. An inline `@category`
 still overrides; a filter that isn't a category leaves new items uncategorized.
-The two combine: `shepherd --project web --filter '!h'`.
-
-`shepherd --stats` prints board stats and exits — the launch-flag form of
-`shepherd stats` (below); combine with `--all` or `--project <name>`.
-`shepherd --stats --legend` (or just `shepherd --legend`) explains the charts.
+The two combine: `shepherd --board web --filter '!h'`.
 
 `shepherd --version` prints the version and exits.
 
@@ -227,13 +223,13 @@ shepherd list --all [--json]        # aggregate across every board (read-only)
 shepherd list --filter home         # only items matching the query, real indexes kept
 shepherd watch                      # stream board changes as NDJSON until killed
 shepherd watch --interval 500ms     # poll faster (default 1s)
-shepherd projects [--json]          # list boards with done/total counts (* = current)
-shepherd projects --archived        # list archived boards instead
-shepherd project rename web webapp  # rename a board (and its archive sibling)
-shepherd project archive webapp     # stash a board under projects/archived/ (reversible)
-shepherd project unarchive webapp   # restore an archived board
-shepherd project delete webapp --force  # delete a board (and its archive sibling)
-shepherd project delete webapp --dry-run # preview the delete without writing
+shepherd boards [--json]            # list boards with done/total counts (* = current)
+shepherd boards --archived          # list archived boards instead
+shepherd board rename web webapp    # rename a board (and its archive sibling)
+shepherd board archive webapp       # stash a board under boards/archived/ (reversible)
+shepherd board unarchive webapp     # restore an archived board
+shepherd board delete webapp --force  # delete a board (and its archive sibling)
+shepherd board delete webapp --dry-run # preview the delete without writing
 shepherd stats [--json] [--all]     # board metrics as charts (--json = numbers)
 shepherd stats --legend             # explain every chart and the aging numbers
 shepherd stats --no-color           # charts without ANSI color
@@ -288,12 +284,12 @@ baseline, then one line per change keyed by the item's stable id:
 Change detection is mtime polling (`--interval`, default `1s`); it's read-only
 and never blocks a writer.
 
-Flags go **after** the verb. Add `--project <name>` (or set `$SHEPHERD_PROJECT`)
-to target a project board instead of the default:
+Flags go **after** the verb. Add `--board <name>` (or set `$SHEPHERD_BOARD`)
+to target a named board instead of the default:
 
 ```sh
-shepherd add "ship v2 @work !h" --project web
-shepherd list --project web
+shepherd add "ship v2 @work !h" --board web
+shepherd list --board web
 ```
 
 `add` accepts the same quick-add tokens as the board: `@category`, `!h`/`!m`/`!l`
@@ -304,13 +300,13 @@ an open board picks up the change within ~2s. `edit` is the single setter for
 every field, including `status:` (any name, like a free-form `@category`;
 `status:done`/`status:open` are the terminal/default ends, with `done`/`undone`
 as shorthands) — the `status` field appears in `list --json`.
-`list --all --json` adds a `project` field per item so you can tell which board
+`list --all --json` adds a `board` field per item so you can tell which board
 each came from.
 
 `stats` summarises a board as terminal charts — completion, due/urgency,
 priority load, throughput and backlog trend (drawn with
 [ntcharts](https://github.com/NimbleMarkets/ntcharts)). Done-based counts include
-the archive. `--all` aggregates every board and adds a by-project breakdown;
+the archive. `--all` aggregates every board and adds a by-board breakdown;
 `--json` emits the raw numbers (no charts) for scripts.
 
 ```json
@@ -360,7 +356,7 @@ statuses = ["open", "in-progress", "done"] # tab cycles item status in the list
 - `categories` — press `tab` in the category prompt (`g`) to cycle through them.
 - `statuses` — ordered list `tab` cycles through in the list; `done` is always kept and forced last. Defaults to `["open", "done"]`. Intermediate statuses persist as a `status:` line and show a `◐` glyph; the stats page (board and `shepherd stats`) breaks items down by status in this order.
 
-Edit these in the running board with `,` (settings): `tab` cycles `view`/`density`, `enter` edits `autosave`/`categories`/`statuses`, and each change is written straight back to `config.toml`. Comments and unknown keys in the file are preserved on save.
+Edit these in the running board with `,` (settings): `tab` cycles `view`/`density`, `enter` edits `autosave`/`categories`/`statuses`, and each change is written straight back to `config.toml`. shepherd owns the file — a settings save rewrites the managed keys.
 
 herdr pane placement (`placement` / `direction`) lives in the same file — see
 [herdr integration](#herdr-integration).
@@ -368,8 +364,8 @@ herdr pane placement (`placement` / `direction`) lives in the same file — see
 ## storage
 
 Layout is the table at the top: the default `todo.md`, a shared `config.toml`,
-and one `projects/<name>.md` per project (selected with
-`--project`/`$SHEPHERD_PROJECT`). Override the exact board file with
+and one `boards/<name>.md` per named board (selected with
+`--board`/`$SHEPHERD_BOARD`). Override the exact board file with
 `$SHEPHERD_TODO_FILE`.
 
 Dates are stored ISO (`YYYY-MM-DD`) so they sort correctly, but shown and
@@ -413,8 +409,8 @@ line, so existing files stay unchanged.
 ### archive
 
 Pressing `c` sweeps every done item off the board and **appends** it to a
-sibling archive file (`todo.md` → `archive.md`, `projects/web.md` →
-`projects/web-archive.md`, created on first use). `C` archives just the
+sibling archive file (`todo.md` → `archive.md`, `boards/web.md` →
+`boards/web-archive.md`, created on first use). `C` archives just the
 selected item instead, whatever its status — whole items only, so it's a no-op
 (and dimmed in the legend) on a subtask row, matching the `shepherd archive
 <ref>` CLI. Same markdown format as `todo.md`, so it's greppable and

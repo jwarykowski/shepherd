@@ -63,8 +63,6 @@ Global flags (any command):
 Board flags (bare shepherd):
   --filter <text>   start pre-filtered
   --all             read-only view across all boards
-  --stats           print stats and exit
-  --legend          explain the stats charts and exit
   --version         print the version and exit
 
 Flags follow the verb. Indexes are 1-based, matching 'list' order.
@@ -385,13 +383,7 @@ func cmdList(args []string, board string, w io.Writer) int {
 			}
 			out = append(out, toJSON(it, i+1))
 		}
-		b, err := json.MarshalIndent(out, "", "  ")
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "shepherd:", err)
-			return 1
-		}
-		emit(w, string(b))
-		return 0
+		return emitJSON(w, out)
 	}
 
 	if len(items) == 0 {
@@ -563,13 +555,7 @@ func cmdBoards(args []string, board string, w io.Writer) int {
 			open, total := store.BoardCounts(b.Path)
 			out = append(out, row{b.Name, open, total, b.Name == cur, b.Dir})
 		}
-		b, err := json.MarshalIndent(out, "", "  ")
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "shepherd:", err)
-			return 1
-		}
-		emit(w, string(b))
-		return 0
+		return emitJSON(w, out)
 	}
 	if len(boards) == 0 {
 		if *archived {

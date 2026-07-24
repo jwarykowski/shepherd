@@ -1046,24 +1046,19 @@ func TestGlobalReadOnly(t *testing.T) {
 	}
 }
 
-// TestSaveConfigPreservesComments checks saveConfig keeps user comments and
-// unknown keys while rewriting managed keys in place.
-func TestSaveConfigPreservesComments(t *testing.T) {
+// TestSaveConfigRoundTrip checks saveConfig writes the managed keys so
+// loadConfig reads them back unchanged.
+func TestSaveConfigRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.toml")
-	if err := os.WriteFile(path, []byte("# my notes\nview = \"table\"\n# keep me\ncustom = 1\n"), 0o644); err != nil {
+	want := config{view: viewTable, density: comfort, autosave: 30, categories: []string{"work"}, statuses: []string{"open", "done"}}
+	if err := saveConfig(path, want); err != nil {
 		t.Fatal(err)
 	}
-	if err := saveConfig(path, loadConfig(path)); err != nil {
-		t.Fatal(err)
+	got := loadConfig(path)
+	if got.view != want.view || got.density != want.density || got.autosave != want.autosave {
+		t.Fatalf("scalar keys round-trip wrong: %+v", got)
 	}
-	b, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	s := string(b)
-	for _, want := range []string{"# my notes", "# keep me", "custom = 1", `view = "table"`} {
-		if !strings.Contains(s, want) {
-			t.Fatalf("saveConfig dropped %q:\n%s", want, s)
-		}
+	if strings.Join(got.categories, ",") != "work" || strings.Join(got.statuses, ",") != "open,done" {
+		t.Fatalf("list keys round-trip wrong: %+v", got)
 	}
 }

@@ -1,9 +1,7 @@
 package cli
 
 import (
-	"encoding/json"
 	"flag"
-	"fmt"
 	"io"
 	"os"
 	"sort"
@@ -52,13 +50,7 @@ func cmdStats(args []string, board string, w io.Writer) int {
 	orderByConfig(&s, store.ConfigStatusOrder())
 
 	if *asJSON {
-		b, err := json.MarshalIndent(s, "", "  ")
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "shepherd:", err)
-			return 1
-		}
-		emit(w, string(b))
-		return 0
+		return emitJSON(w, s)
 	}
 
 	emit(w, renderStats(s, title, termWidth()))
