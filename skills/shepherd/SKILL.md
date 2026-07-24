@@ -20,11 +20,11 @@ Run `shepherd help` for the authoritative command list. Summary:
 | Command | Does |
 | --- | --- |
 | `shepherd list --json` | read all items (machine shape — prefer this) |
-| `shepherd list --all --json` | read across every board; adds a `project` field |
+| `shepherd list --all --json` | read across every board; adds a `board` field |
 | `shepherd list --filter <q> [--json]` | list only matching items; real indexes kept |
 | `shepherd watch [--interval <dur>]` | stream board changes as NDJSON until killed — react without polling |
-| `shepherd projects [--json] [--archived]` | list boards with done/total counts (`--archived` lists archived boards); JSON marks the current board (`"current": true`) |
-| `shepherd project rename\|delete\|archive\|unarchive <name>` | whole-board actions (delete needs `--force`, `--dry-run` previews; archive stashes under `projects/archived/`); default board is not actionable |
+| `shepherd boards [--json] [--archived]` | list boards with done/total counts (`--archived` lists archived boards); JSON per board is `name`/`open`/`total`/`current`/`dir`, marking the active board (`"current": true`) |
+| `shepherd board rename\|delete\|archive\|unarchive\|dir <name>` | whole-board actions (delete needs `--force`, `--dry-run` previews; archive stashes under `boards/archived/`; `dir` shows/sets a working directory); default board is not actionable |
 | `shepherd stats --json [--all]` | board metrics (JSON numbers; drop `--json` for charts; `--legend` explains them) |
 | `shepherd add "<text>" [--json]` | add an item |
 | `shepherd sub <ref> "<text>" [--json]` | add a subtask to an item |
@@ -55,7 +55,7 @@ confirmation line, never the requested data.
 
 ## Watching
 
-`shepherd watch [--interval <dur>] [--project <name>]` streams a board's changes
+`shepherd watch [--interval <dur>] [--board <name>]` streams a board's changes
 as NDJSON (one JSON object per line) until the process is killed — so a
 coordinating agent reacts to changes instead of polling `list`. The first line
 is a baseline `{"type":"snapshot","items":[…]}` (no need to `list` first); after
@@ -64,6 +64,7 @@ that, each change is one line keyed by the item's stable `id`:
 - `{"type":"added","item":{…}}` — a new item (item shape = `list --json`)
 - `{"type":"updated","item":{…}}` — any field changed, including its subtasks
 - `{"type":"removed","item":{…}}` — the last-known item, now gone
+- `{"type":"archived","item":{…}}` — a vanished item that landed in the archive (terminal, distinct from `removed`)
 
 Detection is mtime polling (`--interval`, default `1s`); it's read-only, so it
 never blocks a writer.
@@ -77,16 +78,16 @@ parent completes its subtasks, and completing the last subtask completes the
 parent. `list --json` nests them under each item's `subtasks` array (each with
 a 1-based `index` within the parent). `stats` counts top-level items only.
 
-## Projects
+## Boards
 
-Each project has its own board: `--project <name>` (or `$SHEPHERD_PROJECT`)
-targets `~/.config/shepherd/projects/<name>.md`; with no project you're on the
-default board. Flags follow the verb — `shepherd list --project web`,
-`shepherd add "…" --project web`, `shepherd done 2 --project web`.
+Each board has its own file: `--board <name>` (or `$SHEPHERD_BOARD`)
+targets `~/.config/shepherd/boards/<name>.md`; with no board you're on the
+default board. Flags follow the verb — `shepherd list --board web`,
+`shepherd add "…" --board web`, `shepherd done 2 --board web`.
 
 `shepherd list --all` reads across every board and is **read-only**; its
 indexes are aggregate, **not** valid for `done`/`rm`. To act on an item you
-found via `--all`, mutate with the same `--project` as its board — the item's
+found via `--all`, mutate with the same `--board` as its board — the item's
 `id` works directly, or re-list that board for its local index.
 
 ## Adding
@@ -123,9 +124,9 @@ configured list.
 ## Notes
 
 - Data file: `todo.md` under `$XDG_CONFIG_HOME/shepherd/` (defaults to
-  `~/.config/shepherd/`), or `projects/<name>.md` there when a project is
-  selected with `--project <name>` (or `$SHEPHERD_PROJECT`). Flags follow the
-  verb, e.g. `shepherd list --project web`. Override the exact file with
+  `~/.config/shepherd/`), or `boards/<name>.md` there when a board is
+  selected with `--board <name>` (or `$SHEPHERD_BOARD`). Flags follow the
+  verb, e.g. `shepherd list --board web`. Override the exact file with
   `$SHEPHERD_TODO_FILE`. Dates stored ISO.
 - If `shepherd` isn't found, it isn't installed —
   `brew install jwarykowski/tap/shepherd`.
