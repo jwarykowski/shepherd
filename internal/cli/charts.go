@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/NimbleMarkets/ntcharts/linechart/timeserieslinechart"
 	"github.com/NimbleMarkets/ntcharts/sparkline"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // Priority colors mirror tui/view.go: H red, M yellow, L faint. Kept here (not
@@ -189,7 +191,7 @@ func hbar(rows []barRow, width int) string {
 	labelW := 0
 	labels := make([]string, len(rows))
 	for i, r := range rows {
-		labels[i] = clip(r.label, maxLabel)
+		labels[i] = ansi.Truncate(r.label, maxLabel, "…")
 		if w := lipgloss.Width(labels[i]); w > labelW {
 			labelW = w
 		}
@@ -210,29 +212,9 @@ func hbar(rows []barRow, width int) string {
 		}
 		bar := lipgloss.NewStyle().Foreground(lipgloss.Color(r.color)).Render(strings.Repeat("━", fill)) +
 			faintStyle.Render(strings.Repeat("┄", barW-fill))
-		lines[i] = fmt.Sprintf("%s %s %*d", padR(labels[i], labelW), bar, valW, r.value)
+		lines[i] = fmt.Sprintf("%s %s %*d", lipgloss.NewStyle().Width(labelW).Render(labels[i]), bar, valW, r.value)
 	}
 	return strings.Join(lines, "\n")
-}
-
-// clip shortens a label to n display columns, ending with … when cut.
-func clip(s string, n int) string {
-	if lipgloss.Width(s) <= n {
-		return s
-	}
-	r := []rune(s)
-	for len(r) > 0 && lipgloss.Width(string(r))+1 > n {
-		r = r[:len(r)-1]
-	}
-	return string(r) + "…"
-}
-
-// padR right-pads s with spaces to n display columns.
-func padR(s string, n int) string {
-	if p := n - lipgloss.Width(s); p > 0 {
-		return s + strings.Repeat(" ", p)
-	}
-	return s
 }
 
 func spark(vals []int, width int) string {
@@ -285,14 +267,12 @@ func boardBars(s todo.Stats, width int) string {
 		names = append(names, n)
 	}
 	// stable order: most open first, name tiebreak
-	for i := 0; i < len(names); i++ {
-		for j := i + 1; j < len(names); j++ {
-			a, b := s.ByBoard[names[i]], s.ByBoard[names[j]]
-			if b.Open > a.Open || (b.Open == a.Open && names[j] < names[i]) {
-				names[i], names[j] = names[j], names[i]
-			}
+	sort.Slice(names, func(i, j int) bool {
+		if a, b := s.ByBoard[names[i]].Open, s.ByBoard[names[j]].Open; a != b {
+			return a > b
 		}
-	}
+		return names[i] < names[j]
+	})
 	for _, n := range names {
 		rows = append(rows, barRow{n, s.ByBoard[n].Open, colInfo})
 	}

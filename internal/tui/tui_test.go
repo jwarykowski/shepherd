@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"shepherd/internal/store"
 	"shepherd/internal/todo"
@@ -530,6 +531,168 @@ func TestSubtaskDetail(t *testing.T) {
 	}
 }
 
+// TestTagView checks the tag view groups by an item's first tag (untagged last),
+// carries the item's remaining tags on the row, and that the row's right slot is
+// the subtask progress when there is any, else the due label.
+func TestTagView(t *testing.T) {
+	pinToday(t, "2026-07-10")
+	m := model{input: textinput.New(), note: textarea.New(), w: 70, height: 30,
+		view: viewTag, items: []todo.Item{
+			{Text: "bare task"},
+			{Text: "renew passport", Tags: []string{"admin"}, Due: "2026-07-20"},
+			{Text: "wire the webhook", Tags: []string{"api", "docs"},
+				Subs: []todo.Item{{Text: "parse", Done: true}, {Text: "test"}}},
+		}}
+	m.resort()
+	if m.items[0].Text != "renew passport" || m.items[2].Text != "bare task" {
+		t.Fatalf("tag sort wrong (admin, api, untagged last): %+v", m.items)
+	}
+	id, label := m.groupOf(m.items[1])
+	if id != "tapi" || label != "#api" {
+		t.Fatalf("tag group wrong: %q %q", id, label)
+	}
+	if id, label := m.groupOf(m.items[2]); id != "t\x01" || label != "untagged" {
+		t.Fatalf("untagged group wrong: %q %q", id, label)
+	}
+
+	out := ansi.Strip(m.listView())
+	if !strings.Contains(out, "#admin") || !strings.Contains(out, "untagged") {
+		t.Fatalf("tag headers missing:\n%s", out)
+	}
+	// the grouping tag lives in the header; the item's other tags ride the row
+	if !strings.Contains(out, "wire the webhook #docs") {
+		t.Fatalf("row missing its remaining tags:\n%s", out)
+	}
+	// right slot: progress for the item with subtasks, due label for the one without
+	if !strings.Contains(out, "1/2") {
+		t.Fatalf("row missing subtask progress:\n%s", out)
+	}
+	if !strings.Contains(out, "due 10d") {
+		t.Fatalf("row missing due label:\n%s", out)
+	}
+	// status is the box glyph, never a word; priority is the complement label here
+	m.items[1].Status, m.items[1].Prio = "in-progress", 'H'
+	out = ansi.Strip(m.listView())
+	if strings.Contains(out, "in-progress") {
+		t.Fatalf("row should not spell out the status:\n%s", out)
+	}
+	if !strings.Contains(out, "◐") {
+		t.Fatalf("named status should show as ◐:\n%s", out)
+	}
+	if !strings.Contains(out, "high") {
+		t.Fatalf("tag view should carry the priority complement:\n%s", out)
+	}
+
+	// only the tag view annotates the row; category view leaves the text alone
+	m.view = viewCategory
+	if strings.Contains(ansi.Strip(m.listView()), "wire the webhook #docs") {
+		t.Fatal("tags should ride the row in the tag view only")
+	}
+}
+
+// TestRowComplement checks each view carries the axis its headers don't show:
+// the category view shows priority on the right, the priority view the category.
+func TestRowComplement(t *testing.T) {
+	m := model{input: textinput.New(), note: textarea.New(), w: 60, height: 20,
+		items: []todo.Item{{Text: "ship it", Prio: 'H', Category: "work"}}}
+
+	m.view = viewCategory
+	out := ansi.Strip(m.listView())
+	if !strings.Contains(out, "high") {
+		t.Fatalf("category view should show the priority on the row:\n%s", out)
+	}
+	m.view = viewPriority
+	out = ansi.Strip(m.listView())
+	if !strings.Contains(out, "high priority") { // the group header
+		t.Fatalf("priority view lost its header:\n%s", out)
+	}
+	if !strings.Contains(m.rowContent(m.items[0], "   ", "", false), "work") {
+		t.Fatal("priority view should show the category on the row")
+	}
+	if strings.Contains(ansi.Strip(m.rowContent(m.items[0], "   ", "", false)), "high") {
+		t.Fatal("priority view should not repeat the priority the header already names")
+	}
+	// nothing to say = nothing rendered
+	bare := model{input: textinput.New(), w: 60, view: viewCategory}
+	if got := bare.rowComplement(todo.Item{Text: "x"}); got != "" {
+		t.Fatalf("no priority should render nothing, got %q", got)
+	}
+}
+
+// TestTagEditor drives T from the list and from the detail view: it edits the
+// whole set, accepts spaces or commas, clears on empty, and a field editor opened
+// from the detail view returns there rather than to the list.
+func TestTagEditor(t *testing.T) {
+	m := model{input: textinput.New(), note: textarea.New(), w: 60, height: 20,
+		items: []todo.Item{{Text: "wire the webhook"}}}
+
+	m = drive(m, "T")
+	if m.mode != modeTags {
+		t.Fatalf("T did not open the tag editor: mode=%d", m.mode)
+	}
+	m.input.SetValue("API, docs api")
+	m = drive(m, "enter")
+	if got := m.items[0].Tags; len(got) != 2 || got[0] != "api" || got[1] != "docs" {
+		t.Fatalf("tags not saved/normalised: %+v", got)
+	}
+	if m.mode != modeList {
+		t.Fatalf("editor should return to the list: mode=%d", m.mode)
+	}
+
+	// from the detail view: T opens the editor and saving lands back on detail
+	m = drive(m, "d")
+	m = drive(m, "T")
+	if m.mode != modeTags || !m.fieldEdit {
+		t.Fatalf("T from detail did not open the editor: mode=%d fieldEdit=%v", m.mode, m.fieldEdit)
+	}
+	m.input.SetValue("ops")
+	m = drive(m, "enter")
+	if m.mode != modeDetail || m.fieldEdit {
+		t.Fatalf("save should return to detail: mode=%d fieldEdit=%v", m.mode, m.fieldEdit)
+	}
+	if got := m.items[0].Tags; len(got) != 1 || got[0] != "ops" {
+		t.Fatalf("detail edit did not save: %+v", got)
+	}
+
+	// esc from a detail-opened editor also returns to detail, unchanged
+	m = drive(m, "T")
+	m.input.SetValue("nope")
+	m = drive(m, "esc")
+	if m.mode != modeDetail || len(m.items[0].Tags) != 1 {
+		t.Fatalf("esc should return to detail without saving: mode=%d %+v", m.mode, m.items[0].Tags)
+	}
+
+	// an immediate mutation (priority) stays on the detail view
+	m = drive(m, "h")
+	if m.mode != modeDetail || m.items[0].Prio != 'H' {
+		t.Fatalf("h from detail should set priority and stay: mode=%d prio=%c", m.mode, m.items[0].Prio)
+	}
+	// and the footer advertises the field keys
+	if out := ansi.Strip(m.detailView()); !strings.Contains(out, "T tags") {
+		t.Fatalf("detail footer missing the field keys:\n%s", out)
+	}
+
+	// empty clears
+	m = drive(m, "esc", "T")
+	m.input.SetValue("")
+	m = drive(m, "enter")
+	if len(m.items[0].Tags) != 0 {
+		t.Fatalf("empty input should clear tags: %+v", m.items[0].Tags)
+	}
+}
+
+func TestDetailShowsTags(t *testing.T) {
+	m := model{input: textinput.New(), note: textarea.New(), w: 60, height: 24,
+		mode: modeDetail, items: []todo.Item{{Text: "task", Tags: []string{"api", "docs"}}}}
+	if !strings.Contains(ansi.Strip(m.detailView()), "#api #docs") {
+		t.Fatalf("detail view missing tags:\n%s", m.detailView())
+	}
+	m.items[0].Tags = nil
+	if !strings.Contains(ansi.Strip(m.detailView()), "tags") {
+		t.Fatal("detail view should keep the tags row when empty")
+	}
+}
+
 func TestDetailNoteWraps(t *testing.T) {
 	long := "this is a long note that should wrap onto several lines in detail"
 	m := model{input: textinput.New(), w: 30, height: 24, mode: modeDetail,
@@ -717,6 +880,10 @@ func TestViewToggle(t *testing.T) {
 	m = drive(m, "v")
 	if m.view != viewPriority || m.items[0].Text != "b" {
 		t.Fatalf("priority view sort wrong: view=%d %+v", m.view, m.items)
+	}
+	m = drive(m, "v")
+	if m.view != viewTag {
+		t.Fatalf("tag view expected after priority: %d", m.view)
 	}
 	m = drive(m, "v", "v")
 	if m.view != viewCategory {
@@ -1032,9 +1199,9 @@ func TestGlobalReadOnly(t *testing.T) {
 		t.Fatal("space toggled done in read-only global view")
 	}
 
-	// v cycles through all 4 modes back to board
-	if got := drive(m, "v", "v", "v", "v"); got.view != viewBoard {
-		t.Fatalf("v cycle did not return to board after 4 steps: %v", got.view)
+	// v cycles through every mode back to board
+	if got := drive(m, "v", "v", "v", "v", "v"); got.view != viewBoard {
+		t.Fatalf("v cycle did not return to board after %d steps: %v", viewCountGlobal, got.view)
 	}
 
 	// items group by source; header id/label is the board name

@@ -1,4 +1,4 @@
-# Agent guide
+# agent guide
 
 This machine has `shepherd`, a CLI todo board backed by a markdown file. Manage
 the user's todos through it — never hand-edit the todo file; the binary owns the
@@ -12,14 +12,14 @@ format.
 - `shepherd stats [--json] [--all] [--legend]` — board metrics (charts, or `--json` numbers; `--legend` explains each chart)
 - `shepherd add "buy milk @home !h due:tomorrow" [--json]` — add an item
 - `shepherd sub <ref> "<text>" [--json]` — add a subtask to an item (same quick-add tokens)
-- `shepherd edit <ref> "<tokens>" [--json]` — merge tokens onto an item (or subtask); only the given fields change. Tokens: `@category`, `!prio`, `due:`, `defer:`, `link:`, `status:`, `note:`, and text. A bare key clears its field; `note:` takes the rest of the line
-- `shepherd list --filter <q>` — list only matching items (text/note/category/due/defer/link), keeping their real indexes for done/rm
+- `shepherd edit <ref> "<tokens>" [--json]` — merge tokens onto an item (or subtask); only the given fields change. Tokens: `@category`, `#tag`/`tags:a,b`, `!prio`, `due:`, `defer:`, `link:`, `status:`, `note:`, and text. A bare key clears its field; `note:` takes the rest of the line
+- `shepherd list --filter <q>` — list only matching items (text/note/category/tags/due/defer/link), keeping their real indexes for done/rm
 - `shepherd done <ref>... [--json]` / `shepherd undone <ref>...` — (un)complete one or more items/subtasks
 - `shepherd archive <ref>... [--json]` — move whole items off the live board into the sibling `archive.md` (per-item counterpart to whole-board `board archive`); subtasks can't be archived alone
 - `shepherd rm <ref>... [--dry-run] [--json]` — remove one or more items/subtasks (`--dry-run`/`-n` previews without writing)
 
-`edit` is the single setter for every field — status, note, category, priority,
-due, defer, link, and text all change through its tokens (`edit 2 "status:in-progress"`,
+`edit` is the single setter for every field — status, note, category, tags,
+priority, due, defer, link, and text all change through its tokens (`edit 2 "status:in-progress"`,
 `edit 2 "note:call the vendor"`); a bare `key:` clears. `done`/`undone` are the
 only shorthands, for the terminal state.
 
@@ -34,12 +34,17 @@ never lose one another's writes. `--json` on any mutating verb echoes the
 resulting item(s) like `list --json` and reports failures as `{"error":…}` on
 stdout.
 
-Quick-add tokens (shared by `add`, `sub`, `edit`): `@category`, `!h`/`!m`/`!l`
-priority, `due:<today|tomorrow|+3d|15-07-2026>`, `defer:<same date forms>`
-(start/defer date), `link:<url>`, `status:<name>`,
+Quick-add tokens (shared by `add`, `sub`, `edit`): `@category`, `#tag`,
+`tags:<a,b>`, `!h`/`!m`/`!l` priority, `due:<today|tomorrow|+3d|15-07-2026>`,
+`defer:<same date forms>` (start/defer date), `link:<url>`, `status:<name>`,
 and `note:<text>` (holds spaces, takes the rest of the line — put it last).
 `list --json` reports `id` (the stable handle), `completed` (done timestamp),
-`defer`, `link`, and `status` per item.
+`defer`, `link`, `tags`, and `status` per item.
+
+Category and tags are different axes: `category` is one lowercase label per item
+and drives board grouping/order; `tags` is a free-form lowercase set with no
+ordering effect. `#tag` only adds, so replace the whole set with
+`tags:<a,b>` (or clear it with a bare `tags:`) to drop one.
 
 Subtasks nest one level under an item. `list --json` puts them in each item's
 `subtasks` array (1-based within the parent); address them by id or as `n.m`. Completion

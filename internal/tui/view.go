@@ -35,6 +35,17 @@ var (
 	prioLabel = map[byte]string{'H': "high", 'M': "medium", 'L': "low"}
 )
 
+// spread lays left flush-left and right flush-right across w columns, padding
+// the middle (always at least one space, so a too-narrow pane still separates
+// them). Measured with lipgloss.Width, so styled input counts its glyphs only.
+func spread(w int, left, right string) string {
+	gap := w - lipgloss.Width(left) - lipgloss.Width(right)
+	if gap < 1 {
+		gap = 1
+	}
+	return left + strings.Repeat(" ", gap) + right
+}
+
 func (m model) View() string {
 	var content string
 	switch {
@@ -99,6 +110,12 @@ func (m model) groupOf(it todo.Item) (id, label string) {
 		}
 		return "p9", "no priority"
 	}
+	if m.view == viewTag {
+		if tag := todo.TagKey(it); tag != "" {
+			return "t" + tag, "#" + tag
+		}
+		return "t\x01", "untagged"
+	}
 	if it.Category == "" {
 		return "c\x01", "uncategorized"
 	}
@@ -134,6 +151,15 @@ func (m model) groupCount(it todo.Item) (done, total int) {
 				}
 			}
 		}
+	case m.view == viewTag:
+		for _, x := range m.items {
+			if !todo.Pinned(x) && todo.TagKey(x) == todo.TagKey(it) {
+				total++
+				if x.Done {
+					done++
+				}
+			}
+		}
 	default:
 		for _, x := range m.items {
 			if !todo.Pinned(x) && x.Category == it.Category {
@@ -147,9 +173,28 @@ func (m model) groupCount(it todo.Item) (done, total int) {
 	return
 }
 
-// rowContent renders one item's row (box + text + flush-right due/prio/status
-// cluster) at the given indent, with an optional subtask-progress badge after
-// the text. Cursor highlight is applied by the caller.
+// rowComplement is the flush-far-right label: the grouping axis the active view
+// does *not* show in its headers. The priority view groups by priority, so its
+// rows carry the category; every other view carries the priority. Empty when the
+// item has no value for it.
+func (m model) rowComplement(it todo.Item) string {
+	if m.view == viewPriority {
+		if it.Category == "" {
+			return ""
+		}
+		return catStyle.Render(it.Category)
+	}
+	if lbl, ok := prioLabel[it.Prio]; ok {
+		return prioStyles[it.Prio].Render(lbl)
+	}
+	return ""
+}
+
+// rowContent renders one item's row at the given indent: the box (its shape the
+// status — ○ open, ◐ named status, ✓ done), the text, then up to two flush-right
+// values — the subtask progress or due/defer label, and the complement axis
+// (see rowComplement) pinned far right. badge is the item's subtask progress, or
+// "". Cursor highlight is applied by the caller.
 func (m model) rowContent(it todo.Item, indent, badge string, isSub bool) string {
 	w := m.width()
 	box := "○"
@@ -168,14 +213,23 @@ func (m model) rowContent(it todo.Item, indent, badge string, isSub bool) string
 	if m.global && m.view != viewBoard && it.Source != "" {
 		text += " " + dimStyle.Render("["+it.Source+"]")
 	}
-	// right cluster: due (left) then priority label flush far-right.
-	// Overdue rows live under the ⚠ overdue group, so don't repeat "overdue" on the line.
+	// In the tag view the group header names the grouping tag; show the item's
+	// other tags after the text so a multi-tag item isn't misread as single-tag.
+	if m.view == viewTag && len(it.Tags) > 1 {
+		text += " " + dimStyle.Render("#"+strings.Join(it.Tags[1:], " #"))
+	}
+	// Progress/due slot: one value, so the column lines up row to row — subtask
+	// progress when the item has subtasks, else the due/defer label. Nothing
+	// urgent hides behind a badge: overdue parents are pinned to the ⚠ overdue group.
 	label := ""
-	if deferred {
+	switch {
+	case badge != "":
+		label = countStyle.Render(badge)
+	case deferred:
 		if lbl := todo.DeferLabel(it.Defer); lbl != "" {
 			label = dimStyle.Render(lbl)
 		}
-	} else if it.Due != "" && (isSub || !todo.Pinned(it)) {
+	case it.Due != "" && (isSub || !todo.Pinned(it)):
 		// parents hide the label when pinned to the ⚠ overdue group; subs have no
 		// such group, so always show it (red when overdue).
 		lbl, over := todo.DueLabel(it.Due)
@@ -185,32 +239,14 @@ func (m model) rowContent(it todo.Item, indent, badge string, isSub bool) string
 		}
 		label = st.Render(lbl)
 	}
-	if badge != "" { // subtask progress, flush-right just left of priority
+	if c := m.rowComplement(it); c != "" { // pinned far right, past the progress/due slot
 		if label != "" {
 			label += "  "
 		}
-		label += countStyle.Render(badge)
-	}
-	if lbl, ok := prioLabel[it.Prio]; ok {
-		if label != "" {
-			label += "  "
-		}
-		label += prioStyles[it.Prio].Render(lbl)
-	}
-	if it.Status != "" { // intermediate status, flush-right ahead of due/prio
-		s := progStyle.Render(it.Status)
-		if label != "" {
-			label = s + "  " + label
-		} else {
-			label = s
-		}
+		label += c
 	}
 	left := fmt.Sprintf("%s%s %s", indent, boxSt.Render(box), text)
-	gap := w - lipgloss.Width(left) - lipgloss.Width(label)
-	if gap < 1 {
-		gap = 1
-	}
-	return left + strings.Repeat(" ", gap) + label
+	return spread(w, left, label)
 }
 
 func (m model) listView() string {
@@ -237,12 +273,7 @@ func (m model) listView() string {
 				}
 				done, total := m.groupCount(parent)
 				cnt := countStyle.Render(fmt.Sprintf("%d/%d", done, total))
-				left := catStyle.Render(label)
-				gap := w - lipgloss.Width(left) - lipgloss.Width(cnt)
-				if gap < 1 {
-					gap = 1
-				}
-				out = append(out, left+strings.Repeat(" ", gap)+cnt)
+				out = append(out, spread(w, catStyle.Render(label), cnt))
 				lastGroup = gid
 			}
 			if d, t := todo.SubCount(it); t > 0 {
@@ -311,12 +342,7 @@ func (m model) archiveView() string {
 		left := "  " + boxStyle.Render("✓") + " " + dimStyle.Render(it.Text)
 		row := left
 		if m.global && it.Source != "" {
-			tag := catStyle.Render("[" + it.Source + "]")
-			gap := w - lipgloss.Width(left) - lipgloss.Width(tag)
-			if gap < 1 {
-				gap = 1
-			}
-			row = left + strings.Repeat(" ", gap) + tag
+			row = spread(w, left, catStyle.Render("["+it.Source+"]"))
 		}
 		if i == m.arcCur {
 			cursorLine = len(out)
@@ -355,11 +381,7 @@ func (m model) boardsView() string {
 			left = boxStyle.Render("▸ ") + b.Name
 		}
 		cnt := countStyle.Render(fmt.Sprintf("%d/%d", total-open, total))
-		gap := w - lipgloss.Width(left) - lipgloss.Width(cnt)
-		if gap < 1 {
-			gap = 1
-		}
-		row := left + strings.Repeat(" ", gap) + cnt
+		row := spread(w, left, cnt)
 		if i == m.projCur {
 			cursorLine = len(out)
 			row = cursorStyle.Width(w).Render(ansi.Strip(row))
@@ -490,11 +512,7 @@ func (m model) settingsView() string {
 	// header without the done/total count that headerWith always appends.
 	left := titleLeft()
 	right := dimStyle.Render("settings")
-	gap := w - lipgloss.Width(left) - lipgloss.Width(right)
-	if gap < 1 {
-		gap = 1
-	}
-	header := left + strings.Repeat(" ", gap) + right + "\n" + ruleStyle.Render(strings.Repeat("┈", w))
+	header := spread(w, left, right) + "\n" + ruleStyle.Render(strings.Repeat("┈", w))
 
 	rule := ruleStyle.Render(strings.Repeat("┈", w))
 	footer := rule + "\n"
@@ -580,12 +598,7 @@ func (m model) headerWith(context string, done, total int) string {
 		}
 		right = right + "  " + save
 	}
-	gap := w - lipgloss.Width(left) - lipgloss.Width(right)
-	if gap < 1 {
-		gap = 1
-	}
-
-	return left + strings.Repeat(" ", gap) + right + "\n" +
+	return spread(w, left, right) + "\n" +
 		ruleStyle.Render(strings.Repeat("┈", w))
 }
 
@@ -609,11 +622,13 @@ func osc8(text, url string) string {
 func (m model) bottomBar() string {
 	left := dimStyle.Render(repoName)
 	right := dimStyle.Render("v" + Version)
+	// Link the version to its GitHub release; skip when unbuilt ("dev"/"unknown").
+	// The link is added after spreading so the invisible OSC 8 bytes don't count
+	// toward the gap.
 	gap := m.width() - lipgloss.Width(left) - lipgloss.Width(right)
 	if gap < 1 {
 		gap = 1
 	}
-	// Link the version to its GitHub release; skip when unbuilt ("dev"/"unknown").
 	if Version != "dev" && Version != "unknown" && Version != "" {
 		right = osc8(right, repoURL+"/releases/tag/v"+Version)
 	}
@@ -627,8 +642,8 @@ func (m model) listFooter() string {
 	switch m.mode {
 	case modeFilter:
 		return rule + "\n" + m.input.View() + "  " + dimStyle.Render("(filter: enter=apply esc=clear)")
-	case modeAdd, modeAddSub, modeEdit, modeCategory, modeDue, modeDefer, modeLink:
-		verb := map[mode]string{modeAdd: "add", modeAddSub: "subtask", modeEdit: "edit", modeCategory: "category", modeDue: "due", modeDefer: "defer", modeLink: "link"}[m.mode]
+	case modeAdd, modeAddSub, modeEdit, modeCategory, modeTags, modeDue, modeDefer, modeLink:
+		verb := map[mode]string{modeAdd: "add", modeAddSub: "subtask", modeEdit: "edit", modeCategory: "category", modeTags: "tags", modeDue: "due", modeDefer: "defer", modeLink: "link"}[m.mode]
 		return rule + "\n" + m.input.View() + "  " + dimStyle.Render("("+verb+": enter=save esc=cancel)")
 	default:
 		if m.hideFooter { // keep the repo/version line; drop the help grid
@@ -649,7 +664,7 @@ func (m model) helpGrid() string {
 	}{
 		{"move", []entry{{"j/k", "move"}, {"space", "toggle"}, {"d", "detail"}, {"v", "view"}, {"A", "global"}, {"e", "archive"}, {"b", "boards"}, {"F", "footer"}}},
 		{"edit", []entry{{"a", "add"}, {"S", "sub"}, {"u", "edit"}, {"tab", "status"}, {"x", "del"}, {"c", "sweep"}, {"C", "arch"}}},
-		{"fields", []entry{{"h/m/l", "prio"}, {"g", "cat"}, {"t", "due"}, {"s", "defer"}, {"L", "link"}, {"o", "open"}}},
+		{"fields", []entry{{"h/m/l", "prio"}, {"g", "cat"}, {"T", "tags"}, {"t", "due"}, {"s", "defer"}, {"L", "link"}, {"o", "open"}}},
 		{"board", []entry{{"w", "save"}, {"^e", "editor"}, {"U", "undo"}, {"^r", "redo"}, {"/", "filter"}, {",", "settings"}, {"?", "help"}, {"q", "quit"}}},
 	}
 
@@ -662,7 +677,7 @@ func (m model) helpGrid() string {
 	// Due / defer / link / status all work on subtasks. `o` opens the link, so dim
 	// it too when this subtask has none.
 	onSub := !m.global && m.selRef().sub >= 0
-	subInert := map[string]bool{"g": true, "C": true}
+	subInert := map[string]bool{"g": true, "T": true, "C": true}
 	if onSub && m.rowItem(m.selRef()).Link == "" {
 		subInert["o"] = true
 	}
@@ -815,18 +830,19 @@ func (m model) helpBody() []string {
 	}
 	blank := func() { out = append(out, "") }
 
-	line("An interactive todo board in a herdr pane, backed by a plain markdown file. Changes save on quit, autosave after a short idle pause, or on demand with w; the header shows ● unsaved / ● saved. The board reloads external edits automatically when you have nothing unsaved.")
+	line("An interactive todo board backed by a plain markdown file. Runs standalone in any terminal, or as a herdr plugin pane. Changes save on quit, autosave after a short idle pause, or on demand with w; the header shows ● unsaved / ● saved. The board reloads external edits automatically when you have nothing unsaved.")
 	blank()
 	sec("adding")
-	line("a — add. Inline syntax: text @category !h|!m|!l due:tomorrow defer:3d link:https://…")
+	line("a — add. Inline syntax: text @category #tag (tags:a,b replaces the set) !h|!m|!l due:tomorrow defer:3d link:https://… status:name note:the rest of the line")
 	line("u — edit the selected item's (or subtask's) text")
 	line("S — add a subtask to the selected item (same !prio / due: syntax)")
 	blank()
 	sec("organise")
 	line("h/m/l — set priority high/medium/low (same key again clears; works on subtasks too)")
-	line("g — set category · t — set due date · s — set defer/start date")
+	line("g — set category · T — set tags (space- or comma-separated; empty clears) · t — set due date · s — set defer/start date")
 	line("L — set link · o — open the link in the browser")
 	line("space — toggle done · tab — cycle status · x — delete")
+	line("rows carry two flush-right values: subtask progress (else the due/defer label), then whichever grouping axis the headers don't already name — priority in the category and tag views, category in the priority view. The box shape is the status (○ open, ◐ named status, ✓ done)")
 	line("c — archive all done items · C — archive the selected item (whole items only, not subtasks)")
 	line("subtasks: completing a parent completes its subtasks; completing the last subtask completes the parent")
 	blank()
@@ -834,11 +850,11 @@ func (m model) helpBody() []string {
 	line("today · tomorrow · Nd/Nw/Nm/Ny (e.g. 3d, 2w) · DD-MM-YYYY. Anything unrecognised clears the date. Overdue items are pinned to a group at the top.")
 	blank()
 	sec("view & find")
-	line("v — cycle view: category / priority / table")
-	line("/ — filter text, note, category, due (also greps the archive)")
+	line("v — cycle view: category / priority / tag / table (the global view adds a board grouping). The tag view groups by an item's first tag (untagged last) and shows its other tags on the row")
+	line("/ — filter text, note, category, tags, due (also greps the archive)")
 	line("A — toggle the read-only global view across all boards (esc to leave)")
 	line("e — browse the archive (read-only; all boards in the global view; esc to leave)")
-	line("d — detail view · ? — this help")
+	line("d — detail view; the same field keys work there (u, h/m/l, g, T, t, s, L, tab) and return to it · ? — this help")
 	line("F — hide/show the footer help grid (the repo/version line stays; config: hidefooter = true starts hidden)")
 	blank()
 	sec("history & files")
@@ -966,6 +982,11 @@ func (m model) detailView() string {
 	b.WriteString(field("status", status))
 	b.WriteString(field("priority", prio))
 	b.WriteString(field("category", category))
+	tags := dimStyle.Render("—")
+	if len(it.Tags) > 0 {
+		tags = catStyle.Render("#" + strings.Join(it.Tags, " #"))
+	}
+	b.WriteString(field("tags", tags))
 	if m.global && it.Source != "" {
 		b.WriteString(field("board", catStyle.Render(it.Source)))
 	}
@@ -999,15 +1020,23 @@ func (m model) detailView() string {
 	} else if it.Note != "" {
 		b.WriteString(lipgloss.NewStyle().Width(m.width()).Render(it.Note) + "\n")
 	} else {
-		b.WriteString(dimStyle.Render("(none — press e to add)") + "\n")
+		b.WriteString(dimStyle.Render("(none — press n to add)") + "\n")
 	}
 
 	rule := dimStyle.Render(strings.Repeat("─", m.width()))
 	var help string
-	if m.mode == modeNote {
+	switch {
+	case m.mode == modeNote:
 		help = rule + "\n" + dimStyle.Render("note: enter newline · esc done (saves as you type)")
-	} else {
-		help = rule + "\n" + dimStyle.Render("n edit note   space toggle   o open link   esc back   q quit")
+	case m.global: // the aggregate view is read-only; only navigation applies
+		help = rule + "\n" + dimStyle.Render("o open link · esc back · q quit")
+	default:
+		// the list's field editors work here too and come back here when done.
+		// Three short lines rather than one long one, so a narrow pane never wraps.
+		help = rule + "\n" +
+			dimStyle.Render("u text   h/m/l prio   g cat   T tags") + "\n" +
+			dimStyle.Render("t due   s defer   L link   tab status") + "\n" +
+			dimStyle.Render("n note   space toggle   o open link   esc back   q quit")
 	}
 	return m.frame(b.String(), help)
 }

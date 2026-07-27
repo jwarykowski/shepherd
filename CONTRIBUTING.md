@@ -1,4 +1,4 @@
-# Contributing
+# contributing
 
 Go plugin, split into `internal/` packages (`cli`, `store`, `todo`, `tui`). No frameworks.
 
@@ -15,7 +15,7 @@ meta-linter; install it from https://golangci-lint.run. CI
 (`.github/workflows/pull-request.yml`) runs all of the above on every pull
 request; keep them green.
 
-## Git hooks
+## git hooks
 
 Enable the pre-commit hook (gofmt's staged Go files, once per clone):
 

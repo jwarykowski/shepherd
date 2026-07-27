@@ -255,3 +255,64 @@ func TestApplyEdit(t *testing.T) {
 		t.Fatalf("status:done should mark done: %+v", it)
 	}
 }
+
+func TestTags(t *testing.T) {
+	// #tag adds (lowercased, deduped) and leaves the text alone.
+	it := ParseQuickAdd("wire the webhook #API #api #docs")
+	if it.Text != "wire the webhook" || len(it.Tags) != 2 || it.Tags[0] != "api" || it.Tags[1] != "docs" {
+		t.Fatalf("#tag parse wrong: %+v", it)
+	}
+	if !Match(it, "docs") || Match(it, "zzz") {
+		t.Fatal("Match should search tags")
+	}
+
+	// tags: replaces the whole set — the way one tag gets dropped.
+	ApplyEdit(&it, "tags:Docs,ops,")
+	if len(it.Tags) != 2 || it.Tags[0] != "docs" || it.Tags[1] != "ops" {
+		t.Fatalf("tags: should replace the set: %+v", it.Tags)
+	}
+	ApplyEdit(&it, "#api") // adds without dropping what's there
+	if len(it.Tags) != 3 || it.Tags[2] != "api" {
+		t.Fatalf("#tag should append: %+v", it.Tags)
+	}
+
+	// bare # and bare tags: both clear, and neither touches the text.
+	for _, tok := range []string{"#", "tags:"} {
+		it.Tags = []string{"api"}
+		ApplyEdit(&it, tok)
+		if len(it.Tags) != 0 || it.Text != "wire the webhook" {
+			t.Fatalf("%q should clear tags only: %+v", tok, it)
+		}
+	}
+
+	// Clone must not alias Tags, or an undo snapshot mutates with the live item.
+	orig := []Item{{Text: "x", Tags: []string{"api"}, Subs: []Item{{Text: "s", Tags: []string{"sub"}}}}}
+	snap := Clone(orig)
+	AddTag(&orig[0], "docs")
+	orig[0].Tags[0] = "changed"
+	orig[0].Subs[0].Tags[0] = "changed"
+	if len(snap[0].Tags) != 1 || snap[0].Tags[0] != "api" || snap[0].Subs[0].Tags[0] != "sub" {
+		t.Fatalf("Clone aliased Tags: %+v", snap[0])
+	}
+}
+
+func TestSortByTag(t *testing.T) {
+	items := []Item{
+		{Text: "u1"}, // untagged -> last
+		{Text: "b1", Tags: []string{"docs"}},
+		{Text: "a2", Tags: []string{"api", "docs"}, Prio: 'H'},
+		{Text: "a1", Tags: []string{"api"}, Prio: 'L'},
+	}
+	SortByTag(items)
+	got := ""
+	for _, it := range items {
+		got += it.Text + " "
+	}
+	// grouped by first tag (api<docs, untagged last), priority order within a tag
+	if got != "a2 a1 b1 u1 " {
+		t.Fatalf("tag order wrong: %q", got)
+	}
+	if TagKey(items[3]) != "" || TagKey(items[0]) != "api" {
+		t.Fatal("TagKey should be the first tag, empty when untagged")
+	}
+}

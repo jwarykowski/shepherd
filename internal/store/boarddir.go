@@ -20,28 +20,14 @@ func boardDirsPath() string {
 	return filepath.Join(filepath.Dir(ConfigPath()), "boards.toml")
 }
 
-// loadBoardDirs reads the sidecar into a name→dir map. Leniently parsed:
-// `name = "dir"` lines, blanks and #-comments skipped. Missing file → empty map.
+// loadBoardDirs reads the sidecar into a name→dir map (see ScanKV for the
+// accepted `name = "dir"` shape). Missing file → empty map.
 func loadBoardDirs() map[string]string {
-	out := map[string]string{}
-	data, err := os.ReadFile(boardDirsPath())
-	if err != nil {
-		return out
+	dirs := ScanKVFile(boardDirsPath())
+	for name, dir := range dirs {
+		dirs[name] = strings.Trim(dir, `"`)
 	}
-	for _, ln := range strings.Split(string(data), "\n") {
-		ln = strings.TrimSpace(ln)
-		if ln == "" || strings.HasPrefix(ln, "#") {
-			continue
-		}
-		k, v, ok := strings.Cut(ln, "=")
-		if !ok {
-			continue
-		}
-		if name := strings.TrimSpace(k); name != "" {
-			out[name] = strings.Trim(strings.TrimSpace(v), `"`)
-		}
-	}
-	return out
+	return dirs
 }
 
 // BoardDir returns the configured working directory for a board, or "" if none.

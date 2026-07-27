@@ -136,6 +136,29 @@ func TestStatusRoundTrip(t *testing.T) {
 	}
 }
 
+// TestTagsRoundTrip covers the tags: meta line on a parent and a subtask: the
+// comma list parses into normalised tags and re-serialises byte-identically.
+func TestTagsRoundTrip(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "todo.md")
+	src := "- [ ] parent\n  category: work\n  tags: api, docs\n  - [ ] child\n    tags: ops\n"
+	if err := os.WriteFile(p, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	items := Load(p)
+	if got := items[0].Tags; len(got) != 2 || got[0] != "api" || got[1] != "docs" {
+		t.Fatalf("tags not parsed: %+v", got)
+	}
+	if got := items[0].Subs[0].Tags; len(got) != 1 || got[0] != "ops" {
+		t.Fatalf("subtask tags not parsed: %+v", got)
+	}
+	if err := Save(p, items); err != nil {
+		t.Fatal(err)
+	}
+	if got := string(mustRead(t, p)); got != src {
+		t.Fatalf("tags round-trip mismatch:\nwant %q\ngot  %q", src, got)
+	}
+}
+
 func TestNoteMultilineRoundTrip(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "todo.md")
 	// a multi-line note serialises as one note: line per physical line.
@@ -227,7 +250,7 @@ func TestAppendArchive(t *testing.T) {
 func TestTodoPathResolution(t *testing.T) {
 	// SHEPHERD_TODO_FILE is the whole-file override.
 	t.Setenv("SHEPHERD_TODO_FILE", "/x/y.md")
-	if got := TodoPath(); got != "/x/y.md" {
+	if got := TodoPathFor(""); got != "/x/y.md" {
 		t.Errorf("SHEPHERD_TODO_FILE not honoured: %q", got)
 	}
 	_ = os.Unsetenv("SHEPHERD_TODO_FILE")
@@ -235,12 +258,12 @@ func TestTodoPathResolution(t *testing.T) {
 	// The old HERDR_ vars no longer affect paths.
 	t.Setenv("HERDR_TODO_FILE", "/x/y.md")
 	t.Setenv("HERDR_PLUGIN_STATE_DIR", "/state")
-	if got := TodoPath(); !strings.HasSuffix(got, "/.config/shepherd/todo.md") {
+	if got := TodoPathFor(""); !strings.HasSuffix(got, "/.config/shepherd/todo.md") {
 		t.Errorf("HERDR_ vars should be ignored, got %q", got)
 	}
 	_ = os.Unsetenv("HERDR_TODO_FILE")
 	_ = os.Unsetenv("HERDR_PLUGIN_STATE_DIR")
-	if got := TodoPath(); !strings.HasSuffix(got, "/.config/shepherd/todo.md") {
+	if got := TodoPathFor(""); !strings.HasSuffix(got, "/.config/shepherd/todo.md") {
 		t.Errorf("default path = %q", got)
 	}
 

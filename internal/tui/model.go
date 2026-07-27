@@ -42,61 +42,29 @@ type config struct {
 //	categories = ["work", "home", "personal"]   # or: work, home, personal
 func loadConfig(path string) config {
 	c := config{autosave: 60, statuses: []string{"open", "done"}}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return c
+	kv := store.ScanKVFile(path)
+	val := func(k string) string { return strings.ToLower(strings.Trim(kv[k], `"`)) }
+	switch val("view") {
+	case "priority":
+		c.view = viewPriority
+	case "tag":
+		c.view = viewTag
+	case "table":
+		c.view = viewTable
+	default:
+		c.view = viewCategory
 	}
-	for _, ln := range strings.Split(string(data), "\n") {
-		ln = strings.TrimSpace(ln)
-		if ln == "" || strings.HasPrefix(ln, "#") {
-			continue
-		}
-		k, v, ok := strings.Cut(ln, "=")
-		if !ok {
-			continue
-		}
-		k = strings.TrimSpace(k)
-		v = strings.TrimSpace(v)
-		switch k {
-		case "view":
-			switch strings.ToLower(strings.Trim(v, `"`)) {
-			case "priority":
-				c.view = viewPriority
-			case "table":
-				c.view = viewTable
-			default:
-				c.view = viewCategory
-			}
-		case "density":
-			if strings.ToLower(strings.Trim(v, `"`)) == "comfort" {
-				c.density = comfort
-			} else {
-				c.density = compact
-			}
-		case "categories":
-			for _, part := range strings.Split(strings.Trim(v, "[]"), ",") {
-				if p := strings.Trim(strings.TrimSpace(part), `"`); p != "" {
-					c.categories = append(c.categories, p)
-				}
-			}
-		case "statuses":
-			var ss []string
-			for _, part := range strings.Split(strings.Trim(v, "[]"), ",") {
-				if p := strings.ToLower(strings.Trim(strings.TrimSpace(part), `"`)); p != "" {
-					ss = append(ss, p)
-				}
-			}
-			if len(ss) > 0 {
-				c.statuses = ss
-			}
-		case "autosave":
-			if n, err := strconv.Atoi(strings.Trim(v, `"`)); err == nil {
-				c.autosave = n
-			}
-		case "hidefooter":
-			c.hideFooter = strings.Trim(strings.ToLower(v), `"`) == "true"
-		}
+	if val("density") == "comfort" {
+		c.density = comfort
 	}
+	c.categories = store.ParseList(kv["categories"], false)
+	if ss := store.ParseList(kv["statuses"], true); len(ss) > 0 {
+		c.statuses = ss
+	}
+	if n, err := strconv.Atoi(strings.Trim(kv["autosave"], `"`)); err == nil {
+		c.autosave = n
+	}
+	c.hideFooter = val("hidefooter") == "true"
 	c.statuses = normalizeStatuses(c.statuses)
 	return c
 }
@@ -157,6 +125,7 @@ const (
 	modeEdit
 	modeNote
 	modeCategory
+	modeTags
 	modeDue
 	modeDefer
 	modeLink
@@ -202,11 +171,20 @@ type viewMode int
 const (
 	viewCategory viewMode = iota // grouped under category headers
 	viewPriority                 // grouped under priority headers
+	viewTag                      // grouped under the item's first tag
 	viewTable                    // flat bubbles/table
 	viewBoard                    // grouped by source board (global view only)
 )
 
-var viewName = map[viewMode]string{viewCategory: "category", viewPriority: "priority", viewTable: "table", viewBoard: "board"}
+// viewCount is how many views `v` cycles through: every view on a board, plus
+// viewBoard in the read-only global view. Keep viewBoard last in the iota so the
+// two counts stay a simple modulus.
+const (
+	viewCount       = int(viewBoard)
+	viewCountGlobal = viewCount + 1
+)
+
+var viewName = map[viewMode]string{viewCategory: "category", viewPriority: "priority", viewTag: "tag", viewTable: "table", viewBoard: "board"}
 
 type model struct {
 	path          string
@@ -243,6 +221,7 @@ type model struct {
 	projNotice    string        // transient picker error (e.g. invalid/duplicate board name)
 	projPending   string        // board whose working dir is being set (modeBoardDir)
 	projDirEdit   bool          // dir editor opened from the detail view (empty clears, return to detail); false = creation flow (empty skips)
+	fieldEdit     bool          // a field editor was opened from the item detail view, so save/cancel returns there instead of the list
 	settingsCur   int           // cursor into the settings rows (modeSettings)
 	hideFooter    bool          // hide the list footer (help grid + version line)
 }
@@ -262,11 +241,14 @@ func (m model) currentConfig() config {
 
 // resort orders items for the active view.
 func (m *model) resort() {
-	if m.view == viewBoard {
+	switch m.view {
+	case viewBoard:
 		todo.SortBySource(m.items)
-		return
+	case viewTag:
+		todo.SortByTag(m.items)
+	default:
+		todo.Sort(m.items, m.view == viewPriority)
 	}
-	todo.Sort(m.items, m.view == viewPriority)
 }
 
 // fingerprint is an order-independent snapshot of board content, so the saved
