@@ -342,6 +342,8 @@ priority load, throughput and backlog trend (drawn with
 the archive. `--all` aggregates every board and adds a by-board breakdown;
 `--json` emits the raw numbers (no charts) for scripts.
 
+![shepherd stats](assets/stats.gif)
+
 ```json
 [
   { "id": "019f7390…d901", "index": 1, "done": false, "priority": "H",

@@ -4,8 +4,8 @@
 #   go install .         # so the recording runs the current build
 #   vhs assets/demo.tape
 #
-# The tape seeds a throwaway board in a temp dir, so recording never touches a
-# real board or config.
+# demo-seed.sh seeds a throwaway board in a temp dir, so recording never touches
+# a real board or config.
 
 Require shepherd
 
@@ -14,33 +14,16 @@ Output assets/demo.gif
 Set Shell zsh
 Set FontSize 15
 Set Width 1320
-Set Height 700
+Set Height 760
 Set Padding 20
 Set Theme "Catppuccin Mocha"
 Set Framerate 24
 Set TypingSpeed 45ms
 
 Hide
-# interactive zsh would eat the !h/!l priority tokens as history expansion
-Type 'setopt nobanghist'
+Type 'd=$(mktemp -d) && export SHEPHERD_TODO_FILE=$d/todo.md SHEPHERD_CONFIG=$d/config.toml'
 Enter
-Type 'd=$(mktemp -d) && export SHEPHERD_TODO_FILE=$d/demo.md SHEPHERD_CONFIG=$d/config.toml'
-Enter
-Type 'shepherd add "cut the 1.0 release tag @release !h due:tomorrow" >/dev/null'
-Enter
-Type 'shepherd add "verify the signed artefacts @release status:in-progress" >/dev/null'
-Enter
-Type 'shepherd add "document the config file @docs due:week" >/dev/null'
-Enter
-Type 'shepherd add "port the key table to a grid @docs !l" >/dev/null'
-Enter
-Type 'shepherd add "fix the flaky lock test @bugs !h" >/dev/null'
-Enter
-Type 'shepherd add "reply on the mailing list thread" >/dev/null'
-Enter
-Type 'shepherd sub 1 "tag the commit" >/dev/null'
-Enter
-Type 'shepherd sub 1 "push the tap bump" >/dev/null'
+Type 'sh assets/demo-seed.sh'
 Enter
 Type 'clear'
 Enter
