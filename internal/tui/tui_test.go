@@ -1259,6 +1259,18 @@ func TestGlobalReadOnly(t *testing.T) {
 		t.Fatalf("v cycle did not return to board after %d steps: %v", viewCountGlobal, got.view)
 	}
 
+	// the footer grid shows F and A as live here, so they must actually work: F
+	// toggles the footer, A leaves the aggregate the same way it entered it
+	if got := drive(m, "F"); !got.hideFooter {
+		t.Fatal("F did not toggle the footer in the global view")
+	}
+	dir := t.TempDir() // toggling out rebuilds the board from disk
+	t.Setenv("SHEPHERD_TODO_FILE", filepath.Join(dir, "todo.md"))
+	t.Setenv("SHEPHERD_CONFIG", filepath.Join(dir, "config.toml"))
+	if got := drive(m, "A"); got.global {
+		t.Fatal("A should toggle back to the focused board")
+	}
+
 	// items group by source; header id/label is the board name
 	if id, label := m.groupOf(m.items[0]); id != "sdefault" || label != "default" {
 		t.Fatalf("board group wrong: %q %q", id, label)

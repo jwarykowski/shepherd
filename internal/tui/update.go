@@ -306,8 +306,10 @@ func (m model) updateGlobal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "q":
 		return m.quit()
-	case "esc":
+	case "esc", "A": // A toggles both ways, like it does on a board
 		m.toggleGlobal()
+	case "F":
+		m.hideFooter = !m.hideFooter
 	case "j", "down":
 		if m.cursor < len(rows)-1 {
 			m.cursor++
