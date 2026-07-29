@@ -69,7 +69,7 @@ herdr plugin install jwarykowski/shepherd
 | key | action |
 |-----|--------|
 | `j` / `↓`, `k` / `↑` | move |
-| `space` / `enter` | toggle done (on a parent, cascades to its subtasks; the last subtask done completes the parent) |
+| `space` | toggle done (on a parent, cascades to its subtasks; the last subtask done completes the parent) |
 | `tab` | cycle status (open → in-progress → done → open); see `statuses` config |
 | `h` / `m` / `l` | set priority high / medium / low |
 | `g` | set category |
@@ -101,9 +101,9 @@ herdr plugin install jwarykowski/shepherd
 The detail view is also an editor: the same field keys work there — `u` text,
 `h`/`m`/`l` priority, `g` category, `T` tags, `t` due, `s` defer, `L` link, `tab`
 status — and saving returns you to the detail view rather than the list. Plus
-`n` edit note · `space` toggle · `o` open link · `esc`/`q` back. Its footer is
-the same labelled key grid as the board's, narrowed to the keys that act on the
-one item (`fields` · `dates` · `item` · `go`).
+`n` edit note · `space` toggle · `o` open link · `esc` back · `q` save + quit. Its
+footer is the same labelled key grid as the board's, narrowed to the keys that
+act on the one item (`fields` · `dates` · `item` · `go`).
 
 **Rows carry two flush-right values**: the subtask progress (`1/2`) when the item
 has subtasks, else the due/defer label — then, pinned far right, whichever
@@ -211,6 +211,10 @@ board grouping each board is a header; in the others every row carries a
 `[board]` tag (the table gets a `board` column). It's read-only by design —
 editing stays on the focused board, so the aggregate is never written back.
 `/` filters across boards (including by board name).
+
+Only the keys that read or navigate work here — `j`/`k`, `d`, `v`, `/`, `e`, `b`,
+`o`, `F`, `?`, `A`/`esc` to leave, `q` to quit. Every editing key is inert and
+shown dimmed in the footer, on the board and in the detail view alike.
 
 The command API mirrors it: `shepherd list --all` (see [command api](#command-api)).
 
