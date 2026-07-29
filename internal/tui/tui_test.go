@@ -667,9 +667,12 @@ func TestTagEditor(t *testing.T) {
 	if m.mode != modeDetail || m.items[0].Prio != 'H' {
 		t.Fatalf("h from detail should set priority and stay: mode=%d prio=%c", m.mode, m.items[0].Prio)
 	}
-	// and the footer advertises the field keys
-	if out := ansi.Strip(m.detailView()); !strings.Contains(out, "T tags") {
-		t.Fatalf("detail footer missing the field keys:\n%s", out)
+	// and the footer is a labelled key grid like the list's
+	out := ansi.Strip(m.detailView())
+	for _, want := range []string{"fields", "dates", "item", "prio", "tags", "status"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("detail footer grid missing %q:\n%s", want, out)
+		}
 	}
 
 	// empty clears

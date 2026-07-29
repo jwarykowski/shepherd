@@ -101,7 +101,9 @@ herdr plugin install jwarykowski/shepherd
 The detail view is also an editor: the same field keys work there — `u` text,
 `h`/`m`/`l` priority, `g` category, `T` tags, `t` due, `s` defer, `L` link, `tab`
 status — and saving returns you to the detail view rather than the list. Plus
-`n` edit note · `space` toggle · `o` open link · `esc`/`q` back.
+`n` edit note · `space` toggle · `o` open link · `esc`/`q` back. Its footer is
+the same labelled key grid as the board's, narrowed to the keys that act on the
+one item (`fields` · `dates` · `item` · `go`).
 
 **Rows carry two flush-right values**: the subtask progress (`1/2`) when the item
 has subtasks, else the due/defer label — then, pinned far right, whichever
