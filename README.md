@@ -14,6 +14,8 @@ syncable.
 </tr>
 </table>
 
+![Shepherd in action](assets/demo.gif)
+
 No setup required — everything defaults under `~/.config/shepherd/` (or
 `$XDG_CONFIG_HOME/shepherd/` when that is set):
 

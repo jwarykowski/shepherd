@@ -15,6 +15,20 @@ meta-linter; install it from https://golangci-lint.run. CI
 (`.github/workflows/pull-request.yml`) runs all of the above on every pull
 request; keep them green.
 
+## demo gif
+
+`assets/demo.gif` in the README is scripted, not screen-captured — regenerate it
+after any change to the board layout or footer:
+
+```sh
+brew install vhs            # pulls in ttyd + ffmpeg
+go install .                # so the recording runs your build, not the released one
+vhs assets/demo.tape
+```
+
+The tape seeds a throwaway board under `mktemp -d`, so recording never touches a
+real board or config.
+
 ## git hooks
 
 Enable the pre-commit hook (gofmt's staged Go files, once per clone):
