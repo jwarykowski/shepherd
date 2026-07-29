@@ -57,7 +57,8 @@ Boards (the default board can't be renamed/deleted/archived):
   board dir <name> [<path>]       show/set a board's working directory
 
 Global flags (any command):
-  --board <name>    act on a named board (or set $SHEPHERD_BOARD)
+  --board <name>    act on a named board (or set $SHEPHERD_BOARD); ignored while
+                    $SHEPHERD_TODO_FILE pins one file
   -q, --quiet       suppress state-change confirmation lines
   --no-input        never prompt (accepted for script-compat; this API never prompts)
   -h, --help        print a command's flags

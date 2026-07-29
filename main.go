@@ -39,7 +39,7 @@ func main() {
 
 	flag.Usage = func() { fmt.Fprintln(os.Stderr, cli.Usage()) }
 	filter := flag.String("filter", os.Getenv("SHEPHERD_FILTER"), "start with this filter applied (matches text/note/category/tags/due/defer/link)")
-	board := flag.String("board", "", "open this named board (else $SHEPHERD_BOARD, else the default)")
+	board := flag.String("board", "", "open this named board (else $SHEPHERD_BOARD, else the default); ignored while $SHEPHERD_TODO_FILE pins one file")
 	all := flag.Bool("all", false, "open the read-only global view across all boards")
 	ver := flag.Bool("version", false, "print the version and exit")
 	flag.Parse()

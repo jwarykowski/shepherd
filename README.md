@@ -38,8 +38,8 @@ No setup required — everything defaults under `~/.config/shepherd/` (or
 | Archive | sibling of the board: `archive.md` / `<name>-archive.md` |
 | Config (optional, shared) | `~/.config/shepherd/config.toml` |
 
-Overrides: `$SHEPHERD_TODO_FILE` (exact board file), `$SHEPHERD_CONFIG` (config
-file). See [storage](#storage).
+Overrides: `$SHEPHERD_TODO_FILE` (exact board file — outranks `--board`),
+`$SHEPHERD_CONFIG` (config file). See [storage](#storage).
 
 ![Shepherd in action](assets/demo.gif)
 
@@ -188,7 +188,8 @@ SHEPHERD_BOARD=web shepherd     # same, via env
 
 Names are a simple slug — letters, digits, `.` `_` `-`. The archive is
 per-board (`boards/web.md` → `boards/web-archive.md`); see
-[storage](#storage). This also works from the command API (below) and as a
+[storage](#storage). A `$SHEPHERD_TODO_FILE` in the environment pins one file and
+silently wins over any board selection. This also works from the command API (below) and as a
 herdr pane entrypoint:
 
 ```toml
@@ -317,7 +318,8 @@ Change detection is mtime polling (`--interval`, default `1s`); it's read-only
 and never blocks a writer.
 
 Flags go **after** the verb. Add `--board <name>` (or set `$SHEPHERD_BOARD`)
-to target a named board instead of the default:
+to target a named board instead of the default — unless `$SHEPHERD_TODO_FILE`
+is set, which pins one file and takes precedence:
 
 ```sh
 shepherd add "ship v2 @work !h" --board web
@@ -423,6 +425,14 @@ Layout is the table at the top: the default `todo.md`, a shared `config.toml`,
 and one `boards/<name>.md` per named board (selected with
 `--board`/`$SHEPHERD_BOARD`). Override the exact board file with
 `$SHEPHERD_TODO_FILE`.
+
+`$SHEPHERD_TODO_FILE` outranks `--board`/`$SHEPHERD_BOARD`: while it is set,
+every verb that reads or writes items works on that one file, and a `--board`
+name is accepted but has no effect. The board commands are unaffected — `boards`,
+`board rename`/`archive`/`delete`, `--all` and `stats --all` always enumerate
+`boards/` under the config directory, which `$SHEPHERD_TODO_FILE` doesn't move.
+So a scratch board for a test or a script wants the whole config directory
+redirected with `$XDG_CONFIG_HOME`, not just the one file.
 
 Dates are stored ISO (`YYYY-MM-DD`) so they sort correctly, but shown and
 entered day-month-year / DMY (`DD-MM-YYYY`). Metadata rides as indented
