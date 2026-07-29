@@ -1,5 +1,3 @@
-![Shepherd in action](assets/demo.gif)
-
 <table>
 <tr>
 <td width="200" valign="top"><img src="assets/shepherd.png" alt="Shepherd" width="180"></td>
@@ -42,6 +40,8 @@ No setup required — everything defaults under `~/.config/shepherd/` (or
 
 Overrides: `$SHEPHERD_TODO_FILE` (exact board file), `$SHEPHERD_CONFIG` (config
 file). See [storage](#storage).
+
+![Shepherd in action](assets/demo.gif)
 
 ## install
 
