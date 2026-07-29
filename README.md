@@ -1,3 +1,5 @@
+![Shepherd in action](assets/demo.gif)
+
 <table>
 <tr>
 <td width="200" valign="top"><img src="assets/shepherd.png" alt="Shepherd" width="180"></td>
@@ -13,8 +15,6 @@ syncable.
 </td>
 </tr>
 </table>
-
-![Shepherd in action](assets/demo.gif)
 
 - [install](#install)
 - [usage](#usage)
