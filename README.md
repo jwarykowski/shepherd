@@ -16,6 +16,20 @@ syncable.
 
 ![Shepherd in action](assets/demo.gif)
 
+- [install](#install)
+- [usage](#usage)
+- [subtasks](#subtasks)
+- [boards](#boards)
+- [global view](#global-view)
+- [launch filter](#launch-filter)
+- [command api](#command-api)
+- [stats](#stats)
+- [agentic tools](#agentic-tools)
+- [configuration](#configuration)
+- [storage](#storage)
+- [herdr integration](#herdr-integration)
+- [develop](#develop)
+
 No setup required — everything defaults under `~/.config/shepherd/` (or
 `$XDG_CONFIG_HOME/shepherd/` when that is set):
 
@@ -28,19 +42,6 @@ No setup required — everything defaults under `~/.config/shepherd/` (or
 
 Overrides: `$SHEPHERD_TODO_FILE` (exact board file), `$SHEPHERD_CONFIG` (config
 file). See [storage](#storage).
-
-- [install](#install)
-- [usage](#usage)
-- [subtasks](#subtasks)
-- [boards](#boards)
-- [global view](#global-view)
-- [launch filter](#launch-filter)
-- [command api](#command-api)
-- [agentic tools](#agentic-tools)
-- [configuration](#configuration)
-- [storage](#storage)
-- [herdr integration](#herdr-integration)
-- [develop](#develop)
 
 ## install
 
@@ -289,8 +290,7 @@ Global flags (any command):
 
 Exit codes: `0` success · `2` usage/input error (bad flag, unknown command,
 unknown ref) · `1` runtime/IO failure. A mistyped command suggests the
-closest real one. `stats` drops colour when stdout isn't a terminal, `$NO_COLOR`
-is set, or `$TERM=dumb`; `--no-color` forces it off.
+closest real one.
 
 `done`/`undone`/`rm` take one or more refs (id or index) and apply them as a
 single atomic write; they're safe to repeat, since re-marking a done item keeps
@@ -336,14 +336,6 @@ as shorthands) — the `status` field appears in `list --json`.
 `list --all --json` adds a `board` field per item so you can tell which board
 each came from.
 
-`stats` summarises a board as terminal charts — completion, due/urgency,
-priority load, throughput and backlog trend (drawn with
-[ntcharts](https://github.com/NimbleMarkets/ntcharts)). Done-based counts include
-the archive. `--all` aggregates every board and adds a by-board breakdown;
-`--json` emits the raw numbers (no charts) for scripts.
-
-![shepherd stats](assets/stats.gif)
-
 ```json
 [
   { "id": "019f7390…d901", "index": 1, "done": false, "priority": "H",
@@ -353,6 +345,32 @@ the archive. `--all` aggregates every board and adds a by-board breakdown;
     "note": "", "completed": "" }
 ]
 ```
+
+## stats
+
+`shepherd stats` summarises a board as terminal charts — completion, due and
+urgency, priority load, aging, status mix, throughput and backlog trend (drawn
+with [ntcharts](https://github.com/NimbleMarkets/ntcharts)).
+
+![shepherd stats](assets/stats.gif)
+
+Done-based counts include the archive, so throughput survives a sweep. Only
+top-level items are counted — subtasks don't appear in any chart.
+
+| Flag | What |
+|------|------|
+| `--all` | aggregate every board, and add a by-board breakdown |
+| `--json` | the raw numbers instead of charts, for scripts |
+| `--legend` | explain every chart and the aging numbers |
+| `--no-color` | charts without ANSI colour |
+
+Colour drops itself when stdout isn't a terminal, `$NO_COLOR` is set, or
+`$TERM=dumb`; `--no-color` forces it off.
+
+The backlog health line under the charts is the part worth watching: `oldest
+open`, `avg open`, `stale >30d` (open items created over 30 days ago) and `time
+to done` (mean create→complete). A rising `net +N/mo` on the backlog chart means
+the board is growing faster than it's being cleared.
 
 ## agentic tools
 
@@ -391,7 +409,7 @@ hidefooter = false                         # true starts with the footer help gr
 - `density` — `comfort` adds outer padding and blank lines between rows.
 - `autosave` — idle seconds before an unsaved board is written to disk (default 60); `0` disables it, so only `w` and quit save.
 - `categories` — press `tab` in the category prompt (`g`) to cycle through them.
-- `statuses` — ordered list `tab` cycles through in the list; `done` is always kept and forced last. Defaults to `["open", "done"]`. Intermediate statuses persist as a `status:` line and show a `◐` glyph; the stats page (board and `shepherd stats`) breaks items down by status in this order.
+- `statuses` — ordered list `tab` cycles through in the list; `done` is always kept and forced last. Defaults to `["open", "done"]`. Intermediate statuses persist as a `status:` line and show a `◐` glyph; [`shepherd stats`](#stats) breaks items down by status in this order.
 - `hidefooter` — start with the footer help grid hidden for a cleaner board (the `jwarykowski/shepherd` · version line stays); `F` toggles it at runtime.
 
 Edit these in the running board with `,` (settings): `enter` cycles `view`/`density`/`footer` and edits `autosave`/`categories`/`statuses`, and each change is written straight back to `config.toml`. shepherd owns the file — a settings save rewrites the managed keys.
