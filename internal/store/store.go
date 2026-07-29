@@ -54,6 +54,11 @@ func ResolveBoard(flag string) (string, error) {
 	if name == "" {
 		name = os.Getenv("SHEPHERD_BOARD")
 	}
+	// "default" is the label `boards` advertises for the empty-named default
+	// board; accept it back so a name read from that listing round-trips.
+	if name == "default" {
+		return "", nil
+	}
 	if name != "" && !boardRE.MatchString(name) {
 		return "", fmt.Errorf("invalid board name %q (use letters, digits, . _ -)", name)
 	}
@@ -184,6 +189,9 @@ func archivedDir() string { return filepath.Join(BaseDir(), "boards", "archived"
 func CreateBoard(name string) error {
 	if err := ValidBoard(name); err != nil {
 		return err
+	}
+	if name == "default" {
+		return fmt.Errorf("board %q is reserved for the default board", name)
 	}
 	p := TodoPathFor(name)
 	if fileExists(p) {

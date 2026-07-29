@@ -282,6 +282,13 @@ func TestResolveBoard(t *testing.T) {
 	if got, err := ResolveBoard(""); err != nil || got != "" {
 		t.Fatalf("empty -> default: %q %v", got, err)
 	}
+	// "default" (the name `boards` advertises) round-trips to the empty board.
+	if got, err := ResolveBoard("default"); err != nil || got != "" {
+		t.Fatalf(`"default" -> empty: %q %v`, got, err)
+	}
+	if err := CreateBoard("default"); err == nil {
+		t.Fatal(`"default" should be reserved`)
+	}
 	if _, err := ResolveBoard("../evil"); err == nil {
 		t.Fatal("traversal via flag not rejected")
 	}
