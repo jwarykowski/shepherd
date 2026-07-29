@@ -452,6 +452,48 @@ func TestAddInheritsFilterCategory(t *testing.T) {
 	}
 }
 
+func TestAddInheritsSelectedCategory(t *testing.T) {
+	// no filter: the new item takes the selected row's category
+	m := model{input: textinput.New(), items: []todo.Item{{Text: "a", Category: "work"}}}
+	m = drive(m, "a")
+	m.input.SetValue("write the changelog")
+	m = drive(m, "enter")
+	if got := lastByText(m, "write the changelog"); got.Category != "work" {
+		t.Fatalf("add over a categorised item should inherit: %+v", got)
+	}
+
+	// inline @category still wins over the selected row
+	m = drive(m, "a")
+	m.input.SetValue("errand @home")
+	m = drive(m, "enter")
+	if got := lastByText(m, "errand"); got.Category != "home" {
+		t.Fatalf("inline category should override the selected row: %+v", got)
+	}
+
+	// a subtask row contributes its parent's category
+	m = model{input: textinput.New(), items: []todo.Item{{Text: "p", Category: "work", Subs: []todo.Item{{Text: "s"}}}}}
+	m = drive(m, "j") // onto the subtask row
+	if ref := m.selRef(); ref.sub != 0 {
+		t.Fatalf("cursor should be on the subtask row: %+v", ref)
+	}
+	m = drive(m, "a")
+	m.input.SetValue("from a sub")
+	m = drive(m, "enter")
+	if got := lastByText(m, "from a sub"); got.Category != "work" {
+		t.Fatalf("subtask row should inherit the parent's category: %+v", got)
+	}
+
+	// uncategorised row under a category filter: the filter rule still applies
+	m = model{input: textinput.New(), categories: []string{"personal"}, filter: "personal",
+		items: []todo.Item{{Text: "personal admin"}}} // matches by text, has no category
+	m = drive(m, "a")
+	m.input.SetValue("book flights")
+	m = drive(m, "enter")
+	if got := lastByText(m, "book flights"); got.Category != "personal" {
+		t.Fatalf("uncategorised row should fall back to the filter: %+v", got)
+	}
+}
+
 func lastByText(m model, text string) todo.Item {
 	for i := len(m.items) - 1; i >= 0; i-- {
 		if m.items[i].Text == text {

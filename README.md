@@ -78,7 +78,7 @@ herdr plugin install jwarykowski/shepherd
 | `s` | set defer/start date (same formats as due; item shows dimmed with `starts Nd` until then) |
 | `L` | set a reference link (url) |
 | `o` | open the selected item's link in the browser |
-| `a` | add item (inline syntax below) |
+| `a` | add item (inline syntax below); inherits the selected item's category unless the text names one |
 | `S` | add a subtask to the selected item |
 | `u` | edit item (or subtask) text |
 | `d` | open detail view (shows every field) |
@@ -225,8 +225,9 @@ board — start it pre-filtered by text/note/category/tags/due/defer/link:
 
 When the filter names a category (one you've configured or already use), items
 you add while it's active inherit that category — so a task added on a
-`--filter work` board lands in `work` and stays in view. An inline `@category`
-still overrides; a filter that isn't a category leaves new items uncategorized.
+`--filter work` board lands in `work` and stays in view. This is the fallback:
+the selected item's own category is inherited first, and an inline `@category`
+overrides both. A filter that isn't a category leaves new items uncategorized.
 The two combine: `shepherd --board web --filter '!h'`.
 
 `shepherd --version` prints the version and exits.

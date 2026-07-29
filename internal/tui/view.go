@@ -864,6 +864,7 @@ func (m model) helpBody() []string {
 	blank()
 	sec("adding")
 	line("a — add. Inline syntax: text @category #tag (tags:a,b replaces the set) !h|!m|!l due:tomorrow defer:3d link:https://… status:name note:the rest of the line")
+	line("a new item inherits the selected item's category (then a category filter's), so adding under a group stays in it; an inline @category overrides")
 	line("u — edit the selected item's (or subtask's) text")
 	line("S — add a subtask to the selected item (same !prio / due: syntax)")
 	blank()

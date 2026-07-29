@@ -71,6 +71,18 @@ func (m model) filterCategory() string {
 	return ""
 }
 
+// addCategory is the category a new item inherits: the selected row's, so an
+// item added over a categorised one joins that group instead of the
+// uncategorised tail, else a category filter's (which would otherwise hide the
+// new item). An explicit @category in the input beats both. idx is the selected
+// row's item index, -1 when no row is selected.
+func (m model) addCategory(idx int) string {
+	if idx >= 0 && m.items[idx].Category != "" {
+		return m.items[idx].Category
+	}
+	return m.filterCategory()
+}
+
 // visible returns the item indices matching the current filter, in order.
 func (m model) visible() []int {
 	idx := make([]int, 0, len(m.items))
@@ -1064,7 +1076,7 @@ func (m model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case modeAdd:
 			if it := todo.ParseQuickAdd(v); it.Text != "" {
 				if it.Category == "" {
-					it.Category = m.filterCategory()
+					it.Category = m.addCategory(idx)
 				}
 				m.beforeMutate()
 				m.items = append(m.items, it)
