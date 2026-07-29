@@ -1005,7 +1005,7 @@ func (m model) updateDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.fieldEdit = true // save/cancel comes back here, not to the list
 			res, cmd := m.updateList(msg)
 			nm := res.(model)
-			if nm.mode == modeList { // an immediate mutation (prio, status): stay put
+			if !nm.input.Focused() { // an immediate mutation (prio, status): stay put
 				nm.mode = modeDetail
 				nm.fieldEdit = false
 			}

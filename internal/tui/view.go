@@ -59,7 +59,9 @@ func (m model) View() string {
 		content = m.boardsView()
 	case m.mode == modeSettings || m.mode == modeSettingEdit:
 		content = m.settingsView()
-	case m.mode == modeDetail || m.mode == modeNote:
+	case m.mode == modeDetail || m.mode == modeNote || m.fieldEdit:
+		// fieldEdit means an editor was opened from the detail view, so the item
+		// stays on screen with the prompt in its footer instead of the list's.
 		content = m.detailView()
 	case m.view == viewTable:
 		content = m.tableView()
@@ -643,14 +645,21 @@ func (m model) listFooter() string {
 	case modeFilter:
 		return rule + "\n" + m.input.View() + "  " + dimStyle.Render("(filter: enter=apply esc=clear)")
 	case modeAdd, modeAddSub, modeEdit, modeCategory, modeTags, modeDue, modeDefer, modeLink:
-		verb := map[mode]string{modeAdd: "add", modeAddSub: "subtask", modeEdit: "edit", modeCategory: "category", modeTags: "tags", modeDue: "due", modeDefer: "defer", modeLink: "link"}[m.mode]
-		return rule + "\n" + m.input.View() + "  " + dimStyle.Render("("+verb+": enter=save esc=cancel)")
+		return rule + "\n" + m.inputPrompt()
 	default:
 		if m.hideFooter { // keep the repo/version line; drop the help grid
 			return rule + "\n" + m.bottomBar()
 		}
 		return rule + "\n" + m.helpGrid() + "\n" + rule + "\n" + m.bottomBar()
 	}
+}
+
+// inputPrompt is the active field editor's line: the text input and what enter
+// and esc will do. Shared by the list and detail footers, so an editor opened
+// from either place reads the same.
+func (m model) inputPrompt() string {
+	verb := map[mode]string{modeAdd: "add", modeAddSub: "subtask", modeEdit: "edit", modeCategory: "category", modeTags: "tags", modeDue: "due", modeDefer: "defer", modeLink: "link"}[m.mode]
+	return m.input.View() + "  " + dimStyle.Render("("+verb+": enter=save esc=cancel)")
 }
 
 // keyCol is one labelled column of a footer key grid: a header over its
@@ -1056,9 +1065,12 @@ func (m model) detailView() string {
 
 	rule := dimStyle.Render(strings.Repeat("─", m.width()))
 	var help string
-	if m.mode == modeNote {
+	switch {
+	case m.mode == modeNote:
 		help = rule + "\n" + dimStyle.Render("note: enter newline · esc done (saves as you type)")
-	} else {
+	case m.fieldEdit: // editing a field from here: the prompt replaces the grid
+		help = rule + "\n" + m.inputPrompt()
+	default:
 		// the list's field editors work here too and come back here when done, so
 		// the footer is the list's grid narrowed to one item.
 		help = rule + "\n" + m.detailGrid()

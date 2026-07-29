@@ -696,6 +696,16 @@ func TestTagEditor(t *testing.T) {
 		t.Fatalf("detail edit did not save: %+v", got)
 	}
 
+	// while editing, the item stays on screen — prompt in the detail footer, not
+	// the list's
+	m = drive(m, "T")
+	m.input.SetValue("ops")
+	if out := ansi.Strip(m.View()); !strings.Contains(out, "(tags: enter=save esc=cancel)") ||
+		!strings.Contains(out, "task") || strings.Contains(out, "j/k") {
+		t.Fatalf("field editor should render over the detail view:\n%s", out)
+	}
+	m = drive(m, "enter")
+
 	// esc from a detail-opened editor also returns to detail, unchanged
 	m = drive(m, "T")
 	m.input.SetValue("nope")
