@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -44,8 +45,9 @@ Items (ref = an item's stable id from 'list --json', or its 1-based index n;
           failures as {"error":…} on stdout instead of text on stderr.
   Mutating verbs are safe to repeat: re-marking a done item keeps its stamp.
 
-  syntax: @category  !h|!m|!l  due:<date>  defer:<date>  link:<url>
-          status:<name>  note:<text> (takes the rest of the line)
+  syntax: @category  #tag (adds)  tags:<a,b> (replaces)  !h|!m|!l
+          due:<date>  defer:<date>  link:<url>  status:<name>
+          note:<text> (takes the rest of the line)
 
 Boards (the default board can't be renamed/deleted/archived):
   board rename <old> <new>
@@ -55,7 +57,7 @@ Boards (the default board can't be renamed/deleted/archived):
   board dir <name> [<path>]       show/set a board's working directory
 
 Global flags (any command):
-  --board <name>  act on a board's board (or set $SHEPHERD_BOARD)
+  --board <name>    act on a named board (or set $SHEPHERD_BOARD)
   -q, --quiet       suppress state-change confirmation lines
   --no-input        never prompt (accepted for script-compat; this API never prompts)
   -h, --help        print a command's flags
@@ -150,52 +152,35 @@ var quiet bool
 // --no-input is accepted for script-compat (clig) but is a no-op: the command
 // API reads only argv and never prompts.
 func extractGlobals(args []string) []string {
-	quiet = false
-	rest := make([]string, 0, len(args))
-	for _, a := range args {
-		switch a {
-		case "-q", "--quiet":
-			quiet = true
-		case "--no-input":
-			// no-op: the command API never prompts.
-		default:
-			rest = append(rest, a)
-		}
-	}
-	return rest
+	quiet, args = extractFlag(args, "-q", "--quiet")
+	_, args = extractFlag(args, "--no-input") // accepted for script-compat; never prompts
+	return args
 }
 
-// extractDryRun pulls -n/--dry-run out of args (for the destructive verbs that
-// support a preview: rm and board delete).
-func extractDryRun(args []string) (bool, []string) {
-	dry := false
+// extractFlag pulls a boolean flag (spelled any of names) out of args, returning
+// whether it was present and the remaining args. The mutating verbs strip their
+// flags by hand rather than through a FlagSet, which would reject the global
+// ones as unknown and would fight `add` joining its args into text.
+func extractFlag(args []string, names ...string) (bool, []string) {
+	found := false
 	rest := make([]string, 0, len(args))
 	for _, a := range args {
-		if a == "-n" || a == "--dry-run" {
-			dry = true
+		if slices.Contains(names, a) {
+			found = true
 			continue
 		}
 		rest = append(rest, a)
 	}
-	return dry, rest
+	return found, rest
 }
 
-// extractJSON pulls --json out of args (the mutating verbs parse it by hand
-// rather than through a FlagSet, like extractDryRun). In JSON mode a verb echoes
-// the resulting item(s) so an agent needn't re-list to confirm, and reports
-// failures as a structured object instead of free text on stderr.
-func extractJSON(args []string) (bool, []string) {
-	asJSON := false
-	rest := make([]string, 0, len(args))
-	for _, a := range args {
-		if a == "--json" {
-			asJSON = true
-			continue
-		}
-		rest = append(rest, a)
-	}
-	return asJSON, rest
-}
+// extractDryRun serves the destructive verbs that support a preview (rm, board
+// delete). extractJSON puts a verb in JSON mode: it echoes the resulting item(s)
+// so an agent needn't re-list to confirm, and reports failures as a structured
+// object instead of free text on stderr.
+func extractDryRun(args []string) (bool, []string) { return extractFlag(args, "-n", "--dry-run") }
+
+func extractJSON(args []string) (bool, []string) { return extractFlag(args, "--json") }
 
 // emitJSON marshals v and writes it to w. Returns exit 0, or 1 if v somehow
 // can't be marshalled (never expected for these types).
@@ -314,6 +299,7 @@ type itemJSON struct {
 	Priority  string     `json:"priority,omitempty"` // "H"/"M"/"L"
 	Text      string     `json:"text"`
 	Category  string     `json:"category,omitempty"`
+	Tags      []string   `json:"tags,omitempty"` // lowercase free-form labels
 	Created   string     `json:"created,omitempty"`
 	Completed string     `json:"completed,omitempty"`
 	Defer     string     `json:"defer,omitempty"` // ISO YYYY-MM-DD
@@ -325,7 +311,7 @@ type itemJSON struct {
 }
 
 func toJSON(it todo.Item, idx int) itemJSON {
-	j := itemJSON{ID: it.ID, Index: idx, Done: it.Done, Status: it.Status, Text: it.Text, Category: it.Category, Created: it.Created, Completed: it.Completed, Defer: it.Defer, Due: it.Due, Link: it.Link, Note: it.Note, Board: it.Source}
+	j := itemJSON{ID: it.ID, Index: idx, Done: it.Done, Status: it.Status, Text: it.Text, Category: it.Category, Tags: it.Tags, Created: it.Created, Completed: it.Completed, Defer: it.Defer, Due: it.Due, Link: it.Link, Note: it.Note, Board: it.Source}
 	if it.Prio != 0 {
 		j.Priority = string(it.Prio)
 	}
@@ -361,7 +347,7 @@ func cmdList(args []string, board string, w io.Writer) int {
 	fs := flag.NewFlagSet("list", flag.ContinueOnError)
 	asJSON := fs.Bool("json", false, "machine-readable JSON output")
 	all := fs.Bool("all", false, "aggregate items across every board (read-only)")
-	filter := fs.String("filter", "", "only items matching this text (text/note/category/due/defer/link)")
+	filter := fs.String("filter", "", "only items matching this text (text/note/category/tags/due/defer/link)")
 	if err := fs.Parse(args); err != nil {
 		return parseExit(err)
 	}
@@ -673,10 +659,24 @@ func cmdBoard(args []string, w io.Writer) int {
 	}
 }
 
-// The mutating verbs run their whole load→mutate→save under store.WithLock, so
+// locked runs a verb's whole load→mutate→save under store.WithLock, so
 // concurrent shepherd processes (parallel agents) serialise and never lose one
-// another's edits. Each captures its exit code from inside the locked closure;
-// a returned error is an IO/lock failure (exit 1 via saveErr).
+// another's edits. fn gets the board path and its freshly loaded items and
+// returns the verb's exit code; a returned error is an IO/lock failure, reported
+// as exit 1 via saveErr.
+func locked(board string, w io.Writer, asJSON bool, fn func(path string, items []todo.Item) (int, error)) int {
+	path := store.TodoPathFor(board)
+	exit := 0
+	err := store.WithLock(path, func() error {
+		var ferr error
+		exit, ferr = fn(path, store.Load(path))
+		return ferr
+	})
+	if err != nil {
+		return saveErr(w, asJSON, err)
+	}
+	return exit
+}
 
 func cmdAdd(args []string, board string, w io.Writer) int {
 	asJSON, args := extractJSON(args)
@@ -688,25 +688,18 @@ func cmdAdd(args []string, board string, w io.Writer) int {
 	if it.Text == "" {
 		return usageErr(w, asJSON, "nothing to add after parsing tokens")
 	}
-	path := store.TodoPathFor(board)
-	exit := 0
-	err := store.WithLock(path, func() error {
-		items := append(store.Load(path), it)
+	return locked(board, w, asJSON, func(path string, items []todo.Item) (int, error) {
+		items = append(items, it)
 		if err := store.Save(path, items); err != nil { // Save backfills the new item's id
-			return err
+			return 0, err
 		}
 		idx := len(items)
 		if asJSON {
-			exit = emitJSON(w, toJSON(items[idx-1], idx))
-		} else {
-			say(w, formatLine(idx, items[idx-1]))
+			return emitJSON(w, toJSON(items[idx-1], idx)), nil
 		}
-		return nil
+		say(w, formatLine(idx, items[idx-1]))
+		return 0, nil
 	})
-	if err != nil {
-		return saveErr(w, asJSON, err)
-	}
-	return exit
 }
 
 // cmdSub adds a subtask to item <ref>: shepherd sub <ref> "<text>". The text
@@ -714,46 +707,34 @@ func cmdAdd(args []string, board string, w io.Writer) int {
 // parent (it's no longer all-done). <ref> must resolve to a top-level item.
 func cmdSub(args []string, board string, w io.Writer) int {
 	asJSON, args := extractJSON(args)
-	path := store.TodoPathFor(board)
-	exit := 0
-	err := store.WithLock(path, func() error {
-		items := store.Load(path)
+	return locked(board, w, asJSON, func(path string, items []todo.Item) (int, error) {
 		if len(args) == 0 {
-			exit = usageErr(w, asJSON, `sub needs an item and text, e.g. shepherd sub 1 "parse tokens"`)
-			return nil
+			return usageErr(w, asJSON, `sub needs an item and text, e.g. shepherd sub 1 "parse tokens"`), nil
 		}
 		p, s, ok := resolveRef(args[0], items)
 		if !ok || s != 0 {
-			exit = refErr(w, asJSON, args[0], len(items))
-			return nil
+			return refErr(w, asJSON, args[0], len(items)), nil
 		}
 		text := strings.TrimSpace(strings.Join(args[1:], " "))
 		if text == "" {
-			exit = usageErr(w, asJSON, `sub needs text, e.g. shepherd sub 1 "parse tokens"`)
-			return nil
+			return usageErr(w, asJSON, `sub needs text, e.g. shepherd sub 1 "parse tokens"`), nil
 		}
 		sub := todo.ParseQuickAdd(text)
 		if sub.Text == "" {
-			exit = usageErr(w, asJSON, "nothing to add after parsing tokens")
-			return nil
+			return usageErr(w, asJSON, "nothing to add after parsing tokens"), nil
 		}
 		parent := &items[p-1]
 		parent.Subs = append(parent.Subs, sub)
 		todo.SetDone(parent, todo.AllSubsDone(parent))
 		if err := store.Save(path, items); err != nil {
-			return err
+			return 0, err
 		}
 		if asJSON {
-			exit = emitJSON(w, toJSON(items[p-1], p))
-		} else {
-			say(w, formatSub(p, len(parent.Subs), parent.Subs[len(parent.Subs)-1]))
+			return emitJSON(w, toJSON(items[p-1], p)), nil
 		}
-		return nil
+		say(w, formatSub(p, len(parent.Subs), parent.Subs[len(parent.Subs)-1]))
+		return 0, nil
 	})
-	if err != nil {
-		return saveErr(w, asJSON, err)
-	}
-	return exit
 }
 
 // cmdEdit merges quick-add tokens onto an existing item <ref> (or subtask):
@@ -762,23 +743,17 @@ func cmdSub(args []string, board string, w io.Writer) int {
 // is replaced only when plain words are given (see todo.ApplyEdit).
 func cmdEdit(args []string, board string, w io.Writer) int {
 	asJSON, args := extractJSON(args)
-	path := store.TodoPathFor(board)
-	exit := 0
-	err := store.WithLock(path, func() error {
-		items := store.Load(path)
+	return locked(board, w, asJSON, func(path string, items []todo.Item) (int, error) {
 		if len(args) == 0 {
-			exit = usageErr(w, asJSON, `edit needs an item and tokens, e.g. shepherd edit 2 "@home !h due:tomorrow"`)
-			return nil
+			return usageErr(w, asJSON, `edit needs an item and tokens, e.g. shepherd edit 2 "@home !h due:tomorrow"`), nil
 		}
 		p, s, ok := resolveRef(args[0], items)
 		if !ok {
-			exit = refErr(w, asJSON, args[0], len(items))
-			return nil
+			return refErr(w, asJSON, args[0], len(items)), nil
 		}
 		text := strings.TrimSpace(strings.Join(args[1:], " "))
 		if text == "" {
-			exit = usageErr(w, asJSON, `edit needs tokens, e.g. shepherd edit 2 "@home !h due:tomorrow"`)
-			return nil
+			return usageErr(w, asJSON, `edit needs tokens, e.g. shepherd edit 2 "@home !h due:tomorrow"`), nil
 		}
 		if s == 0 {
 			todo.ApplyEdit(&items[p-1], text)
@@ -789,21 +764,18 @@ func cmdEdit(args []string, board string, w io.Writer) int {
 			todo.SetDone(&items[p-1], todo.AllSubsDone(&items[p-1]))
 		}
 		if err := store.Save(path, items); err != nil {
-			return err
+			return 0, err
 		}
-		if asJSON {
-			exit = emitJSON(w, toJSON(items[p-1], p))
-		} else if s == 0 {
+		switch {
+		case asJSON:
+			return emitJSON(w, toJSON(items[p-1], p)), nil
+		case s == 0:
 			say(w, formatLine(p, items[p-1]))
-		} else {
+		default:
 			say(w, formatSub(p, s, items[p-1].Subs[s-1]))
 		}
-		return nil
+		return 0, nil
 	})
-	if err != nil {
-		return saveErr(w, asJSON, err)
-	}
-	return exit
 }
 
 // cmdToggle marks one or more items (not) done: shepherd done|undone <ref>...
@@ -812,14 +784,10 @@ func cmdEdit(args []string, board string, w io.Writer) int {
 // stays valid through the loop.
 func cmdToggle(args []string, board string, done bool, w io.Writer) int {
 	asJSON, args := extractJSON(args)
-	path := store.TodoPathFor(board)
-	exit := 0
-	err := store.WithLock(path, func() error {
-		items := store.Load(path)
+	return locked(board, w, asJSON, func(path string, items []todo.Item) (int, error) {
 		refs, bad, ok := parseRefs(args, items)
 		if !ok {
-			exit = refErr(w, asJSON, bad, len(items))
-			return nil
+			return refErr(w, asJSON, bad, len(items)), nil
 		}
 		for _, r := range refs {
 			if r[1] == 0 {
@@ -829,11 +797,10 @@ func cmdToggle(args []string, board string, done bool, w io.Writer) int {
 			}
 		}
 		if err := store.Save(path, items); err != nil {
-			return err
+			return 0, err
 		}
 		if asJSON {
-			exit = emitJSON(w, affectedJSON(items, refs))
-			return nil
+			return emitJSON(w, affectedJSON(items, refs)), nil
 		}
 		for _, r := range refs {
 			say(w, formatLine(r[0], items[r[0]-1]))
@@ -841,12 +808,8 @@ func cmdToggle(args []string, board string, done bool, w io.Writer) int {
 				say(w, formatSub(r[0], r[1], items[r[0]-1].Subs[r[1]-1]))
 			}
 		}
-		return nil
+		return 0, nil
 	})
-	if err != nil {
-		return saveErr(w, asJSON, err)
-	}
-	return exit
 }
 
 // cmdRemove deletes one or more items/subtasks: shepherd rm <ref>... [--dry-run].
@@ -855,14 +818,10 @@ func cmdToggle(args []string, board string, done bool, w io.Writer) int {
 func cmdRemove(args []string, board string, w io.Writer) int {
 	asJSON, args := extractJSON(args)
 	dry, args := extractDryRun(args)
-	path := store.TodoPathFor(board)
-	exit := 0
-	err := store.WithLock(path, func() error {
-		items := store.Load(path)
+	return locked(board, w, asJSON, func(path string, items []todo.Item) (int, error) {
 		refs, bad, ok := parseRefs(args, items)
 		if !ok {
-			exit = refErr(w, asJSON, bad, len(items))
-			return nil
+			return refErr(w, asJSON, bad, len(items)), nil
 		}
 		rmParent := map[int]bool{}      // parent index -> whole item removed
 		rmSub := map[int]map[int]bool{} // parent index -> sub indices removed
@@ -882,13 +841,12 @@ func cmdRemove(args []string, board string, w io.Writer) int {
 		}
 		if dry {
 			if asJSON {
-				exit = emitJSON(w, map[string]any{"dry_run": true, "removed": removed})
-			} else {
-				for _, t := range removed {
-					emit(w, fmt.Sprintf("would remove %q", t))
-				}
+				return emitJSON(w, map[string]any{"dry_run": true, "removed": removed}), nil
 			}
-			return nil
+			for _, t := range removed {
+				emit(w, fmt.Sprintf("would remove %q", t))
+			}
+			return 0, nil
 		}
 		kept := make([]todo.Item, 0, len(items))
 		for i := range items {
@@ -912,21 +870,16 @@ func cmdRemove(args []string, board string, w io.Writer) int {
 			kept = append(kept, items[i])
 		}
 		if err := store.Save(path, kept); err != nil {
-			return err
+			return 0, err
 		}
 		if asJSON {
-			exit = emitJSON(w, map[string]any{"removed": removed})
-		} else {
-			for _, t := range removed {
-				say(w, fmt.Sprintf("removed %q", t))
-			}
+			return emitJSON(w, map[string]any{"removed": removed}), nil
 		}
-		return nil
+		for _, t := range removed {
+			say(w, fmt.Sprintf("removed %q", t))
+		}
+		return 0, nil
 	})
-	if err != nil {
-		return saveErr(w, asJSON, err)
-	}
-	return exit
 }
 
 // cmdArchive moves one or more top-level items off the live board and into the
@@ -937,20 +890,15 @@ func cmdRemove(args []string, board string, w io.Writer) int {
 // multi-archive is index-shift-safe like rm.
 func cmdArchive(args []string, board string, w io.Writer) int {
 	asJSON, args := extractJSON(args)
-	path := store.TodoPathFor(board)
-	exit := 0
-	err := store.WithLock(path, func() error {
-		items := store.Load(path)
+	return locked(board, w, asJSON, func(path string, items []todo.Item) (int, error) {
 		refs, bad, ok := parseRefs(args, items)
 		if !ok {
-			exit = refErr(w, asJSON, bad, len(items))
-			return nil
+			return refErr(w, asJSON, bad, len(items)), nil
 		}
 		arcParent := map[int]bool{} // distinct parent indices to archive
 		for _, r := range refs {
 			if r[1] != 0 {
-				exit = usageErr(w, asJSON, "archive whole items, not subtasks")
-				return nil
+				return usageErr(w, asJSON, "archive whole items, not subtasks"), nil
 			}
 			arcParent[r[0]] = true
 		}
@@ -966,24 +914,19 @@ func cmdArchive(args []string, board string, w io.Writer) int {
 		// Append to the archive before rewriting the board: an interrupted run
 		// re-archives (a dup in archive.md) rather than losing the item.
 		if err := store.AppendArchive(path, archived); err != nil {
-			return err
+			return 0, err
 		}
 		if err := store.Save(path, kept); err != nil {
-			return err
+			return 0, err
 		}
 		if asJSON {
-			exit = emitJSON(w, affectedJSON(items, refs))
-			return nil
+			return emitJSON(w, affectedJSON(items, refs)), nil
 		}
 		for _, it := range archived {
 			say(w, fmt.Sprintf("archived %q", it.Text))
 		}
-		return nil
+		return 0, nil
 	})
-	if err != nil {
-		return saveErr(w, asJSON, err)
-	}
-	return exit
 }
 
 // resolveRef resolves one item ref against items — a stable id, a "n" index, or
@@ -1079,6 +1022,9 @@ func formatLine(idx int, it todo.Item) string {
 	if it.Category != "" {
 		fmt.Fprintf(&b, "  @%s", it.Category)
 	}
+	if len(it.Tags) > 0 {
+		fmt.Fprintf(&b, "  %s", tagList(it.Tags))
+	}
 	if it.Due != "" {
 		fmt.Fprintf(&b, "  due %s", it.Due)
 	}
@@ -1087,6 +1033,9 @@ func formatLine(idx int, it todo.Item) string {
 	}
 	return b.String()
 }
+
+// tagList renders tags the way they're typed back in: "#api #docs".
+func tagList(tags []string) string { return "#" + strings.Join(tags, " #") }
 
 // formatSub renders a subtask as an indented, dotted-index line under its parent.
 func formatSub(parent, sub int, it todo.Item) string {
@@ -1102,6 +1051,9 @@ func formatSub(parent, sub int, it todo.Item) string {
 	fmt.Fprintf(&b, " %s", it.Text)
 	if !it.Done && it.Status != "" {
 		fmt.Fprintf(&b, "  ~%s", it.Status)
+	}
+	if len(it.Tags) > 0 {
+		fmt.Fprintf(&b, "  %s", tagList(it.Tags))
 	}
 	if it.Due != "" {
 		fmt.Fprintf(&b, "  due %s", it.Due)

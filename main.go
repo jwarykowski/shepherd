@@ -22,10 +22,8 @@ var pluginManifest string
 // version reads `version = "x.y.z"` out of the embedded manifest so the binary
 // and the plugin manifest never drift.
 func version() string {
-	for _, ln := range strings.Split(pluginManifest, "\n") {
-		if k, v, ok := strings.Cut(ln, "="); ok && strings.TrimSpace(k) == "version" {
-			return strings.Trim(strings.TrimSpace(v), `"`)
-		}
+	if v := store.ScanKV(pluginManifest)["version"]; v != "" {
+		return strings.Trim(v, `"`)
 	}
 	return "unknown"
 }

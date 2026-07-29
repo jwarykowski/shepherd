@@ -16,12 +16,12 @@ import (
 
 var (
 	lineRE = regexp.MustCompile(`^- \[([ xX])\] (?:\(([HMLhml])\) )?(.*)$`)
-	metaRE = regexp.MustCompile(`^  (id|created|completed|defer|note|category|due|link|status): (.*)$`)
+	metaRE = regexp.MustCompile(`^  (id|created|completed|defer|note|category|tags|due|link|status): (.*)$`)
 	// subtask lines are the same checklist syntax indented two spaces, with
 	// their own meta indented four. They never collide with metaRE (which needs
 	// a bare `word:` at two spaces, never `- [`).
 	subLineRE = regexp.MustCompile(`^  - \[([ xX])\] (?:\(([HMLhml])\) )?(.*)$`)
-	subMetaRE = regexp.MustCompile(`^    (id|created|completed|defer|note|category|due|link|status): (.*)$`)
+	subMetaRE = regexp.MustCompile(`^    (id|created|completed|defer|note|category|tags|due|link|status): (.*)$`)
 )
 
 // boardRE is the allowed board-name slug. Anchored and free of path
@@ -81,9 +81,6 @@ func TodoPathFor(board string) string {
 	return filepath.Join(BaseDir(), "todo.md")
 }
 
-// TodoPath resolves the default todo file (no board).
-func TodoPath() string { return TodoPathFor("") }
-
 // ConfigPath resolves the shared config file: $SHEPHERD_CONFIG, else a sibling
 // of the whole-file override if one is set, else BaseDir/config.toml. It stays
 // at BaseDir for board boards so every board shares one config.
@@ -97,37 +94,56 @@ func ConfigPath() string {
 	return filepath.Join(BaseDir(), "config.toml")
 }
 
-// ConfigStatusOrder reads the `statuses = [...]` line from the shared
-// config.toml (the same file the TUI reads), lowercased, in declared order.
-// Returns nil if unset/unreadable. This lets the CLI's stats respect the user's
-// configured status order instead of only count order.
-//
-// a minimal read of one key, not the TUI's fuller loader in
-// internal/tui — kept separate so this can't destabilize the board. If more
-// config keys are ever needed CLI-side, promote the tui loader into store.
-func ConfigStatusOrder() []string {
-	data, err := os.ReadFile(ConfigPath())
-	if err != nil {
-		return nil
-	}
-	for _, ln := range strings.Split(string(data), "\n") {
+// ScanKV parses the lenient `key = value` shape shepherd reads and writes
+// (config.toml, boards.toml, the embedded plugin manifest): blanks and
+// #-comments skipped, lines without an `=` ignored, values kept raw so the
+// caller unquotes or splits them. Later keys win.
+func ScanKV(data string) map[string]string {
+	out := map[string]string{}
+	for _, ln := range strings.Split(data, "\n") {
 		ln = strings.TrimSpace(ln)
 		if ln == "" || strings.HasPrefix(ln, "#") {
 			continue
 		}
-		k, v, ok := strings.Cut(ln, "=")
-		if !ok || strings.TrimSpace(k) != "statuses" {
-			continue
-		}
-		var out []string
-		for _, part := range strings.Split(strings.Trim(strings.TrimSpace(v), "[]"), ",") {
-			if p := strings.ToLower(strings.Trim(strings.TrimSpace(part), `"`)); p != "" {
-				out = append(out, p)
+		if k, v, ok := strings.Cut(ln, "="); ok {
+			if k = strings.TrimSpace(k); k != "" {
+				out[k] = strings.TrimSpace(v)
 			}
 		}
-		return out
 	}
-	return nil
+	return out
+}
+
+// ScanKVFile is ScanKV over a file; a missing or unreadable one is an empty map.
+func ScanKVFile(path string) map[string]string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return map[string]string{}
+	}
+	return ScanKV(string(data))
+}
+
+// ParseList splits a scanned list value — `["a", "b"]` or a bare `a, b` — into
+// its entries, dropping blanks; lower lowercases each (statuses).
+func ParseList(v string, lower bool) []string {
+	var out []string
+	for _, part := range strings.Split(strings.Trim(v, "[]"), ",") {
+		s := strings.Trim(strings.TrimSpace(part), `"`)
+		if lower {
+			s = strings.ToLower(s)
+		}
+		if s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// ConfigStatusOrder reads `statuses = [...]` from the shared config.toml (the
+// same file the TUI reads), lowercased, in declared order; nil if unset. It lets
+// the CLI's stats respect the configured status order, not just count order.
+func ConfigStatusOrder() []string {
+	return ParseList(ScanKVFile(ConfigPath())["statuses"], true)
 }
 
 // ArchivePath is the archive sibling of the todo file: todo.md -> archive.md,
@@ -396,6 +412,8 @@ func applyMeta(it *todo.Item, key, val string) {
 		it.Defer = val
 	case "category":
 		it.Category = strings.ToLower(val)
+	case "tags":
+		it.Tags = todo.ParseTags(val)
 	case "due":
 		it.Due = val
 	case "link":
@@ -479,6 +497,9 @@ func writeItem(b *strings.Builder, it todo.Item, indent string) {
 	}
 	if it.Category != "" {
 		fmt.Fprintf(b, "%scategory: %s\n", meta, it.Category)
+	}
+	if len(it.Tags) > 0 {
+		fmt.Fprintf(b, "%stags: %s\n", meta, strings.Join(it.Tags, ", "))
 	}
 	if !it.Done && it.Status != "" {
 		fmt.Fprintf(b, "%sstatus: %s\n", meta, it.Status)

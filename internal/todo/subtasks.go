@@ -25,17 +25,6 @@ func SetSubDone(p *Item, i int, done bool) {
 	SetDone(p, AllSubsDone(p))
 }
 
-// SetSubStatus sets a subtask's named status (same rules as SetStatus), then
-// reconciles the parent's done state — a subtask cycled to "done" can complete
-// the parent, an intermediate status reopens it.
-func SetSubStatus(p *Item, i int, name string) {
-	if i < 0 || i >= len(p.Subs) {
-		return
-	}
-	SetStatus(&p.Subs[i], name)
-	SetDone(p, AllSubsDone(p))
-}
-
 // CycleSubStatus advances a subtask through the configured statuses, then
 // reconciles the parent's done state.
 func CycleSubStatus(p *Item, i int, statuses []string) {
@@ -70,18 +59,27 @@ func SubCount(it Item) (done, total int) {
 	return done, len(it.Subs)
 }
 
-// Clone deep-copies items including their Subs, so a snapshot (undo/redo) can't
-// be mutated through a shared subtask slice. Item is non-comparable, so the
-// outer append([]Item, ...) shallow copy is not enough on its own.
+// Clone deep-copies items including their Subs and Tags, so a snapshot
+// (undo/redo) can't be mutated through a shared slice. Item is non-comparable,
+// so the outer append([]Item, ...) shallow copy is not enough on its own.
 func Clone(items []Item) []Item {
 	if items == nil {
 		return nil
 	}
+	cloneOne := func(it Item) Item {
+		if it.Tags != nil {
+			it.Tags = append([]string(nil), it.Tags...)
+		}
+		return it
+	}
 	out := make([]Item, len(items))
 	for i := range items {
-		out[i] = items[i]
+		out[i] = cloneOne(items[i])
 		if items[i].Subs != nil {
-			out[i].Subs = append([]Item(nil), items[i].Subs...)
+			out[i].Subs = make([]Item, len(items[i].Subs))
+			for j, s := range items[i].Subs {
+				out[i].Subs[j] = cloneOne(s)
+			}
 		}
 	}
 	return out

@@ -28,6 +28,16 @@ func catKey(c string) string {
 	return strings.ToLower(c)
 }
 
+// TagKey is an item's grouping tag: its first tag, or "" when untagged. Tags are
+// multi-valued but a row belongs to exactly one group, so the first one wins —
+// the rest ride along on the row. Exported for the UI's group ordering.
+func TagKey(it Item) string {
+	if len(it.Tags) == 0 {
+		return ""
+	}
+	return it.Tags[0]
+}
+
 // dueKey sorts soonest-first; no due date sorts last.
 func dueKey(d string) string {
 	if d == "" {
@@ -61,6 +71,18 @@ func less(a, b Item, byPrio bool) bool {
 // priority view).
 func Sort(items []Item, byPrio bool) {
 	sort.SliceStable(items, func(i, j int) bool { return less(items[i], items[j], byPrio) })
+}
+
+// SortByTag orders items by their grouping tag (untagged last), then by the
+// shared intra-group order, so each tag's items stay contiguous.
+func SortByTag(items []Item) {
+	sort.SliceStable(items, func(i, j int) bool {
+		// catKey's "untagged/uncategorized last" trick works for tags too.
+		if a, b := catKey(TagKey(items[i])), catKey(TagKey(items[j])); a != b {
+			return a < b
+		}
+		return less(items[i], items[j], false)
+	})
 }
 
 // SortBySource orders items by Source first (the global board view), then by

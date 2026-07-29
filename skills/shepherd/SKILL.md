@@ -9,7 +9,7 @@ description: >
   never by hand-editing the file.
 ---
 
-# Shepherd todo board
+# shepherd todo board
 
 Shepherd is an installed CLI (`shepherd`) backed by a markdown file. Manage it
 through the command API — the binary owns the format, so never hand-edit the
@@ -28,7 +28,7 @@ Run `shepherd help` for the authoritative command list. Summary:
 | `shepherd stats --json [--all]` | board metrics (JSON numbers; drop `--json` for charts; `--legend` explains them) |
 | `shepherd add "<text>" [--json]` | add an item |
 | `shepherd sub <ref> "<text>" [--json]` | add a subtask to an item |
-| `shepherd edit <ref> "<tokens>" [--json]` | the single setter — merge @category/!prio/due:/defer:/link:/status:/note:/text onto an item (or subtask); bare key clears, note: takes the rest |
+| `shepherd edit <ref> "<tokens>" [--json]` | the single setter — merge @category/#tag/tags:/!prio/due:/defer:/link:/status:/note:/text onto an item (or subtask); bare key clears, note: takes the rest |
 | `shepherd done <ref>... [--json]` / `undone <ref>...` | (un)complete one or more items/subtasks (shorthand for `edit … status:done`/`status:open`) |
 | `shepherd rm <ref>... [--dry-run] [--json]` | remove one or more items/subtasks (`--dry-run`/`-n` previews) |
 | `shepherd archive <ref>... [--json]` | move whole items off the board into `archive.md` (subtasks can't be archived alone) |
@@ -53,7 +53,7 @@ Exit codes: `0` success · `2` usage/input error (bad flag, unknown command,
 unknown ref) · `1` runtime/IO failure. `-q`/`--quiet` drops a mutation's
 confirmation line, never the requested data.
 
-## Watching
+## watching
 
 `shepherd watch [--interval <dur>] [--board <name>]` streams a board's changes
 as NDJSON (one JSON object per line) until the process is killed — so a
@@ -69,7 +69,7 @@ that, each change is one line keyed by the item's stable `id`:
 Detection is mtime polling (`--interval`, default `1s`); it's read-only, so it
 never blocks a writer.
 
-## Subtasks
+## subtasks
 
 Items can hold one level of subtasks. `shepherd sub <ref> "<text>"` adds one
 (same quick-add tokens as `add`). Address a subtask by its own id, or as `n.m`
@@ -78,7 +78,7 @@ parent completes its subtasks, and completing the last subtask completes the
 parent. `list --json` nests them under each item's `subtasks` array (each with
 a 1-based `index` within the parent). `stats` counts top-level items only.
 
-## Boards
+## boards
 
 Each board has its own file: `--board <name>` (or `$SHEPHERD_BOARD`)
 targets `~/.config/shepherd/boards/<name>.md`; with no board you're on the
@@ -90,22 +90,29 @@ indexes are aggregate, **not** valid for `done`/`rm`. To act on an item you
 found via `--all`, mutate with the same `--board` as its board — the item's
 `id` works directly, or re-list that board for its local index.
 
-## Adding
+## adding
 
 `add` accepts quick-add tokens in the text:
 `shepherd add "renew passport @home !h due:+2w defer:1w link:https://gov.uk"`
 
-- `@category` · `!h`/`!m`/`!l` priority · `due:<today|tomorrow|+3d|15-07-2026>`
+- `@category` (one grouping label) · `#tag` adds a tag, `tags:<a,b>` replaces the
+  whole set (bare `tags:` or `#` clears) · `!h`/`!m`/`!l` priority ·
+  `due:<today|tomorrow|+3d|15-07-2026>`
 - `defer:<same date forms>` — start/defer date (item shown but not "started"
   until then) · `link:<url>` — a reference URL
 - `status:<name>` — set a status · `note:<text>` — a note (holds spaces, takes
   the rest of the line, so put it last)
 
 `list --json` includes `id` (the stable handle — use it to address the item),
-`completed` (timestamp set when an item is marked done), `defer`, `link`, and
-`status` per item.
+`completed` (timestamp set when an item is marked done), `defer`, `link`, `tags`,
+and `status` per item.
 
-## Statuses
+`category` and `tags` are separate axes: one category per item (it drives board
+grouping and order), any number of tags (no ordering effect). `#tag` only adds —
+drop one by re-setting the set with `tags:<a,b>`. `list --filter <q>` matches
+tags too.
+
+## statuses
 
 Items carry a status. `done` is terminal (`done`/`undone`, or `[x]` on disk).
 Between open and done there can be named intermediate statuses (e.g.
@@ -121,7 +128,7 @@ Set a status with `shepherd edit <n> "status:<name>"` — any name is accepted
 the two terminal ends. In the interactive board, `tab` cycles through the
 configured list.
 
-## Notes
+## notes
 
 - Data file: `todo.md` under `$XDG_CONFIG_HOME/shepherd/` (defaults to
   `~/.config/shepherd/`), or `boards/<name>.md` there when a board is

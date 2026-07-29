@@ -276,6 +276,47 @@ func TestCLIEdit(t *testing.T) {
 	}
 }
 
+// TestCLITags checks tags survive add/edit through the store, come back out of
+// list --json, and that --filter finds an item by tag.
+func TestCLITags(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "todo.md")
+	t.Setenv("SHEPHERD_TODO_FILE", path)
+
+	cmdAdd([]string{"wire the webhook #api"}, "", &bytes.Buffer{})
+	if code := cmdEdit([]string{"1", "#docs"}, "", &bytes.Buffer{}); code != 0 {
+		t.Fatalf("edit #tag exit %d", code)
+	}
+	if it := store.Load(path)[0]; it.Text != "wire the webhook" || len(it.Tags) != 2 || it.Tags[1] != "docs" {
+		t.Fatalf("tags not persisted: %+v", it)
+	}
+
+	var buf bytes.Buffer
+	if code := cmdList([]string{"--filter", "docs", "--json"}, "", &buf); code != 0 {
+		t.Fatalf("list --filter exit %d", code)
+	}
+	var got []itemJSON
+	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+		t.Fatalf("json: %v", err)
+	}
+	if len(got) != 1 || len(got[0].Tags) != 2 || got[0].Tags[0] != "api" {
+		t.Fatalf("tags missing from JSON / filter: %+v", got)
+	}
+
+	// tags: replaces the whole set; bare tags: clears it and leaves text alone.
+	if code := cmdEdit([]string{"1", "tags:ops"}, "", &bytes.Buffer{}); code != 0 {
+		t.Fatalf("edit tags: exit %d", code)
+	}
+	if it := store.Load(path)[0]; len(it.Tags) != 1 || it.Tags[0] != "ops" {
+		t.Fatalf("tags: should replace: %+v", it.Tags)
+	}
+	if code := cmdEdit([]string{"1", "tags:"}, "", &bytes.Buffer{}); code != 0 {
+		t.Fatalf("edit clear tags exit %d", code)
+	}
+	if it := store.Load(path)[0]; len(it.Tags) != 0 || it.Text != "wire the webhook" {
+		t.Fatalf("bare tags: should clear tags only: %+v", it)
+	}
+}
+
 // TestCLIListFilter checks --filter narrows the output while keeping each item's
 // real board index (so done/rm by that index still work) and reports no matches.
 func TestCLIListFilter(t *testing.T) {

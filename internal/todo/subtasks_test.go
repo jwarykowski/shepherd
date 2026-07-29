@@ -54,13 +54,14 @@ func TestSubStatus(t *testing.T) {
 	p := &Item{Text: "p", Subs: []Item{{Text: "a"}, {Text: "b"}}}
 
 	// an intermediate status leaves the sub open and the parent open
-	SetSubStatus(p, 0, "in-progress")
+	CycleSubStatus(p, 0, statuses) // open -> in-progress
 	if p.Subs[0].Done || p.Subs[0].Status != "in-progress" || p.Done {
 		t.Fatalf("in-progress sub wrong: %+v", *p)
 	}
-	// status "done" on the last open sub completes it; all done -> parent done
-	SetSubStatus(p, 0, "done")
-	SetSubStatus(p, 1, "done")
+	// cycling every sub through to done completes them; all done -> parent done
+	CycleSubStatus(p, 0, statuses) // in-progress -> done
+	CycleSubStatus(p, 1, statuses) // open -> in-progress
+	CycleSubStatus(p, 1, statuses) // in-progress -> done
 	if !p.Subs[0].Done || !p.Done {
 		t.Fatalf("done sub status should cascade to parent: %+v", *p)
 	}

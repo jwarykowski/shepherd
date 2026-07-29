@@ -13,6 +13,7 @@ type Item struct {
 	Prio      byte   // 'H', 'M', 'L', or 0 for none
 	Text      string
 	Category  string
+	Tags      []string // free-form lowercase labels; unlike Category an item can carry many
 	Created   string
 	Completed string // timestamp the item was marked done, or empty
 	Defer     string // YYYY-MM-DD start/defer date, or empty
@@ -29,13 +30,42 @@ type Item struct {
 	Subs []Item
 }
 
+// AddTag appends tag to it.Tags unless it's already there, normalised to
+// lowercase with any leading "#" stripped. A blank tag is a no-op.
+func AddTag(it *Item, tag string) {
+	tag = strings.ToLower(strings.TrimPrefix(strings.TrimSpace(tag), "#"))
+	if tag == "" {
+		return
+	}
+	for _, t := range it.Tags {
+		if t == tag {
+			return
+		}
+	}
+	it.Tags = append(it.Tags, tag)
+}
+
+// ParseTags splits a comma-separated list ("api, docs") into normalised,
+// deduplicated tags — the value form of the tags: token and the tags: meta line.
+func ParseTags(s string) []string {
+	var acc Item
+	for _, part := range strings.Split(s, ",") {
+		AddTag(&acc, part)
+	}
+	return acc.Tags
+}
+
 // ApplyEdit applies quick-add tokens onto an existing item, touching only the
-// fields present in s: @category, !h/!m/!l priority, due:<preset>,
-// defer:<preset>, link:<url>, status:<name>, and note:<text>. A bare key token
-// clears that field: "@", "!", "due:", "defer:", "link:", "status:" reset
-// category / priority / due / defer / link / status respectively. Text is
-// replaced only when s carries plain (non-token) words, so a token-only edit
-// leaves the text alone. Unrecognised tokens count as plain words.
+// fields present in s: @category, #tag, tags:<a,b>, !h/!m/!l priority,
+// due:<preset>, defer:<preset>, link:<url>, status:<name>, and note:<text>. A
+// bare key token clears that field: "@", "#", "!", "due:", "defer:", "link:",
+// "status:", "tags:" reset category / tags / priority / due / defer / link /
+// status respectively. Text is replaced only when s carries plain (non-token)
+// words, so a token-only edit leaves the text alone. Unrecognised tokens count
+// as plain words.
+//
+// #tag only ever adds; tags:<a,b> replaces the whole set, so that's how a
+// single tag is dropped.
 //
 // note: is special — a note may contain spaces, so once seen it consumes the
 // rest of the line as the note value (a bare trailing "note:" clears it). Put
@@ -54,6 +84,12 @@ func ApplyEdit(it *Item, s string) {
 			it.Category = ""
 		case strings.HasPrefix(tok, "@") && len(tok) > 1:
 			it.Category = strings.ToLower(tok[1:])
+		case tok == "#" || tok == "tags:":
+			it.Tags = nil
+		case strings.HasPrefix(tok, "#") && len(tok) > 1:
+			AddTag(it, tok[1:])
+		case strings.HasPrefix(tok, "tags:") && len(tok) > 5:
+			it.Tags = ParseTags(tok[5:])
 		case tok == "!":
 			it.Prio = 0
 		case strings.HasPrefix(tok, "!") && len(tok) == 2 && strings.ContainsRune("hHmMlL", rune(tok[1])):
@@ -106,7 +142,7 @@ func ParseQuickAdd(s string) Item {
 
 // Match reports whether an item matches filter query q, which the caller has
 // already lowercased. Empty q matches everything. Searches text, note,
-// category, due, defer, and link.
+// category, tags, due, defer, and link.
 func Match(it Item, q string) bool {
 	if q == "" {
 		return true
@@ -114,6 +150,8 @@ func Match(it Item, q string) bool {
 	return strings.Contains(strings.ToLower(it.Text), q) ||
 		strings.Contains(strings.ToLower(it.Note), q) ||
 		strings.Contains(strings.ToLower(it.Category), q) ||
+		strings.Contains(strings.Join(it.Tags, " "), q) || // already lowercase
+
 		strings.Contains(strings.ToLower(it.Due), q) ||
 		strings.Contains(strings.ToLower(it.Defer), q) ||
 		strings.Contains(strings.ToLower(it.Link), q)

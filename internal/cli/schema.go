@@ -74,7 +74,8 @@ func buildSchema() schemaDoc {
 			"status":    {Type: "string", Enum: statuses, Description: "named status; empty = default/open. done is the terminal state"},
 			"priority":  {Type: "string", Enum: []string{"H", "M", "L"}, Description: "empty = none"},
 			"text":      {Type: "string", MinLength: 1},
-			"category":  {Type: "string", Description: "single lowercase tag"},
+			"category":  {Type: "string", Description: "single lowercase grouping label; drives board order"},
+			"tags":      {Type: "array", Description: "lowercase free-form labels; many per item, no ordering effect", Items: &property{Type: "string"}},
 			"created":   {Type: "string", ReadOnly: true},
 			"completed": {Type: "string", ReadOnly: true, Description: "set when done"},
 			"defer":     {Type: "string", Format: "date", Description: "YYYY-MM-DD start/defer date"},
@@ -85,6 +86,8 @@ func buildSchema() schemaDoc {
 		},
 		Tokens: []tokenSpec{
 			{Token: "@<category>", Field: "category", Desc: "lowercased; bare @ clears"},
+			{Token: "#<tag>", Field: "tags", Desc: "adds one tag (lowercased); bare # clears all"},
+			{Token: "tags:<a,b>", Field: "tags", Desc: "replaces the whole set; bare tags: clears"},
 			{Token: "!h|!m|!l", Field: "priority", Desc: "bare ! clears"},
 			{Token: "due:<date>", Field: "due", Desc: "bare due: clears; see x-dueForms"},
 			{Token: "defer:<date>", Field: "defer", Desc: "bare defer: clears"},

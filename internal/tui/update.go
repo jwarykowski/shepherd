@@ -71,6 +71,18 @@ func (m model) filterCategory() string {
 	return ""
 }
 
+// addCategory is the category a new item inherits: the selected row's, so an
+// item added over a categorised one joins that group instead of the
+// uncategorised tail, else a category filter's (which would otherwise hide the
+// new item). An explicit @category in the input beats both. idx is the selected
+// row's item index, -1 when no row is selected.
+func (m model) addCategory(idx int) string {
+	if idx >= 0 && m.items[idx].Category != "" {
+		return m.items[idx].Category
+	}
+	return m.filterCategory()
+}
+
 // visible returns the item indices matching the current filter, in order.
 func (m model) visible() []int {
 	idx := make([]int, 0, len(m.items))
@@ -135,6 +147,15 @@ func (m *model) rowPtr(r rowRef) *todo.Item {
 		return &m.items[r.item]
 	}
 	return &m.items[r.item].Subs[r.sub]
+}
+
+// prompt opens the shared text input in mode, seeded with value and showing
+// placeholder — the single entry point for every field editor and picker prompt.
+func (m *model) prompt(md mode, value, placeholder string) {
+	m.mode = md
+	m.input.SetValue(value)
+	m.input.Placeholder = placeholder
+	m.input.Focus()
 }
 
 // sameItem matches two items by their (near-unique) identity fields, ignoring
@@ -241,7 +262,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var res tea.Model
 		var cmd tea.Cmd
 		switch m.mode {
-		case modeAdd, modeAddSub, modeEdit, modeCategory, modeDue, modeDefer, modeLink, modeFilter, modeBoardRename, modeBoardNew, modeBoardDir:
+		case modeAdd, modeAddSub, modeEdit, modeCategory, modeTags, modeDue, modeDefer, modeLink, modeFilter, modeBoardRename, modeBoardNew, modeBoardDir:
 			res, cmd = m.updateInput(msg)
 		case modeConfirmDelete:
 			res, cmd = m.updateConfirmDelete(msg)
@@ -285,8 +306,10 @@ func (m model) updateGlobal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "q":
 		return m.quit()
-	case "esc":
+	case "esc", "A": // A toggles both ways, like it does on a board
 		m.toggleGlobal()
+	case "F":
+		m.hideFooter = !m.hideFooter
 	case "j", "down":
 		if m.cursor < len(rows)-1 {
 			m.cursor++
@@ -301,7 +324,7 @@ func (m model) updateGlobal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if has {
 			cur = m.items[m.sel()]
 		}
-		m.view = (m.view + 1) % 4
+		m.view = (m.view + 1) % viewMode(viewCountGlobal)
 		m.resort()
 		if has {
 			m.place(cur)
@@ -322,10 +345,7 @@ func (m model) updateGlobal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "?":
 		m.mode = modeHelp
 	case "/":
-		m.mode = modeFilter
-		m.input.SetValue(m.filter)
-		m.input.Placeholder = "filter"
-		m.input.Focus()
+		m.prompt(modeFilter, m.filter, "filter")
 	}
 	return m, nil
 }
@@ -399,10 +419,7 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "S":
 		if idx >= 0 {
-			m.mode = modeAddSub
-			m.input.SetValue("")
-			m.input.Placeholder = "subtask text  !h|!m|!l  due:tomorrow"
-			m.input.Focus()
+			m.prompt(modeAddSub, "", "subtask text  !h|!m|!l  due:tomorrow")
 		}
 	case "x":
 		if idx >= 0 {
@@ -492,7 +509,7 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if has {
 			cur = m.items[idx]
 		}
-		m.view = (m.view + 1) % 3
+		m.view = (m.view + 1) % viewMode(viewCount)
 		m.resort()
 		if has {
 			m.place(cur)
@@ -505,56 +522,40 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "?":
 		m.mode = modeHelp
 	case "/":
-		m.mode = modeFilter
-		m.input.SetValue(m.filter)
-		m.input.Placeholder = "filter"
-		m.input.Focus()
+		m.prompt(modeFilter, m.filter, "filter")
 	case "esc":
 		m.filter = ""
 		m.clamp()
 	case "a":
-		m.mode = modeAdd
-		m.input.SetValue("")
-		m.input.Placeholder = "todo text  @category  !h|!m|!l  due:tomorrow"
-		m.input.Focus()
+		m.prompt(modeAdd, "", "todo text  @category  !h|!m|!l  due:tomorrow")
 	case "u":
 		if idx >= 0 {
-			m.mode = modeEdit
-			m.input.SetValue(m.rowText(ref))
-			m.input.Placeholder = ""
-			m.input.Focus()
+			m.prompt(modeEdit, m.rowText(ref), "")
 		}
 	case "g":
 		if idx >= 0 && ref.sub == -1 { // field editors are parent-level
-			m.mode = modeCategory
-			m.input.SetValue(m.items[idx].Category)
-			m.input.Placeholder = "category"
+			ph := "category"
 			if len(m.categories) > 0 {
-				m.input.Placeholder = "category · tab: " + strings.Join(m.categories, "/")
+				ph = "category · tab: " + strings.Join(m.categories, "/")
 			}
 			m.catIdx = 0
-			m.input.Focus()
+			m.prompt(modeCategory, m.items[idx].Category, ph)
+		}
+	case "T":
+		if idx >= 0 && ref.sub == -1 { // field editors are parent-level
+			m.prompt(modeTags, strings.Join(m.items[idx].Tags, " "), "tags, space- or comma-separated")
 		}
 	case "t":
 		if idx >= 0 {
-			m.mode = modeDue
-			m.input.SetValue(m.rowItem(ref).Due)
-			m.input.Placeholder = "today · tomorrow · 3d · 2w · 5m · 1y · DD-MM-YYYY"
-			m.input.Focus()
+			m.prompt(modeDue, m.rowItem(ref).Due, "today · tomorrow · 3d · 2w · 5m · 1y · DD-MM-YYYY")
 		}
 	case "s":
 		if idx >= 0 {
-			m.mode = modeDefer
-			m.input.SetValue(m.rowItem(ref).Defer)
-			m.input.Placeholder = "start/defer: today · tomorrow · 3d · 2w · DD-MM-YYYY"
-			m.input.Focus()
+			m.prompt(modeDefer, m.rowItem(ref).Defer, "start/defer: today · tomorrow · 3d · 2w · DD-MM-YYYY")
 		}
 	case "L":
 		if idx >= 0 {
-			m.mode = modeLink
-			m.input.SetValue(m.rowItem(ref).Link)
-			m.input.Placeholder = "link (url)"
-			m.input.Focus()
+			m.prompt(modeLink, m.rowItem(ref).Link, "link (url)")
 		}
 	case "o":
 		if idx >= 0 {
@@ -593,10 +594,20 @@ func (m *model) enterBoards() {
 	m.mode = modeBoards
 }
 
+// liveOnlyKeys are the picker actions that need a board sitting in its normal
+// place — inert in the archived view.
+var liveOnlyKeys = map[string]bool{"enter": true, "d": true, "a": true, "r": true, "x": true, "A": true}
+
 // updateBoards handles keys in the board picker: navigate, enter to jump to
 // the selected board (flushing any unsaved edits first), esc to return.
 func (m model) updateBoards(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
+	key := msg.String()
+	// A stashed board has no file in place, so the archived view is unarchive-only:
+	// nothing to open, inspect, rename, archive or delete.
+	if m.projArchived && liveOnlyKeys[key] {
+		return m, nil
+	}
+	switch key {
 	case "q":
 		return m.quit()
 	case "esc":
@@ -637,9 +648,6 @@ func (m model) updateBoards(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case "enter":
-		if m.projArchived { // archived boards aren't loadable; unarchive first
-			break
-		}
 		if len(m.projRows) == 0 {
 			m.mode = modeList
 			return m, nil
@@ -657,44 +665,23 @@ func (m model) updateBoards(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		nm.clamp()
 		return nm, nil
 	case "d": // detail view for the selected board (name, dir, paths, counts)
-		if m.projArchived {
-			break
-		}
 		if m.selectedBoard() != nil {
 			m.projNotice = ""
 			m.mode = modeBoardDetail
 		}
 	case "a": // create a new board
-		if m.projArchived {
-			break
-		}
 		m.projNotice = ""
-		m.mode = modeBoardNew
-		m.input.SetValue("")
-		m.input.Placeholder = "new board name"
-		m.input.Focus()
+		m.prompt(modeBoardNew, "", "new board name")
 	case "r": // rename the selected board (not the default)
-		if m.projArchived {
-			break
-		}
 		if b := m.selectedBoard(); b != nil && b.Name != "default" {
 			m.projNotice = ""
-			m.mode = modeBoardRename
-			m.input.SetValue(b.Name)
-			m.input.Placeholder = "new board name"
-			m.input.Focus()
+			m.prompt(modeBoardRename, b.Name, "new board name")
 		}
 	case "x": // delete the selected board (confirmed)
-		if m.projArchived {
-			break
-		}
 		if b := m.selectedBoard(); b != nil && b.Name != "default" {
 			m.mode = modeConfirmDelete
 		}
 	case "A": // archive the selected board into boards/archived/
-		if m.projArchived {
-			break
-		}
 		if b := m.selectedBoard(); b != nil && b.Name != "default" {
 			if err := store.ArchiveBoard(b.Name); err != nil {
 				m.projNotice = err.Error()
@@ -718,10 +705,7 @@ func (m model) updateBoardDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if b := m.selectedBoard(); b != nil {
 			m.projPending = b.Name
 			m.projDirEdit = true
-			m.mode = modeBoardDir
-			m.input.SetValue(store.BoardDir(b.Name))
-			m.input.Placeholder = "working dir (empty to clear)"
-			m.input.Focus()
+			m.prompt(modeBoardDir, store.BoardDir(b.Name), "working dir (empty to clear)")
 		}
 	}
 	return m, nil
@@ -818,10 +802,7 @@ func (m model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case 0, 1, 5:
 			m.cycleSetting() // enum/bool rows cycle in place
 		default:
-			m.mode = modeSettingEdit
-			m.input.SetValue(m.settingValue(m.settingsCur))
-			m.input.Placeholder = m.settingPlaceholder(m.settingsCur)
-			m.input.Focus()
+			m.prompt(modeSettingEdit, m.settingValue(m.settingsCur), m.settingPlaceholder(m.settingsCur))
 		}
 	}
 	return m, nil
@@ -830,8 +811,8 @@ func (m model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // cycleSetting advances an enum row (view or density) and persists.
 func (m *model) cycleSetting() {
 	switch m.settingsCur {
-	case 0: // view: category -> priority -> table
-		m.view = (m.view + 1) % 3
+	case 0: // view: category -> priority -> tag -> table
+		m.view = (m.view + 1) % viewMode(viewCount)
 		m.resort()
 		m.clamp()
 		m.saveSettings()
@@ -902,26 +883,10 @@ func (m *model) applySettingText(idx int, v string) {
 			m.autosaveEvery = time.Duration(n) * time.Second
 		}
 	case 3:
-		m.categories = parseCommaList(v, false)
+		m.categories = store.ParseList(v, false)
 	case 4:
-		m.statuses = normalizeStatuses(parseCommaList(v, true))
+		m.statuses = normalizeStatuses(store.ParseList(v, true))
 	}
-}
-
-// parseCommaList splits a comma-separated list, trimming blanks; lower lowercases
-// each entry (used for statuses).
-func parseCommaList(v string, lower bool) []string {
-	var out []string
-	for _, p := range strings.Split(v, ",") {
-		s := strings.TrimSpace(p)
-		if lower {
-			s = strings.ToLower(s)
-		}
-		if s != "" {
-			out = append(out, s)
-		}
-	}
-	return out
 }
 
 // enterArchive opens the read-only archive browser. On a board board it shows
@@ -979,6 +944,27 @@ func (m model) updateHelp(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// afterFieldEdit is the mode to land in once a field editor closes: the item
+// detail view when the editor was opened from there (mirroring projDirEdit for
+// board dirs), else the list. It consumes the flag.
+func (m *model) afterFieldEdit() mode {
+	if m.fieldEdit {
+		m.fieldEdit = false
+		return modeDetail
+	}
+	return modeList
+}
+
+// detailFieldKeys are the list's field editors reused from the detail view, so
+// the item can be changed while you're looking at it. They're delegated to
+// updateList rather than reimplemented — it already guards parent-only fields and
+// resorts/re-places the cursor. Keys the detail view handles itself (n, space, o,
+// esc, q) never reach here; x/delete is deliberately list-only.
+var detailFieldKeys = map[string]bool{
+	"u": true, "g": true, "T": true, "t": true, "s": true, "L": true,
+	"h": true, "m": true, "l": true, "tab": true,
+}
+
 func (m model) updateDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	ref := m.selRef()
 	if ref.item < 0 {
@@ -1016,6 +1002,17 @@ func (m model) updateDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "o":
 		return m, openLink(p.Link)
+	default:
+		if detailFieldKeys[msg.String()] && !m.global {
+			m.fieldEdit = true // save/cancel comes back here, not to the list
+			res, cmd := m.updateList(msg)
+			nm := res.(model)
+			if !nm.input.Focused() { // an immediate mutation (prio, status): stay put
+				nm.mode = modeDetail
+				nm.fieldEdit = false
+			}
+			return nm, cmd
+		}
 	}
 	return m, nil
 }
@@ -1072,7 +1069,7 @@ func (m model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.mode = modeBoards
 			}
 		default:
-			m.mode = modeList
+			m.mode = m.afterFieldEdit()
 		}
 		return m, nil
 	case "enter":
@@ -1081,7 +1078,7 @@ func (m model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case modeAdd:
 			if it := todo.ParseQuickAdd(v); it.Text != "" {
 				if it.Category == "" {
-					it.Category = m.filterCategory()
+					it.Category = m.addCategory(idx)
 				}
 				m.beforeMutate()
 				m.items = append(m.items, it)
@@ -1115,6 +1112,18 @@ func (m model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				cur.Category = strings.ToLower(v) // empty clears
 				m.items[idx] = cur
 				m.resort()
+				m.place(cur)
+			}
+			m.mode = modeList
+		case modeTags:
+			if idx >= 0 {
+				m.beforeMutate()
+				cur := m.items[idx]
+				// accept spaces as separators too; ParseTags lowercases, drops a
+				// leading #, and dedups. Empty clears.
+				cur.Tags = todo.ParseTags(strings.ReplaceAll(v, " ", ","))
+				m.items[idx] = cur
+				m.resort() // tags are the grouping axis in the tag view
 				m.place(cur)
 			}
 			m.mode = modeList
@@ -1175,10 +1184,7 @@ func (m model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			// board made — ask for its working dir before returning to the picker.
 			m.projPending = v
-			m.mode = modeBoardDir
-			m.input.SetValue("")
-			m.input.Placeholder = "working dir (optional, enter to skip)"
-			m.input.Focus()
+			m.prompt(modeBoardDir, "", "working dir (optional, enter to skip)")
 			return m, nil
 		case modeBoardDir:
 			m.input.Blur()
@@ -1205,6 +1211,9 @@ func (m model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.input.Blur()
+		if m.mode == modeList { // a field editor just saved; the detail view gets it back
+			m.mode = m.afterFieldEdit()
+		}
 		return m, nil
 	}
 	var cmd tea.Cmd

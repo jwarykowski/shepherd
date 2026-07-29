@@ -73,20 +73,21 @@ herdr plugin install jwarykowski/shepherd
 | `tab` | cycle status (open → in-progress → done → open); see `statuses` config |
 | `h` / `m` / `l` | set priority high / medium / low |
 | `g` | set category |
+| `T` | set tags (space- or comma-separated; empty clears) |
 | `t` | set due date — `today`, `tomorrow`, `3d`/`2w`/`5m`/`1y`, or `DD-MM-YYYY` (empty clears) |
 | `s` | set defer/start date (same formats as due; item shows dimmed with `starts Nd` until then) |
 | `L` | set a reference link (url) |
 | `o` | open the selected item's link in the browser |
-| `a` | add item (inline syntax below) |
+| `a` | add item (inline syntax below); inherits the selected item's category unless the text names one |
 | `S` | add a subtask to the selected item |
 | `u` | edit item (or subtask) text |
 | `d` | open detail view (shows every field) |
-| `v` | cycle view: category / priority / table |
+| `v` | cycle view: category / priority / tag / table |
 | `F` | hide / show the footer help grid (the `jwarykowski/shepherd` · version line stays); `hidefooter` config sets the default |
 | `A` | toggle the [global view](#global-view) across all boards |
 | `b` | open the board picker — every board with done/total counts; `enter` jumps, `a` creates a board, `r` renames, `A` archives, `x` deletes (confirmed), `d` shows detail (name, dir, paths, counts) for the selected board (rename/archive/delete don't apply to the default board); `e` toggles the archived-boards view where `u` unarchives the selected board |
 | `e` | browse the archive (read-only; all boards in the global view; `esc` to leave) |
-| `/` | filter (text/note/category/due/defer/link — also greps `archive.md`) |
+| `/` | filter (text/note/category/tags/due/defer/link — also greps `archive.md`) |
 | `U` / `ctrl+r` | undo / redo (multi-level) |
 | `w` | save now (the header shows `● unsaved` / `● saved`) |
 | `ctrl+e` | open the markdown file in `$EDITOR` |
@@ -97,17 +98,30 @@ herdr plugin install jwarykowski/shepherd
 | `?` | full help page |
 | `q` | save + quit |
 
-In the detail view: `e` edit note · `space` toggle · `o` open link · `d`/`esc`/`q` back.
+The detail view is also an editor: the same field keys work there — `u` text,
+`h`/`m`/`l` priority, `g` category, `T` tags, `t` due, `s` defer, `L` link, `tab`
+status — and saving returns you to the detail view rather than the list. Plus
+`n` edit note · `space` toggle · `o` open link · `esc`/`q` back. Its footer is
+the same labelled key grid as the board's, narrowed to the keys that act on the
+one item (`fields` · `dates` · `item` · `go`).
+
+**Rows carry two flush-right values**: the subtask progress (`1/2`) when the item
+has subtasks, else the due/defer label — then, pinned far right, whichever
+grouping axis the headers *don't* already name. The category view shows the
+priority there, the priority view shows the category, and the tag view shows the
+priority. Status needs no width at all: the box shape carries it (`○` open,
+`◐` a named status, `✓` done).
 
 **Inline quick-add** — `a`, then one line:
-`deploy api @work !h due:tomorrow defer:1w link:https://…`. `@word` sets
-category, `!h`/`!m`/`!l` priority, `due:<preset>` the due date, `defer:<preset>`
-a start/defer date, `link:<url>` a reference, `status:<name>` a status, and
-`note:<text>` a note (holds spaces, takes the rest of the line — put it last);
-everything else is the task text.
+`deploy api @work #api !h due:tomorrow defer:1w link:https://…`. `@word` sets
+category, `#word` adds a tag (`tags:a,b` sets the whole set), `!h`/`!m`/`!l`
+priority, `due:<preset>` the due date, `defer:<preset>` a start/defer date,
+`link:<url>` a reference, `status:<name>` a status, and `note:<text>` a note
+(holds spaces, takes the rest of the line — put it last); everything else is the
+task text.
 
 Items are ordered by **category, then priority, then soonest due**, grouped
-under headers, with a coloured priority label flush right. **Overdue** open
+under headers. **Overdue** open
 items are pinned to a `⚠ overdue` group at the top. New items get a `created`
 timestamp; due items show a relative label
 (`due 3d`, `overdue 2d` in red). Edits save on quit, autosave after a short
@@ -137,7 +151,7 @@ shows a `done/total` badge:
   toggle, `tab` status, `u` text, `h`/`m`/`l` priority, `t` due, `s` defer,
   `L` link, `o` open link, `x` delete. Overdue/defer labels show on the row.
 - `d` opens the subtask's detail view — its own fields plus a `parent` line
-  naming the task it belongs to; edit its note there with `e`, same as a parent.
+  naming the task it belongs to; edit its note there with `n`, same as a parent.
 - `g` (category) is the one exception — it's parent-only, since a subtask shares
   its parent's board; it's dimmed in the footer on a subtask row. Set a
   subtask's fields at creation from the CLI too:
@@ -192,7 +206,7 @@ view. Launch with `--all`, or press `A` from any board to toggle in and out
 shepherd --all        # aggregate of every board
 ```
 
-`v` cycles four groupings: **board → category → priority → table**. In the
+`v` cycles five groupings: **board → category → priority → tag → table**. In the
 board grouping each board is a header; in the others every row carries a
 `[board]` tag (the table gets a `board` column). It's read-only by design —
 editing stays on the focused board, so the aggregate is never written back.
@@ -203,7 +217,7 @@ The command API mirrors it: `shepherd list --all` (see [command api](#command-ap
 ## launch filter
 
 `--board` gives a board its own file; `--filter` is a saved *view* over one
-board — start it pre-filtered by text/note/category/due/defer/link:
+board — start it pre-filtered by text/note/category/tags/due/defer/link:
 
 ```sh
 ./bin/shepherd --filter work      # or: SHEPHERD_FILTER=work ./bin/shepherd
@@ -211,8 +225,9 @@ board — start it pre-filtered by text/note/category/due/defer/link:
 
 When the filter names a category (one you've configured or already use), items
 you add while it's active inherit that category — so a task added on a
-`--filter work` board lands in `work` and stays in view. An inline `@category`
-still overrides; a filter that isn't a category leaves new items uncategorized.
+`--filter work` board lands in `work` and stays in view. This is the fallback:
+the selected item's own category is inherited first, and an inline `@category`
+overrides both. A filter that isn't a category leaves new items uncategorized.
 The two combine: `shepherd --board web --filter '!h'`.
 
 `shepherd --version` prints the version and exits.
@@ -254,6 +269,7 @@ shepherd done 2f3a…c1 --json        # mark by id; echo the result as JSON
 shepherd undone 2.1                 # reopen subtask 1 (also reopens the parent)
 shepherd edit 2 "status:in-progress" # set item 2's status (status:done|open recognised)
 shepherd edit 2 "note:waiting on infra" # set item 2's note (edit 2 "note:" clears it)
+shepherd edit 2 "#api #docs"        # add tags (tags:a,b replaces the set, tags: clears)
 shepherd rm 2                       # remove item 2 (rm 2.1 removes just the subtask)
 shepherd rm 2 5 --dry-run           # preview removing several without writing
 shepherd archive 2                  # move item 2 off the board into archive.md (whole items only)
@@ -278,12 +294,12 @@ cascade rules. `--json` on any mutating verb echoes the resulting item(s) in the
 `list --json` shape and reports failures as `{"error":…}` on stdout.
 
 `edit <n[.m]> "<tokens>"` sets only the fields its tokens carry — `@category`,
-`!h`/`!m`/`!l`, `due:`, `defer:`, `link:`, `status:`, `note:` — and replaces the
+`#tag`/`tags:`, `!h`/`!m`/`!l`, `due:`, `defer:`, `link:`, `status:`, `note:` — and replaces the
 text only when plain words are present. A bare key clears its field
 (`edit 2 "@ due:"`); `note:` holds spaces and takes the rest of the line, so put
 it last (`edit 2 "!h note:call the bank"`).
 
-`list --filter <q>` matches text/note/category/due/defer/link and keeps each
+`list --filter <q>` matches text/note/category/tags/due/defer/link and keeps each
 item's real board index, so `done`/`rm` on a filtered listing still hit the
 right item.
 
@@ -302,9 +318,10 @@ shepherd add "ship v2 @work !h" --board web
 shepherd list --board web
 ```
 
-`add` accepts the same quick-add tokens as the board: `@category`, `!h`/`!m`/`!l`
-priority, `due:<today|tomorrow|+3d|15-07-2026>`, `defer:`, `link:`, `status:`,
-and `note:` (takes the rest of the line). Agents should read with
+`add` accepts the same quick-add tokens as the board: `@category`, `#tag`
+(`tags:a,b` replaces the set), `!h`/`!m`/`!l` priority,
+`due:<today|tomorrow|+3d|15-07-2026>`, `defer:`, `link:`, `status:`, and `note:`
+(takes the rest of the line). Agents should read with
 `list --json` (stable machine shape) and mutate with `add`/`edit`/`done`/`rm`;
 an open board picks up the change within ~2s. `edit` is the single setter for
 every field, including `status:` (any name, like a free-form `@category`;
@@ -322,7 +339,8 @@ the archive. `--all` aggregates every board and adds a by-board breakdown;
 ```json
 [
   { "id": "019f7390…d901", "index": 1, "done": false, "priority": "H",
-    "text": "buy milk", "category": "home", "created": "10-07-2026 13:40",
+    "text": "buy milk", "category": "home", "tags": ["errand"],
+    "created": "10-07-2026 13:40",
     "defer": "2026-07-11", "due": "2026-07-15", "link": "https://…",
     "note": "", "completed": "" }
 ]
@@ -353,7 +371,7 @@ Optional `config.toml` at `$XDG_CONFIG_HOME/shepherd/config.toml` (defaults to
 `SHEPHERD_CONFIG`):
 
 ```toml
-view = "category"                          # category (default) | priority | table
+view = "category"                          # category (default) | priority | tag | table
 density = "compact"                        # compact (default) | comfort
 autosave = 60                              # seconds idle before writing; 0 disables
 categories = ["work", "home", "personal"]  # tab-cycles in the category prompt
@@ -391,6 +409,7 @@ sub-lines:
   defer: 2026-07-11
   due: 2026-07-15
   category: work
+  tags: api, docs
   status: in-progress
   link: https://github.com/org/repo/pull/1
   note: block on the migration first
