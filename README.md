@@ -86,7 +86,8 @@ herdr plugin install jwarykowski/shepherd
 | `S` | add a subtask to the selected item |
 | `u` | edit item (or subtask) text |
 | `d` | open detail view (shows every field) |
-| `v` | cycle view: category / priority / tag / table |
+| `v` | cycle view: category / priority / tag / table / lane |
+| `←`/`→` | switch the active column in the [lane view](#lane-view) |
 | `F` | hide / show the footer help grid (the `jwarykowski/shepherd` · version line stays); `hidefooter` config sets the default |
 | `A` | toggle the [global view](#global-view) across all boards |
 | `b` | open the board picker — every board with done/total counts; `enter` jumps, `a` creates a board, `r` renames, `A` archives, `x` deletes (confirmed), `d` shows detail (name, dir, paths, counts) for the selected board (rename/archive/delete don't apply to the default board); `e` toggles the archived-boards view where `u` unarchives the selected board |
@@ -134,6 +135,17 @@ idle pause (`autosave` seconds, default 60; `0` disables), or on demand with
 `w`; the header shows `● unsaved` / `● saved`. The board reloads on-disk changes
 automatically when you have no unsaved edits, so external edits (or a dotfile
 sync) show up on their own.
+
+## lane view
+
+A kanban board: one column per configured `statuses` entry, cycled to with
+`v`. `←`/`→` switch the active column; `j`/`k` move within it. `tab` cycles the
+selected card's status same as everywhere else — in lane view that also moves
+it into the next column, cursor and all. Every other key still acts on the
+card under the cursor (`h`/`m`/`l` priority, `g` category, `T` tags, `t` due,
+`s` defer, `L` link, `o` open, `y` copy, `u` edit, `d` detail, `space` toggle,
+`x` delete). Not available in the [global view](#global-view), since boards
+can each configure different statuses.
 
 ## subtasks
 
@@ -399,7 +411,7 @@ Optional `config.toml` at `$XDG_CONFIG_HOME/shepherd/config.toml` (defaults to
 `SHEPHERD_CONFIG`):
 
 ```toml
-view = "category"                          # category (default) | priority | tag | table
+view = "category"                          # category (default) | priority | tag | table | lane
 density = "compact"                        # compact (default) | comfort
 autosave = 60                              # seconds idle before writing; 0 disables
 categories = ["work", "home", "personal"]  # tab-cycles in the category prompt

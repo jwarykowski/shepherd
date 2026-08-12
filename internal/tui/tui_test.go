@@ -32,6 +32,14 @@ func key(s string) tea.KeyMsg {
 		return tea.KeyMsg{Type: tea.KeyCtrlS}
 	case "ctrl+c":
 		return tea.KeyMsg{Type: tea.KeyCtrlC}
+	case "up":
+		return tea.KeyMsg{Type: tea.KeyUp}
+	case "down":
+		return tea.KeyMsg{Type: tea.KeyDown}
+	case "left":
+		return tea.KeyMsg{Type: tea.KeyLeft}
+	case "right":
+		return tea.KeyMsg{Type: tea.KeyRight}
 	}
 	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}
 }
@@ -792,7 +800,10 @@ func TestDetailNoteWraps(t *testing.T) {
 }
 
 func TestView(t *testing.T) {
-	m := model{input: textinput.New(), w: 50, height: 20, items: []todo.Item{
+	// height 21: one more than the two-item body needs, so the footer's help
+	// grid (now one row taller for the lane view's ←/→ hint) doesn't window out
+	// the uncategorized group.
+	m := model{input: textinput.New(), w: 50, height: 21, items: []todo.Item{
 		{Text: "ship release", Prio: 'H', Category: "work"},
 		{Text: "buy milk"},
 	}}
@@ -810,7 +821,7 @@ func TestView(t *testing.T) {
 			t.Fatalf("view missing %q", want)
 		}
 	}
-	if got := strings.Count(v, "\n") + 1; got != 20 {
+	if got := strings.Count(v, "\n") + 1; got != 21 {
 		t.Fatalf("frame not pinned to height: %d rows", got)
 	}
 }
@@ -970,7 +981,15 @@ func TestViewToggle(t *testing.T) {
 	if m.view != viewTag {
 		t.Fatalf("tag view expected after priority: %d", m.view)
 	}
-	m = drive(m, "v", "v")
+	m = drive(m, "v")
+	if m.view != viewTable {
+		t.Fatalf("table view expected after tag: %d", m.view)
+	}
+	m = drive(m, "v")
+	if m.view != viewLane {
+		t.Fatalf("lane view expected after table: %d", m.view)
+	}
+	m = drive(m, "v")
 	if m.view != viewCategory {
 		t.Fatalf("view did not cycle back: %d", m.view)
 	}
@@ -1169,9 +1188,10 @@ func TestRenderAllViews(t *testing.T) {
 		{Text: "ship release", Prio: 'H', Category: "work", Due: "2026-07-01"},
 		{Text: "buy milk"},
 	}}
-	for _, v := range []viewMode{viewCategory, viewPriority, viewTable} {
+	for _, v := range []viewMode{viewCategory, viewPriority, viewTable, viewLane} {
 		m := base
 		m.view = v
+		m.statuses = []string{"open", "in-progress", "done"}
 		if !strings.Contains(m.View(), appName) {
 			t.Errorf("view %d missing brand", v)
 		}
@@ -1264,6 +1284,92 @@ func TestStatusCycleAndDoneToggle(t *testing.T) {
 	next, _ := newModel().updateList(key("tab"))
 	if got := next.(model).items[0].Status; got != "in-progress" {
 		t.Fatalf("tab did not advance to in-progress: %q", got)
+	}
+}
+
+// TestLaneView drives the kanban view end to end: cycling in via v, left/right
+// switching the active column (clamped at both ends), j/k staying inside that
+// column, tab moving a card to the next lane with the cursor following it, and
+// a mutation key (h, priority) acting on the lane-selected card rather than
+// whatever the flat cursor would have pointed at.
+func TestLaneView(t *testing.T) {
+	newModel := func() model {
+		return model{input: textinput.New(), note: textarea.New(), w: 60, height: 24,
+			statuses: []string{"open", "in-progress", "done"},
+			items: []todo.Item{
+				{Text: "a"}, {Text: "b"}, {Text: "c", Status: "in-progress"},
+			}}
+	}
+
+	// v cycles category -> priority -> tag -> table -> lane
+	m := drive(newModel(), "v", "v", "v", "v")
+	if m.view != viewLane {
+		t.Fatalf("v did not cycle into lane view: %v", m.view)
+	}
+	if !strings.Contains(m.View(), "in-progress") {
+		t.Fatalf("lane view missing a configured status column:\n%s", m.View())
+	}
+
+	// left is a no-op at the first lane
+	if got := drive(m, "left"); got.lane != 0 {
+		t.Fatalf("left should clamp at lane 0: %d", got.lane)
+	}
+	// right moves into the in-progress lane, whose only row is "c"
+	m = drive(m, "right")
+	if m.lane != 1 {
+		t.Fatalf("right did not move to lane 1: %d", m.lane)
+	}
+	if ref := m.selRef(); m.rowItem(ref).Text != "c" {
+		t.Fatalf("lane cursor did not land on the in-progress card: %+v", m.rowItem(ref))
+	}
+	// j/k don't leak into other lanes: only one row here, so both are no-ops
+	if got := drive(m, "j"); got.cursor != 0 {
+		t.Fatalf("j moved past the active lane's only row: cursor=%d", got.cursor)
+	}
+
+	// tab moves the lane-selected card ("c") to done, and the cursor follows it
+	m = drive(m, "tab")
+	if m.lane != 2 {
+		t.Fatalf("tab-in-lane did not follow the card to lane 2: %d", m.lane)
+	}
+	if ref := m.selRef(); m.rowItem(ref).Text != "c" || !m.rowItem(ref).Done {
+		t.Fatalf("cursor did not follow the moved card: %+v", m.rowItem(ref))
+	}
+
+	// h (priority) acts on the lane-selected card, not the flat-list cursor
+	m = drive(m, "h")
+	if got := m.rowItem(m.selRef()); got.Text != "c" || got.Prio != 'H' {
+		t.Fatalf("h did not set priority on the lane-selected card: %+v", got)
+	}
+}
+
+// TestLaneViewScrolls checks a lane with more cards than fit the pane scrolls
+// as the cursor moves, rather than silently truncating.
+func TestLaneViewScrolls(t *testing.T) {
+	items := make([]todo.Item, 8)
+	for i := range items {
+		items[i] = todo.Item{Text: fmt.Sprintf("task %d", i)}
+	}
+	m := model{input: textinput.New(), w: 60, height: 20, view: viewLane,
+		statuses: []string{"open", "done"}, items: items}
+
+	first := ansi.Strip(m.View())
+	if !strings.Contains(first, "task 0") {
+		t.Fatalf("first render should show the top of the lane:\n%s", first)
+	}
+
+	// walk the cursor to the bottom of the lane
+	downs := make([]string, len(items)-1)
+	for i := range downs {
+		downs[i] = "j"
+	}
+	m = drive(m, downs...)
+	last := ansi.Strip(m.View())
+	if !strings.Contains(last, "task 7") {
+		t.Fatalf("scrolled view should reach the last card:\n%s", last)
+	}
+	if strings.Contains(last, "task 0") {
+		t.Fatalf("scrolled view should no longer show the first card:\n%s", last)
 	}
 }
 

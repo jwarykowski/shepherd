@@ -51,6 +51,8 @@ func loadConfig(path string) config {
 		c.view = viewTag
 	case "table":
 		c.view = viewTable
+	case "lane":
+		c.view = viewLane
 	default:
 		c.view = viewCategory
 	}
@@ -173,6 +175,7 @@ const (
 	viewPriority                 // grouped under priority headers
 	viewTag                      // grouped under the item's first tag
 	viewTable                    // flat bubbles/table
+	viewLane                     // kanban columns, one per configured status
 	viewBoard                    // grouped by source board (global view only)
 )
 
@@ -184,7 +187,7 @@ const (
 	viewCountGlobal = viewCount + 1
 )
 
-var viewName = map[viewMode]string{viewCategory: "category", viewPriority: "priority", viewTag: "tag", viewTable: "table", viewBoard: "board"}
+var viewName = map[viewMode]string{viewCategory: "category", viewPriority: "priority", viewTag: "tag", viewTable: "table", viewLane: "lane", viewBoard: "board"}
 
 type model struct {
 	path          string
@@ -193,6 +196,7 @@ type model struct {
 	arcRows       []todo.Item // archive browse set (modeArchive); all boards' when global
 	arcCur        int         // cursor into arcRows
 	cursor        int         // index into the VISIBLE subset, not items
+	lane          int         // active column in viewLane (index into statuses)
 	filter        string
 	mode          mode
 	view          viewMode
