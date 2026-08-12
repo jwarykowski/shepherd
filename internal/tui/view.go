@@ -674,13 +674,13 @@ func (m model) helpGrid() string {
 	cols := []keyCol{
 		{"move", [][2]string{{"j/k", "move"}, {"space", "toggle"}, {"d", "detail"}, {"v", "view"}, {"A", "global"}, {"e", "archive"}, {"b", "boards"}, {"F", "footer"}}},
 		{"edit", [][2]string{{"a", "add"}, {"S", "sub"}, {"u", "edit"}, {"tab", "status"}, {"x", "del"}, {"c", "sweep"}, {"C", "arch"}}},
-		{"fields", [][2]string{{"h/m/l", "prio"}, {"g", "cat"}, {"T", "tags"}, {"t", "due"}, {"s", "defer"}, {"L", "link"}, {"o", "open"}}},
+		{"fields", [][2]string{{"h/m/l", "prio"}, {"g", "cat"}, {"T", "tags"}, {"t", "due"}, {"s", "defer"}, {"L", "link"}, {"o", "open"}, {"y", "copy"}}},
 		{"board", [][2]string{{"w", "save"}, {"^e", "editor"}, {"U", "undo"}, {"^r", "redo"}, {"/", "filter"}, {",", "settings"}, {"?", "help"}, {"q", "quit"}}},
 	}
 
 	// In the read-only global view most actions are inert; dim them so only the
 	// keys that do something (navigate / inspect / leave) read as live.
-	globalActive := map[string]bool{"j/k": true, "d": true, "v": true, "/": true, "A": true, "e": true, "o": true, "b": true, "F": true, "?": true, "q": true}
+	globalActive := map[string]bool{"j/k": true, "d": true, "v": true, "/": true, "A": true, "e": true, "o": true, "y": true, "b": true, "F": true, "?": true, "q": true}
 
 	// On a subtask row category is parent-only (subs share the parent's board);
 	// dim it. Archive (C) takes whole items only, so it's inert on a subtask too.
@@ -703,12 +703,12 @@ func (m model) detailGrid() string {
 		{"fields", [][2]string{{"u", "text"}, {"h/m/l", "prio"}, {"g", "cat"}, {"T", "tags"}}},
 		{"dates", [][2]string{{"t", "due"}, {"s", "defer"}}},
 		{"item", [][2]string{{"n", "note"}, {"L", "link"}, {"tab", "status"}, {"space", "toggle"}}},
-		{"go", [][2]string{{"o", "open link"}, {"esc", "back"}, {"q", "quit"}}},
+		{"go", [][2]string{{"o", "open link"}, {"y", "copy title"}, {"esc", "back"}, {"q", "quit"}}},
 	}
 
 	// Same inert rules as the list footer: the global aggregate is read-only, and
 	// category/tags are parent-only on a subtask.
-	globalActive := map[string]bool{"o": true, "esc": true, "q": true}
+	globalActive := map[string]bool{"o": true, "y": true, "esc": true, "q": true}
 	onSub := !m.global && m.selRef().sub >= 0
 	subInert := map[string]bool{"g": true, "T": true}
 	return m.keyGrid(cols, func(key string) bool {
@@ -881,6 +881,7 @@ func (m model) helpBody() []string {
 	line("h/m/l — set priority high/medium/low (same key again clears; works on subtasks too)")
 	line("g — set category · T — set tags (space- or comma-separated; empty clears) · t — set due date · s — set defer/start date")
 	line("L — set link · o — open the link in the browser")
+	line("y — copy the selected item's title to the clipboard")
 	line("space — toggle done · tab — cycle status · x — delete")
 	line("rows carry two flush-right values: subtask progress (else the due/defer label), then whichever grouping axis the headers don't already name — priority in the category and tag views, category in the priority view. The box shape is the status (○ open, ◐ named status, ✓ done)")
 	line("c — archive all done items · C — archive the selected item (whole items only, not subtasks)")

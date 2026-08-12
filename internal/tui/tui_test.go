@@ -726,6 +726,16 @@ func TestTagEditor(t *testing.T) {
 			t.Fatalf("detail footer grid missing %q:\n%s", want, out)
 		}
 	}
+	if !strings.Contains(out, "copy title") {
+		t.Fatalf("detail footer grid missing copy title hint:\n%s", out)
+	}
+
+	// y copies the title and stays on the detail view, untouched
+	before := m.items[0]
+	m = drive(m, "y")
+	if m.mode != modeDetail || m.items[0].Text != before.Text {
+		t.Fatalf("y should copy the title and stay on detail: mode=%d text=%q", m.mode, m.items[0].Text)
+	}
 
 	// empty clears
 	m = drive(m, "esc", "T")
@@ -733,6 +743,26 @@ func TestTagEditor(t *testing.T) {
 	m = drive(m, "enter")
 	if len(m.items[0].Tags) != 0 {
 		t.Fatalf("empty input should clear tags: %+v", m.items[0].Tags)
+	}
+}
+
+// TestCopyTitleFromList checks y is wired up in both the normal list and the
+// read-only global view (copying is safe there too), and stays a no-op with
+// nothing selected.
+func TestCopyTitleFromList(t *testing.T) {
+	m := model{input: textinput.New(), w: 60, height: 20,
+		items: []todo.Item{{Text: "wire the webhook"}}}
+	before := m.items[0]
+	m = drive(m, "y")
+	if m.mode != modeList || m.items[0].Text != before.Text {
+		t.Fatalf("y should copy the title and stay on the list: mode=%d text=%q", m.mode, m.items[0].Text)
+	}
+
+	g := model{input: textinput.New(), global: true, view: viewBoard,
+		items: []todo.Item{{Text: "a", Source: "default"}}}
+	g.resort()
+	if got := drive(g, "y"); got.items[0].Text != "a" {
+		t.Fatalf("y should be a no-op copy in the global view: %+v", got.items[0])
 	}
 }
 

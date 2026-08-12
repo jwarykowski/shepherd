@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"shepherd/internal/store"
@@ -338,6 +339,10 @@ func (m model) updateGlobal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.sel() >= 0 {
 			return m, openLink(m.items[m.sel()].Link)
 		}
+	case "y":
+		if m.sel() >= 0 {
+			_ = clipboard.WriteAll(m.items[m.sel()].Text)
+		}
 	case "e":
 		m.enterArchive()
 	case "b":
@@ -560,6 +565,10 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "o":
 		if idx >= 0 {
 			return m, openLink(m.rowItem(ref).Link)
+		}
+	case "y":
+		if idx >= 0 {
+			_ = clipboard.WriteAll(m.rowText(ref))
 		}
 	case "e":
 		m.enterArchive()
@@ -1002,6 +1011,8 @@ func (m model) updateDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "o":
 		return m, openLink(p.Link)
+	case "y":
+		_ = clipboard.WriteAll(p.Text)
 	default:
 		if detailFieldKeys[msg.String()] && !m.global {
 			m.fieldEdit = true // save/cancel comes back here, not to the list
