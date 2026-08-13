@@ -65,6 +65,8 @@ func (m model) View() string {
 		content = m.detailView()
 	case m.view == viewTable:
 		content = m.tableView()
+	case m.view == viewLane:
+		content = m.laneView()
 	default:
 		content = m.listView()
 	}
@@ -309,6 +311,19 @@ func (m model) listView() string {
 	return m.frame(body, footer)
 }
 
+// scrollOffset is the top-of-viewport index that keeps cursorLine centered in
+// a vh-tall viewport over total rows, clamped at both ends.
+func scrollOffset(total, cursorLine, vh int) int {
+	off := cursorLine - vh/2
+	if off < 0 {
+		off = 0
+	}
+	if off > total-vh {
+		off = total - vh
+	}
+	return off
+}
+
 // windowRows clips the list body to what fits between the header and footer,
 // keeping the cursor line centered in the viewport (clamped at both ends). It
 // returns rows unchanged when the terminal size is unknown or everything fits.
@@ -321,13 +336,7 @@ func (m model) windowRows(rows []string, cursorLine, footLines int) []string {
 	if vh < 1 || len(rows) <= vh {
 		return rows
 	}
-	off := cursorLine - vh/2
-	if off < 0 {
-		off = 0
-	}
-	if off > len(rows)-vh {
-		off = len(rows) - vh
-	}
+	off := scrollOffset(len(rows), cursorLine, vh)
 	return rows[off : off+vh]
 }
 
@@ -672,7 +681,7 @@ type keyCol struct {
 // helpGrid is the list footer's key hints.
 func (m model) helpGrid() string {
 	cols := []keyCol{
-		{"move", [][2]string{{"j/k", "move"}, {"space", "toggle"}, {"d", "detail"}, {"v", "view"}, {"A", "global"}, {"e", "archive"}, {"b", "boards"}, {"F", "footer"}}},
+		{"move", [][2]string{{"j/k", "move"}, {"←/→", "lane"}, {"space", "toggle"}, {"d", "detail"}, {"v", "view"}, {"A", "global"}, {"e", "archive"}, {"b", "boards"}, {"F", "footer"}}},
 		{"edit", [][2]string{{"a", "add"}, {"S", "sub"}, {"u", "edit"}, {"tab", "status"}, {"x", "del"}, {"c", "sweep"}, {"C", "arch"}}},
 		{"fields", [][2]string{{"h/m/l", "prio"}, {"g", "cat"}, {"T", "tags"}, {"t", "due"}, {"s", "defer"}, {"L", "link"}, {"o", "open"}, {"y", "copy"}}},
 		{"board", [][2]string{{"w", "save"}, {"^e", "editor"}, {"U", "undo"}, {"^r", "redo"}, {"/", "filter"}, {",", "settings"}, {"?", "help"}, {"q", "quit"}}},
@@ -727,14 +736,14 @@ func (m model) keyGrid(cols []keyCol, dim func(key string) bool) string {
 	for i, c := range cols {
 		keyW := 0
 		for _, e := range c.entries {
-			if len(e[0]) > keyW {
-				keyW = len(e[0])
+			if kw := lipgloss.Width(e[0]); kw > keyW {
+				keyW = kw
 			}
 		}
 		lines := []string{catStyle.Render(c.head)}
 		w := lipgloss.Width(lines[0])
 		for _, e := range c.entries {
-			key := fmt.Sprintf("%-*s", keyW, e[0])
+			key := e[0] + strings.Repeat(" ", keyW-lipgloss.Width(e[0]))
 			if dim(e[0]) {
 				key = dimStyle.Render(key)
 			}
@@ -856,6 +865,104 @@ func (m model) tableView() string {
 	return m.frame(head+"\n"+t.View(), footer)
 }
 
+// laneCard renders one lane-view card line: a priority marker plus the title,
+// truncated to width w. Status is implied by the column, so unlike rowContent
+// there's no box glyph.
+func (m model) laneCard(it todo.Item, w int) string {
+	marker, markSt := " ", dimStyle
+	if _, ok := prioLabel[it.Prio]; ok {
+		marker, markSt = string(it.Prio), prioStyles[it.Prio]
+	}
+	text := it.Text
+	if it.Done {
+		text = doneStyle.Render(text)
+	}
+	return ansi.Truncate(markSt.Render(marker)+" "+text, w, "…")
+}
+
+// laneView renders the kanban board: one column per configured status. All
+// columns are windowed together against the active lane's cursor position, so
+// the whole board scrolls in lockstep as the cursor moves within its column.
+const laneGap = 2 // blank columns between lanes, so headers/cards don't touch
+
+func (m model) laneView() string {
+	w := m.width()
+	lanes := m.statuses
+	if len(lanes) == 0 { // config invariant, but test model{} literals often skip it
+		lanes = []string{""}
+	}
+	colW := (w - laneGap*(len(lanes)-1)) / len(lanes)
+	if colW < 8 {
+		colW = 8
+	}
+	active := m.lane
+	if active < 0 {
+		active = 0
+	}
+	if active >= len(lanes) {
+		active = len(lanes) - 1
+	}
+	cur := m.cursor
+	if cur < 0 {
+		cur = 0
+	}
+
+	headers := make([]string, len(lanes))
+	cardLines := make([][]string, len(lanes))
+	for i, status := range lanes {
+		rows := m.laneRows(status)
+		headers[i] = spread(colW, catStyle.Render(status), countStyle.Render(fmt.Sprintf("%d", len(rows))))
+		lines := make([]string, len(rows))
+		for j, r := range rows {
+			line := m.laneCard(m.rowItem(r), colW)
+			if i == active && j == cur {
+				line = cursorStyle.Width(colW).Render(ansi.Strip(line))
+			}
+			lines[j] = line
+		}
+		cardLines[i] = lines
+	}
+
+	footer := m.listFooter()
+	vh := 0
+	if ih := m.innerHeight(); ih > 0 {
+		vh = ih - lines(footer) - 3 // m.header (2 lines) + this column's own header line
+	}
+	off := 0
+	if vh > 0 && len(cardLines[active]) > vh {
+		off = scrollOffset(len(cardLines[active]), cur, vh)
+	}
+
+	cols := make([]string, len(lanes))
+	for i, visible := range cardLines {
+		if vh > 0 {
+			start := off
+			if start > len(visible) {
+				start = len(visible)
+			}
+			end := start + vh
+			if end > len(visible) {
+				end = len(visible)
+			}
+			visible = visible[start:end]
+		}
+		if len(visible) == 0 {
+			visible = []string{dimStyle.Render("(empty)")}
+		}
+		cols[i] = lipgloss.NewStyle().Width(colW).Render(headers[i] + "\n" + strings.Join(visible, "\n"))
+	}
+	gap := lipgloss.NewStyle().Width(laneGap).Render("")
+	parts := make([]string, 0, len(cols)*2-1)
+	for i, c := range cols {
+		if i > 0 {
+			parts = append(parts, gap)
+		}
+		parts = append(parts, c)
+	}
+	body := m.header() + "\n" + lipgloss.JoinHorizontal(lipgloss.Top, parts...)
+	return m.frame(body, footer)
+}
+
 // helpBody returns the full help content as individual (already-wrapped) lines.
 func (m model) helpBody() []string {
 	w := m.width()
@@ -891,7 +998,8 @@ func (m model) helpBody() []string {
 	line("today · tomorrow · Nd/Nw/Nm/Ny (e.g. 3d, 2w) · DD-MM-YYYY. Anything unrecognised clears the date. Overdue items are pinned to a group at the top.")
 	blank()
 	sec("view & find")
-	line("v — cycle view: category / priority / tag / table (the global view adds a board grouping). The tag view groups by an item's first tag (untagged last) and shows its other tags on the row")
+	line("v — cycle view: category / priority / tag / table / lane (the global view adds a board grouping instead of lane). The tag view groups by an item's first tag (untagged last) and shows its other tags on the row")
+	line("lane view: one column per configured status — a kanban board. ←/→ switches the active column, tab moves the selected card into the next one; every other key (h/m/l, g, T, t, s, L, o, y, u, d, space, x) still acts on the card under the cursor. Not available in the global view, since boards can configure different statuses")
 	line("/ — filter text, note, category, tags, due (also greps the archive)")
 	line("A — toggle the read-only global view across all boards (esc to leave)")
 	line("e — browse the archive (read-only; all boards in the global view; esc to leave)")
