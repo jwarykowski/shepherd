@@ -1343,6 +1343,36 @@ func TestLaneView(t *testing.T) {
 	}
 }
 
+// TestLaneViewSpaceFollowsCard checks that toggling done with space in lane
+// view moves the cursor into the done lane along with the card, instead of
+// leaving it stranded pointing at whatever now sits in the old lane slot.
+func TestLaneViewSpaceFollowsCard(t *testing.T) {
+	m := model{input: textinput.New(), note: textarea.New(), w: 60, height: 24,
+		view: viewLane, statuses: []string{"open", "done"},
+		items: []todo.Item{{Text: "a"}, {Text: "b"}}}
+
+	m = drive(m, " ")
+	if m.lane != 1 {
+		t.Fatalf("space did not follow the card into the done lane: %d", m.lane)
+	}
+	if ref := m.selRef(); m.rowItem(ref).Text != "a" || !m.rowItem(ref).Done {
+		t.Fatalf("cursor did not follow the toggled card: %+v", m.rowItem(ref))
+	}
+
+	// subtask: cycling its status in lane view follows the subtask's own row.
+	m2 := model{input: textinput.New(), note: textarea.New(), w: 60, height: 24,
+		view: viewLane, statuses: []string{"open", "in-progress", "done"},
+		items: []todo.Item{{Text: "parent", Subs: []todo.Item{{Text: "sub"}}}}}
+	m2.cursor = 1 // the subtask row
+	m2 = drive(m2, "tab")
+	if m2.lane != 1 {
+		t.Fatalf("tab on a subtask did not follow it into in-progress: %d", m2.lane)
+	}
+	if ref := m2.selRef(); m2.rowItem(ref).Text != "sub" {
+		t.Fatalf("cursor did not follow the cycled subtask: %+v", m2.rowItem(ref))
+	}
+}
+
 // TestLaneViewScrolls checks a lane with more cards than fit the pane scrolls
 // as the cursor moves, rather than silently truncating.
 func TestLaneViewScrolls(t *testing.T) {

@@ -276,6 +276,29 @@ func (m *model) place(target todo.Item) {
 	}
 }
 
+// placeSub is place's subtask counterpart: follows the cursor onto a
+// subtask's row after its status changes. Matched by (idx, sub) rather than
+// by value — subtask text isn't guaranteed unique the way place's sameItem
+// check assumes.
+func (m *model) placeSub(idx, sub int) {
+	if m.view != viewLane {
+		return
+	}
+	lane := todo.StatusOf(m.items[idx].Subs[sub], m.statuses)
+	for i, s := range m.statuses {
+		if s == lane {
+			m.lane = i
+			break
+		}
+	}
+	for p, r := range m.laneRows(lane) {
+		if r.item == idx && r.sub == sub {
+			m.cursor = p
+			return
+		}
+	}
+}
+
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -485,9 +508,14 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.beforeMutate()
 			if ref.sub == -1 {
 				todo.SetParentDone(&m.items[idx], !m.items[idx].Done)
+				if m.view == viewLane { // follow the card into its new column
+					m.place(m.items[idx])
+				}
 			} else {
 				todo.SetSubDone(&m.items[idx], ref.sub, !m.items[idx].Subs[ref.sub].Done)
+				m.placeSub(idx, ref.sub)
 			}
+			m.clamp()
 		}
 	case "tab":
 		if idx >= 0 {
@@ -499,6 +527,7 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				}
 			} else {
 				todo.CycleSubStatus(&m.items[idx], ref.sub, m.statuses)
+				m.placeSub(idx, ref.sub)
 			}
 			m.clamp()
 		}
