@@ -17,6 +17,22 @@ func SetStatus(it *Item, name string) {
 	}
 }
 
+// StatusOf is an item's effective status name against the configured order:
+// "done" (last after normalization) when Done, the first status when Status is
+// left implicit (empty), else Status itself.
+func StatusOf(it Item, statuses []string) string {
+	if len(statuses) == 0 {
+		return ""
+	}
+	if it.Done {
+		return statuses[len(statuses)-1]
+	}
+	if it.Status == "" {
+		return statuses[0]
+	}
+	return it.Status
+}
+
 // CycleStatus advances an item to the next status in the configured order,
 // wrapping around. statuses is the ordered list from config with "done" last
 // (e.g. ["open", "in-progress", "done"]). The terminal "done" state is owned by
@@ -27,14 +43,10 @@ func CycleStatus(it *Item, statuses []string) {
 		return
 	}
 	cur := 0
-	if it.Done {
-		cur = len(statuses) - 1 // "done" is last after config normalization
-	} else if it.Status != "" {
-		for i, s := range statuses {
-			if s == it.Status {
-				cur = i
-				break
-			}
+	for i, s := range statuses {
+		if s == StatusOf(*it, statuses) {
+			cur = i
+			break
 		}
 	}
 	next := (cur + 1) % len(statuses)

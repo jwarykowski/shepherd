@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"shepherd/internal/store"
@@ -115,9 +116,50 @@ func (m model) rows() []rowRef {
 	return rs
 }
 
-// selRef is the row under the cursor, or {-1,-1} when there are no rows.
+// laneRows is the visible rows whose effective status matches the given lane
+// name — the per-column cursor space for viewLane. Built from rows() so it
+// stays consistent with the active filter and subtask flattening.
+func (m model) laneRows(status string) []rowRef {
+	var out []rowRef
+	for _, r := range m.rows() {
+		if todo.StatusOf(m.rowItem(r), m.statuses) == status {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// currentLane is the status name of the active column in viewLane, clamped
+// into range. Empty when m.statuses is empty (loadConfig's normalizeStatuses
+// guarantees it isn't at runtime, but model{} test literals often skip it).
+func (m model) currentLane() string {
+	if len(m.statuses) == 0 {
+		return ""
+	}
+	i := m.lane
+	if i < 0 {
+		i = 0
+	}
+	if i >= len(m.statuses) {
+		i = len(m.statuses) - 1
+	}
+	return m.statuses[i]
+}
+
+// cursorRows is the row slice m.cursor indexes: the active lane's rows in
+// viewLane, the full flat list otherwise. The single choke point for cursor
+// bounds so j/k, selRef and clamp can't disagree on what's in range.
+func (m model) cursorRows() []rowRef {
+	if m.view == viewLane {
+		return m.laneRows(m.currentLane())
+	}
+	return m.rows()
+}
+
+// selRef is the row under the cursor, or {-1,-1} when there are no rows. In
+// viewLane the cursor indexes the active column's own rows, not the full list.
 func (m model) selRef() rowRef {
-	rs := m.rows()
+	rs := m.cursorRows()
 	if len(rs) == 0 {
 		return rowRef{-1, -1}
 	}
@@ -189,7 +231,14 @@ func (m model) sel() int {
 }
 
 func (m *model) clamp() {
-	n := len(m.rows())
+	if m.view == viewLane {
+		if m.lane < 0 || len(m.statuses) == 0 {
+			m.lane = 0
+		} else if m.lane >= len(m.statuses) {
+			m.lane = len(m.statuses) - 1
+		}
+	}
+	n := len(m.cursorRows())
 	if m.cursor >= n {
 		m.cursor = n - 1
 	}
@@ -199,10 +248,51 @@ func (m *model) clamp() {
 }
 
 // place moves the cursor onto the parent row for a given item value (used after
-// a sort re-orders the list). Lands on the parent row, not a subtask.
+// a sort re-orders the list). Lands on the parent row, not a subtask. In
+// viewLane it first switches to the item's own lane, so a card followed here
+// after a status change stays under the cursor in its new column.
 func (m *model) place(target todo.Item) {
+	if m.view == viewLane {
+		lane := todo.StatusOf(target, m.statuses)
+		for i, s := range m.statuses {
+			if s == lane {
+				m.lane = i
+				break
+			}
+		}
+		for p, r := range m.laneRows(lane) {
+			if r.sub == -1 && sameItem(m.items[r.item], target) {
+				m.cursor = p
+				return
+			}
+		}
+		return
+	}
 	for p, r := range m.rows() {
 		if r.sub == -1 && sameItem(m.items[r.item], target) {
+			m.cursor = p
+			return
+		}
+	}
+}
+
+// placeSub is place's subtask counterpart: follows the cursor onto a
+// subtask's row after its status changes. Matched by (idx, sub) rather than
+// by value — subtask text isn't guaranteed unique the way place's sameItem
+// check assumes.
+func (m *model) placeSub(idx, sub int) {
+	if m.view != viewLane {
+		return
+	}
+	lane := todo.StatusOf(m.items[idx].Subs[sub], m.statuses)
+	for i, s := range m.statuses {
+		if s == lane {
+			m.lane = i
+			break
+		}
+	}
+	for p, r := range m.laneRows(lane) {
+		if r.item == idx && r.sub == sub {
 			m.cursor = p
 			return
 		}
@@ -324,7 +414,11 @@ func (m model) updateGlobal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if has {
 			cur = m.items[m.sel()]
 		}
-		m.view = (m.view + 1) % viewMode(viewCountGlobal)
+		next := (m.view + 1) % viewMode(viewCountGlobal)
+		if next == viewLane { // lane view is board-only: boards can configure
+			next = (next + 1) % viewMode(viewCountGlobal) // different statuses
+		}
+		m.view = next
 		m.resort()
 		if has {
 			m.place(cur)
@@ -337,6 +431,10 @@ func (m model) updateGlobal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "o":
 		if m.sel() >= 0 {
 			return m, openLink(m.items[m.sel()].Link)
+		}
+	case "y":
+		if m.sel() >= 0 {
+			_ = clipboard.WriteAll(m.items[m.sel()].Text)
 		}
 	case "e":
 		m.enterArchive()
@@ -376,7 +474,7 @@ func (m model) quit() (tea.Model, tea.Cmd) {
 }
 
 func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	rows := m.rows()
+	rows := m.cursorRows()
 	ref := m.selRef()
 	idx := ref.item
 	switch msg.String() {
@@ -395,23 +493,43 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.cursor > 0 {
 			m.cursor--
 		}
+	case "left":
+		if m.view == viewLane && m.lane > 0 {
+			m.lane--
+			m.clamp()
+		}
+	case "right":
+		if m.view == viewLane && m.lane < len(m.statuses)-1 {
+			m.lane++
+			m.clamp()
+		}
 	case " ":
 		if idx >= 0 {
 			m.beforeMutate()
 			if ref.sub == -1 {
 				todo.SetParentDone(&m.items[idx], !m.items[idx].Done)
+				if m.view == viewLane { // follow the card into its new column
+					m.place(m.items[idx])
+				}
 			} else {
 				todo.SetSubDone(&m.items[idx], ref.sub, !m.items[idx].Subs[ref.sub].Done)
+				m.placeSub(idx, ref.sub)
 			}
+			m.clamp()
 		}
 	case "tab":
 		if idx >= 0 {
 			m.beforeMutate()
 			if ref.sub == -1 {
 				todo.CycleStatus(&m.items[idx], m.statuses)
+				if m.view == viewLane { // follow the card into its new column
+					m.place(m.items[idx])
+				}
 			} else {
 				todo.CycleSubStatus(&m.items[idx], ref.sub, m.statuses)
+				m.placeSub(idx, ref.sub)
 			}
+			m.clamp()
 		}
 	case "d":
 		if idx >= 0 {
@@ -560,6 +678,10 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "o":
 		if idx >= 0 {
 			return m, openLink(m.rowItem(ref).Link)
+		}
+	case "y":
+		if idx >= 0 {
+			_ = clipboard.WriteAll(m.rowText(ref))
 		}
 	case "e":
 		m.enterArchive()
@@ -1002,6 +1124,8 @@ func (m model) updateDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "o":
 		return m, openLink(p.Link)
+	case "y":
+		_ = clipboard.WriteAll(p.Text)
 	default:
 		if detailFieldKeys[msg.String()] && !m.global {
 			m.fieldEdit = true // save/cancel comes back here, not to the list
