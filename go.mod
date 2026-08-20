@@ -1,6 +1,6 @@
 module shepherd
 
-go 1.26.4
+go 1.27.0
 
 require (
 	github.com/NimbleMarkets/ntcharts v0.5.1
