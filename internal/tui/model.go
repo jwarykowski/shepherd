@@ -71,8 +71,15 @@ func loadConfig(path string) config {
 	return c
 }
 
-// saveConfig writes the managed config keys to config.toml. shepherd owns the
-// file (every key has a settings-UI control), so it's a plain rewrite.
+// managedConfigKeys are the config.toml keys the settings UI owns and rewrites.
+var managedConfigKeys = map[string]bool{
+	"view": true, "density": true, "autosave": true,
+	"categories": true, "statuses": true, "hidefooter": true,
+}
+
+// saveConfig writes the managed config keys to config.toml, keeping every
+// other line: the same file carries keys read elsewhere (open.sh's placement /
+// direction, `shepherd agent`'s agent_*) that have no settings-UI control.
 func saveConfig(path string, c config) error {
 	den := "compact"
 	if c.density == comfort {
@@ -92,6 +99,15 @@ func saveConfig(path string, c config) error {
 	fmt.Fprintf(&b, "categories = %s\n", list(c.categories))
 	fmt.Fprintf(&b, "statuses = %s\n", list(c.statuses))
 	fmt.Fprintf(&b, "hidefooter = %v\n", c.hideFooter)
+	if old, err := os.ReadFile(path); err == nil {
+		for _, ln := range strings.Split(string(old), "\n") {
+			k, _, isKV := strings.Cut(ln, "=")
+			if strings.TrimSpace(ln) == "" || (isKV && managedConfigKeys[strings.TrimSpace(k)]) {
+				continue
+			}
+			b.WriteString(ln + "\n")
+		}
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
