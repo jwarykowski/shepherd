@@ -20,6 +20,7 @@ type Item struct {
 	Due       string // YYYY-MM-DD, or empty
 	Note      string
 	Link      string // reference URL, or empty
+	Branch    string // git branch an agent works the item on (shepherd agent), or empty
 	// Source is the board an item came from in an aggregated (global) view,
 	// e.g. "web" or "default". Derived from the filename; never serialised.
 	Source string
@@ -57,10 +58,10 @@ func ParseTags(s string) []string {
 
 // ApplyEdit applies quick-add tokens onto an existing item, touching only the
 // fields present in s: @category, #tag, tags:<a,b>, !h/!m/!l priority,
-// due:<preset>, defer:<preset>, link:<url>, status:<name>, and note:<text>. A
-// bare key token clears that field: "@", "#", "!", "due:", "defer:", "link:",
-// "status:", "tags:" reset category / tags / priority / due / defer / link /
-// status respectively. Text is replaced only when s carries plain (non-token)
+// due:<preset>, defer:<preset>, link:<url>, branch:<name>, status:<name>, and
+// note:<text>. A bare key token clears that field: "@", "#", "!", "due:",
+// "defer:", "link:", "branch:", "status:", "tags:" reset category / tags /
+// priority / due / defer / link / branch / status respectively. Text is replaced only when s carries plain (non-token)
 // words, so a token-only edit leaves the text alone. Unrecognised tokens count
 // as plain words.
 //
@@ -106,6 +107,10 @@ func ApplyEdit(it *Item, s string) {
 			it.Link = ""
 		case strings.HasPrefix(tok, "link:") && len(tok) > 5:
 			it.Link = tok[5:]
+		case tok == "branch:":
+			it.Branch = ""
+		case strings.HasPrefix(tok, "branch:") && len(tok) > 7:
+			it.Branch = tok[7:]
 		case tok == "status:":
 			SetStatus(it, "open")
 		case strings.HasPrefix(tok, "status:") && len(tok) > 7:
@@ -142,7 +147,7 @@ func ParseQuickAdd(s string) Item {
 
 // Match reports whether an item matches filter query q, which the caller has
 // already lowercased. Empty q matches everything. Searches text, note,
-// category, tags, due, defer, and link.
+// category, tags, due, defer, link, and branch.
 func Match(it Item, q string) bool {
 	if q == "" {
 		return true
@@ -154,5 +159,6 @@ func Match(it Item, q string) bool {
 
 		strings.Contains(strings.ToLower(it.Due), q) ||
 		strings.Contains(strings.ToLower(it.Defer), q) ||
-		strings.Contains(strings.ToLower(it.Link), q)
+		strings.Contains(strings.ToLower(it.Link), q) ||
+		strings.Contains(strings.ToLower(it.Branch), q)
 }

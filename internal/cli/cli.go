@@ -41,12 +41,21 @@ Items (ref = an item's stable id from 'list --json', or its 1-based index n;
   archive <ref>... [--json]    move whole items off the board into archive.md
   rm <ref>... [--dry-run] [--json]  remove one or more (--dry-run/-n previews)
 
+Agents:
+  agent <ref> [--kind <agent>] [--to <pane>] [--here] [--json]
+               hand an item to a coding agent and mark it in-progress: in herdr,
+               a new worktree on branch todo/<slug> (recorded as branch:) with
+               the agent started there; --to sends it to a running agent's pane;
+               --here (or no herdr) runs the agent CLI in this terminal
+  sync [--all] [--dry-run] [--json]
+               complete items whose branch: pull request has merged (needs gh)
+
   --json  echo the resulting item(s) as JSON (like 'list --json'), and report
           failures as {"error":…} on stdout instead of text on stderr.
   Mutating verbs are safe to repeat: re-marking a done item keeps its stamp.
 
   syntax: @category  #tag (adds)  tags:<a,b> (replaces)  !h|!m|!l
-          due:<date>  defer:<date>  link:<url>  status:<name>
+          due:<date>  defer:<date>  link:<url>  branch:<name>  status:<name>
           note:<text> (takes the rest of the line)
 
 Boards (the default board can't be renamed/deleted/archived):
@@ -128,6 +137,10 @@ func Run(verb string, args []string) int {
 		return cmdArchive(rest, board, os.Stdout)
 	case "rm":
 		return cmdRemove(rest, board, os.Stdout)
+	case "agent":
+		return cmdAgent(rest, board, os.Stdout)
+	case "sync":
+		return cmdSync(rest, board, os.Stdout)
 	default:
 		fmt.Fprintf(os.Stderr, "shepherd: unknown command %q\n", verb)
 		if s := suggest(verb); s != "" {
@@ -305,13 +318,14 @@ type itemJSON struct {
 	Defer     string     `json:"defer,omitempty"` // ISO YYYY-MM-DD
 	Due       string     `json:"due,omitempty"`   // ISO YYYY-MM-DD
 	Link      string     `json:"link,omitempty"`
+	Branch    string     `json:"branch,omitempty"` // git branch an agent works the item on
 	Note      string     `json:"note,omitempty"`
 	Board     string     `json:"board,omitempty"`    // board name, only in --all
 	Subtasks  []itemJSON `json:"subtasks,omitempty"` // Index is the 1-based position under the parent (n.m)
 }
 
 func toJSON(it todo.Item, idx int) itemJSON {
-	j := itemJSON{ID: it.ID, Index: idx, Done: it.Done, Status: it.Status, Text: it.Text, Category: it.Category, Tags: it.Tags, Created: it.Created, Completed: it.Completed, Defer: it.Defer, Due: it.Due, Link: it.Link, Note: it.Note, Board: it.Source}
+	j := itemJSON{ID: it.ID, Index: idx, Done: it.Done, Status: it.Status, Text: it.Text, Category: it.Category, Tags: it.Tags, Created: it.Created, Completed: it.Completed, Defer: it.Defer, Due: it.Due, Link: it.Link, Branch: it.Branch, Note: it.Note, Board: it.Source}
 	if it.Prio != 0 {
 		j.Priority = string(it.Prio)
 	}

@@ -17,6 +17,8 @@ format.
 - `shepherd done <ref>... [--json]` / `shepherd undone <ref>...` — (un)complete one or more items/subtasks
 - `shepherd archive <ref>... [--json]` — move whole items off the live board into the sibling `archive.md` (per-item counterpart to whole-board `board archive`); subtasks can't be archived alone
 - `shepherd rm <ref>... [--dry-run] [--json]` — remove one or more items/subtasks (`--dry-run`/`-n` previews without writing)
+- `shepherd agent <ref> [--kind <agent>] [--to <pane>] [--here] [--json]` — hand an item to a coding agent and mark it `in-progress`. Inside [herdr](https://herdr.dev) it creates a git worktree on branch `todo/<slug>` (recorded on the item as `branch:`) and starts the agent there with the item text + note as its prompt; `--to <pane>` sends it to an agent already running in that herdr pane instead; `--here` (or no herdr) runs the agent CLI in this terminal. The repo is the board's `dir`, else the current git repo
+- `shepherd sync [--all] [--dry-run] [--json]` — complete every open item whose `branch:` pull request has merged (asks `gh`); run it periodically or after merging
 
 `edit` is the single setter for every field — status, note, category, tags,
 priority, due, defer, link, and text all change through its tokens (`edit 2 "status:in-progress"`,
@@ -36,10 +38,11 @@ stdout.
 
 Quick-add tokens (shared by `add`, `sub`, `edit`): `@category`, `#tag`,
 `tags:<a,b>`, `!h`/`!m`/`!l` priority, `due:<today|tomorrow|+3d|15-07-2026>`,
-`defer:<same date forms>` (start/defer date), `link:<url>`, `status:<name>`,
+`defer:<same date forms>` (start/defer date), `link:<url>`, `branch:<name>`
+(the git branch an agent works the item on), `status:<name>`,
 and `note:<text>` (holds spaces, takes the rest of the line — put it last).
 `list --json` reports `id` (the stable handle), `completed` (done timestamp),
-`defer`, `link`, `tags`, and `status` per item.
+`defer`, `link`, `branch`, `tags`, and `status` per item.
 
 Category and tags are different axes: `category` is one lowercase label per item
 and drives board grouping/order; `tags` is a free-form lowercase set with no

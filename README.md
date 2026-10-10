@@ -404,6 +404,26 @@ shepherd with the same verbs. Discovery is layered:
 
 All three point at the same `shepherd` CLI — no per-tool server, no MCP.
 
+### hand an item to an agent
+
+`shepherd agent <ref>` turns a todo into work for a coding agent and marks it
+`in-progress`:
+
+```sh
+shepherd agent 3                  # in herdr: worktree todo/<slug> + claude started there
+shepherd agent 3 --kind codex     # any agent herdr can start (claude, codex, opencode, …)
+shepherd agent 3 --to w2:p1       # send to an agent already running in that herdr pane
+shepherd agent 3 --here           # no herdr / no worktree: run the agent in this terminal
+shepherd sync --all               # complete items whose agent branch has merged (needs gh)
+```
+
+The prompt is the item's text plus its note. Inside
+[herdr](https://herdr.dev) the item records its branch (`branch:todo/<slug>`),
+which `shepherd sync` checks with `gh`: once that pull request merges, the
+item completes. The repository is the board's working directory
+(`shepherd board dir <name> <path>`), else the current git repo. Defaults come
+from `agent_kind` / `agent_branch_prefix` in [configuration](#configuration).
+
 ## configuration
 
 Optional `config.toml` at `$XDG_CONFIG_HOME/shepherd/config.toml` (defaults to
@@ -417,6 +437,8 @@ autosave = 60                              # seconds idle before writing; 0 disa
 categories = ["work", "home", "personal"]  # tab-cycles in the category prompt
 statuses = ["open", "in-progress", "done"] # tab cycles item status in the list
 hidefooter = false                         # true starts with the footer help grid hidden (F toggles at runtime)
+agent_kind = "claude"                      # shepherd agent: which agent to start
+agent_branch_prefix = "todo/"              # shepherd agent: worktree branch prefix
 ```
 
 - `view` — default grouping/layout on launch (`v` still cycles at runtime).
@@ -424,9 +446,10 @@ hidefooter = false                         # true starts with the footer help gr
 - `autosave` — idle seconds before an unsaved board is written to disk (default 60); `0` disables it, so only `w` and quit save.
 - `categories` — press `tab` in the category prompt (`g`) to cycle through them.
 - `statuses` — ordered list `tab` cycles through in the list; `done` is always kept and forced last. Defaults to `["open", "done"]`. Intermediate statuses persist as a `status:` line and show a `◐` glyph; [`shepherd stats`](#stats) breaks items down by status in this order.
+- `agent_kind` / `agent_branch_prefix` — defaults for [`shepherd agent`](#hand-an-item-to-an-agent); `--kind` overrides per call.
 - `hidefooter` — start with the footer help grid hidden for a cleaner board (the `jwarykowski/shepherd` · version line stays); `F` toggles it at runtime.
 
-Edit these in the running board with `,` (settings): `enter` cycles `view`/`density`/`footer` and edits `autosave`/`categories`/`statuses`, and each change is written straight back to `config.toml`. shepherd owns the file — a settings save rewrites the managed keys.
+Edit these in the running board with `,` (settings): `enter` cycles `view`/`density`/`footer` and edits `autosave`/`categories`/`statuses`, and each change is written straight back to `config.toml`. A settings save rewrites only those managed keys; everything else in the file (comments, `placement`/`direction`, `agent_*`) is kept.
 
 herdr pane placement (`placement` / `direction`) lives in the same file — see
 [herdr integration](#herdr-integration).
