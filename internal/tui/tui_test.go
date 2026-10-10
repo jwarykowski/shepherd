@@ -761,9 +761,13 @@ func TestCopyTitleFromList(t *testing.T) {
 	m := model{input: textinput.New(), w: 60, height: 20,
 		items: []todo.Item{{Text: "wire the webhook"}}}
 	before := m.items[0]
+	copied = nil
 	m = drive(m, "y")
 	if m.mode != modeList || m.items[0].Text != before.Text {
 		t.Fatalf("y should copy the title and stay on the list: mode=%d text=%q", m.mode, m.items[0].Text)
+	}
+	if len(copied) != 1 || copied[0] != "wire the webhook" {
+		t.Fatalf("y should copy the selected title, copied %q", copied)
 	}
 
 	g := model{input: textinput.New(), global: true, view: viewBoard,
