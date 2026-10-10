@@ -23,11 +23,27 @@ func TestSlug(t *testing.T) {
 }
 
 func TestPrompt(t *testing.T) {
-	if got := Prompt(todo.Item{Text: "fix it"}); got != "fix it" {
+	if got := (Task{Item: todo.Item{Text: "fix it"}}).Prompt(); got != "fix it" {
 		t.Errorf("no note: %q", got)
 	}
-	if got := Prompt(todo.Item{Text: "fix it", Note: "carefully"}); got != "fix it\n\ncarefully" {
+	if got := (Task{Item: todo.Item{Text: "fix it", Note: "carefully"}}).Prompt(); got != "fix it\n\ncarefully" {
 		t.Errorf("with note: %q", got)
+	}
+	parent := todo.Item{Text: "Webhooks", Note: "Stripe only"}
+	sub := Task{Item: todo.Item{Text: "add tests"}, Parent: &parent}
+	if got, want := sub.Prompt(), "add tests\n\nThis is one part of: Webhooks\n\nStripe only"; got != want {
+		t.Errorf("subtask: %q, want %q", got, want)
+	}
+}
+
+func TestTaskName(t *testing.T) {
+	if got := (Task{Item: todo.Item{Text: "Add tests"}}).Name(); got != "add-tests" {
+		t.Errorf("item: %q", got)
+	}
+	parent := todo.Item{Text: "Wire the payment provider webhooks"}
+	sub := Task{Item: todo.Item{Text: "Add tests"}, Parent: &parent}
+	if got := sub.Name(); got != "wire-the-payment-pro-add-tests" {
+		t.Errorf("subtask: %q", got)
 	}
 }
 

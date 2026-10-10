@@ -278,3 +278,54 @@ func TestSyncEvery(t *testing.T) {
 	}()
 	cmdSync([]string{"--every", "2m"}, "", &bytes.Buffer{})
 }
+
+func TestAgentSubtask(t *testing.T) {
+	path := agentBoard(t, "")
+	cmdSub([]string{"1", "write the tests note:table-driven"}, "", &bytes.Buffer{})
+	f := stubCommands(t, "herdr", worktreeReply)
+
+	if code := cmdAgent([]string{"1.1"}, "", &bytes.Buffer{}); code != 0 {
+		t.Fatalf("agent exit %d", code)
+	}
+	const branch = "todo/add-retry-to-api-cli-write-the-tests"
+	if !strings.Contains(f.calls[1], "--branch "+branch) {
+		t.Fatalf("subtask branch: %q", f.calls[1])
+	}
+	wantPrompt := "write the tests\n\ntable-driven\n\nThis is one part of: Add retry to API client!\n\nuse exponential backoff"
+	if !strings.HasSuffix(f.calls[2], "-- "+wantPrompt) {
+		t.Fatalf("subtask prompt: %q", f.calls[2])
+	}
+	items := store.Load(path)
+	if sub := items[0].Subs[0]; sub.Status != "in-progress" || sub.Branch != branch {
+		t.Fatalf("subtask not marked: %+v", sub)
+	}
+	if items[0].Status != "" || items[0].Branch != "" {
+		t.Fatalf("parent must be left alone: %+v", items[0])
+	}
+}
+
+func TestSyncCompletesMergedSubtask(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "todo.md")
+	t.Setenv("SHEPHERD_TODO_FILE", path)
+	cmdAdd([]string{"parent"}, "", &bytes.Buffer{})
+	cmdSub([]string{"1", "merged sub branch:todo/sub"}, "", &bytes.Buffer{})
+	cmdSub([]string{"1", "other sub"}, "", &bytes.Buffer{})
+	stubCommands(t, "herdr", func(name string, args []string) (string, error) {
+		if name == "gh" && args[2] == "todo/sub" {
+			return "MERGED\n", nil
+		}
+		return "OPEN\n", nil
+	})
+
+	var buf bytes.Buffer
+	if code := cmdSync(nil, "", &buf); code != 0 {
+		t.Fatalf("sync exit %d", code)
+	}
+	items := store.Load(path)
+	if !items[0].Subs[0].Done || items[0].Subs[1].Done || items[0].Done {
+		t.Fatalf("only the merged subtask should complete: %+v", items[0])
+	}
+	if !strings.Contains(buf.String(), "1.1") || !strings.Contains(buf.String(), "todo/sub merged") {
+		t.Fatalf("output should name the subtask: %q", buf.String())
+	}
+}

@@ -1,4 +1,4 @@
-// Package agent hands a todo item to a coding agent: a git worktree plus an
+// Package agent hands a todo item (or one subtask) to a coding agent: a git worktree plus an
 // agent started through herdr, a prompt to an agent already running in a
 // herdr pane, or the agent CLI run in a terminal. It also finds items whose
 // agent branch has merged. herdr, gh, git and the agent CLIs are external
@@ -85,14 +85,23 @@ func Config() (kind, prefix string) {
 	return kind, strings.Trim(prefix, `"`)
 }
 
+// Task is the work handed to an agent: an item, or a subtask together with
+// its parent (which gives the agent context and names the branch).
+type Task struct {
+	Item   todo.Item
+	Parent *todo.Item // nil for a top-level item
+}
+
 var nonSlug = regexp.MustCompile(`[^a-z0-9]+`)
 
 // Slug turns item text into a branch-safe name: lowercase alphanumeric runs
 // joined by "-", at most 40 bytes, never ending in "-".
-func Slug(text string) string {
+func Slug(text string) string { return slugN(text, 40) }
+
+func slugN(text string, n int) string {
 	s := strings.Trim(nonSlug.ReplaceAllString(strings.ToLower(text), "-"), "-")
-	if len(s) > 40 {
-		s = strings.TrimRight(s[:40], "-")
+	if len(s) > n {
+		s = strings.TrimRight(s[:n], "-")
 	}
 	if s == "" {
 		s = "item"
@@ -100,12 +109,30 @@ func Slug(text string) string {
 	return s
 }
 
-// Prompt is what the agent is asked to do: the item text, then its note.
-func Prompt(it todo.Item) string {
-	if it.Note == "" {
-		return it.Text
+// Name is the task's worktree / agent name: the item's slug, or for a subtask
+// a short parent slug then the subtask's, so sibling subtasks never collide
+// with each other or with the parent.
+func (t Task) Name() string {
+	if t.Parent == nil {
+		return Slug(t.Item.Text)
 	}
-	return it.Text + "\n\n" + it.Note
+	return slugN(t.Parent.Text, 20) + "-" + Slug(t.Item.Text)
+}
+
+// Prompt is what the agent is asked to do: the item text, then its note; for
+// a subtask, followed by the parent it belongs to (text and note) as context.
+func (t Task) Prompt() string {
+	parts := []string{t.Item.Text}
+	if t.Item.Note != "" {
+		parts = append(parts, t.Item.Note)
+	}
+	if t.Parent != nil {
+		parts = append(parts, "This is one part of: "+t.Parent.Text)
+		if t.Parent.Note != "" {
+			parts = append(parts, t.Parent.Note)
+		}
+	}
+	return strings.Join(parts, "\n\n")
 }
 
 // RepoDir is where the agent works: the board's working directory (board dir)
@@ -130,10 +157,10 @@ func RepoDir(board string) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
-// StartWorktree creates a herdr worktree on branch <prefix><slug> off repo and
-// starts a kind agent in it with the item as its prompt, returning the branch.
-func StartWorktree(herdr, repo, kind, prefix string, it todo.Item) (string, error) {
-	name := Slug(it.Text)
+// StartWorktree creates a herdr worktree on branch <prefix><name> off repo and
+// starts a kind agent in it with the task as its prompt, returning the branch.
+func StartWorktree(herdr, repo, kind, prefix string, t Task) (string, error) {
+	name := t.Name()
 	branch := prefix + name
 	out, err := Run(repo, herdr, "worktree", "create", "--cwd", repo, "--branch", branch, "--label", name, "--focus")
 	if err != nil {
@@ -150,26 +177,28 @@ func StartWorktree(herdr, repo, kind, prefix string, it todo.Item) (string, erro
 		return "", fmt.Errorf("herdr worktree create: unexpected output")
 	}
 	pane := created.Result.RootPane.PaneID
-	if _, err := Run(repo, herdr, "agent", "start", name, "--kind", kind, "--pane", pane, "--", Prompt(it)); err != nil {
+	if _, err := Run(repo, herdr, "agent", "start", name, "--kind", kind, "--pane", pane, "--", t.Prompt()); err != nil {
 		return "", err
 	}
 	return branch, nil
 }
 
-// SendTo submits the item as a prompt to the agent in herdr pane.
-func SendTo(herdr, pane string, it todo.Item) error {
-	_, err := Run("", herdr, "agent", "prompt", pane, Prompt(it))
+// SendTo submits the task as a prompt to the agent in herdr pane.
+func SendTo(herdr, pane string, t Task) error {
+	_, err := Run("", herdr, "agent", "prompt", pane, t.Prompt())
 	return err
 }
 
-// MergedIDs returns the ids of board's open items whose branch: has a merged
-// pull request (asked of gh in the board's repository). Items without a
-// reachable repo or PR are skipped.
+// MergedIDs returns the ids of board's open items and subtasks whose branch:
+// has a merged pull request (asked of gh in the board's repository). Items
+// without a reachable repo or PR are skipped.
 func MergedIDs(board string) map[string]bool {
 	var candidates []todo.Item
 	for _, it := range store.Load(store.TodoPathFor(board)) {
-		if !it.Done && it.Branch != "" {
-			candidates = append(candidates, it)
+		for _, c := range append([]todo.Item{it}, it.Subs...) {
+			if !c.Done && c.Branch != "" {
+				candidates = append(candidates, c)
+			}
 		}
 	}
 	if len(candidates) == 0 {

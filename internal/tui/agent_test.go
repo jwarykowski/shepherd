@@ -13,7 +13,7 @@ import (
 	"shepherd/internal/todo"
 )
 
-// stubAgent replaces the external commands r drives: herdr ("" = not
+// stubAgent replaces the external commands @ drives: herdr ("" = not
 // available), git (always /repo), and herdr worktree/agent calls answered by
 // fail (nil = succeed).
 func stubAgent(t *testing.T, herdr string, fail error) {
@@ -49,10 +49,10 @@ func TestAgentKeyInHerdr(t *testing.T) {
 	stubAgent(t, "herdr", nil)
 	m := agentModel(t)
 
-	nm, cmd := m.Update(key("r"))
+	nm, cmd := m.Update(key("@"))
 	m = nm.(model)
 	if cmd == nil || !strings.Contains(m.notice, "starting claude") {
-		t.Fatalf("r should start the hand-off in the background: notice=%q cmd=%v", m.notice, cmd != nil)
+		t.Fatalf("@ should start the hand-off in the background: notice=%q cmd=%v", m.notice, cmd != nil)
 	}
 	if m.items[0].Status != "" {
 		t.Fatal("item must not be marked before the agent has it")
@@ -82,7 +82,7 @@ func TestAgentKeyHerdrFailure(t *testing.T) {
 	stubAgent(t, "herdr", errors.New("worktree already exists"))
 	m := agentModel(t)
 
-	nm, cmd := m.Update(key("r"))
+	nm, cmd := m.Update(key("@"))
 	nm, _ = nm.(model).Update(cmd())
 	m = nm.(model)
 	if !strings.Contains(m.notice, "worktree already exists") {
@@ -93,22 +93,47 @@ func TestAgentKeyHerdrFailure(t *testing.T) {
 	}
 }
 
-func TestAgentKeyNeedsTopLevelItem(t *testing.T) {
+func TestAgentKeyGlobalView(t *testing.T) {
 	stubAgent(t, "herdr", nil)
-
 	g := agentModel(t)
 	g.global = true
-	if nm, cmd := g.Update(key("r")); cmd != nil || !strings.Contains(nm.(model).notice, "top-level item") {
-		t.Fatal("r in the global view should explain, not run")
+	if nm, cmd := g.Update(key("@")); cmd != nil || !strings.Contains(nm.(model).notice, "open a board") {
+		t.Fatal("@ in the global view should explain, not run")
 	}
+}
 
+func TestAgentKeyOnSubtask(t *testing.T) {
+	var started []string
+	stubAgent(t, "herdr", nil)
+	run := agent.Run
+	agent.Run = func(dir, name string, args ...string) ([]byte, error) {
+		started = append(started, strings.Join(args, " "))
+		return run(dir, name, args...)
+	}
 	m := agentModel(t)
 	m = drive(m, "j") // onto the subtask row
 	if m.selRef().sub < 0 {
 		t.Fatal("test setup: cursor should be on the subtask")
 	}
-	if nm, cmd := m.Update(key("r")); cmd != nil || !strings.Contains(nm.(model).notice, "top-level item") {
-		t.Fatal("r on a subtask should explain, not run")
+
+	nm, cmd := m.Update(key("@"))
+	if cmd == nil {
+		t.Fatalf("@ on a subtask should start the hand-off: %q", nm.(model).notice)
+	}
+	nm, _ = nm.(model).Update(cmd())
+	m = nm.(model)
+	const branch = "todo/wire-the-webhook-sub"
+	if sub := m.items[0].Subs[0]; sub.Status != "in-progress" || sub.Branch != branch {
+		t.Fatalf("subtask not marked: %+v", sub)
+	}
+	if m.items[0].Status != "" || m.items[0].Branch != "" {
+		t.Fatalf("parent must be left alone: %+v", m.items[0])
+	}
+	if got := store.Load(m.path)[0].Subs[0].Branch; got != branch {
+		t.Fatalf("subtask branch not saved: %q", got)
+	}
+	if !strings.Contains(strings.Join(started, "\n"), "This is one part of: wire the webhook") {
+		t.Fatalf("prompt should carry the parent: %q", started)
 	}
 }
 
@@ -116,10 +141,10 @@ func TestAgentKeyWithoutHerdr(t *testing.T) {
 	stubAgent(t, "", nil)
 	m := agentModel(t)
 
-	nm, cmd := m.Update(key("r"))
+	nm, cmd := m.Update(key("@"))
 	m = nm.(model)
 	if cmd == nil {
-		t.Fatal("without herdr r should hand the terminal to the agent")
+		t.Fatal("without herdr @ should hand the terminal to the agent")
 	}
 	if m.items[0].Status != "in-progress" || m.items[0].Branch != "" {
 		t.Fatalf("item should be in-progress without a branch: %+v", m.items[0])
