@@ -15,6 +15,11 @@ import (
 	"shepherd/internal/todo"
 )
 
+// copyText puts s on the system clipboard. A package var so tests never touch
+// the real clipboard: on Wayland wl-copy keeps running to serve the selection,
+// so clipboard.WriteAll's wait never returns there.
+var copyText = clipboard.WriteAll
+
 func (m model) Init() tea.Cmd { return tick() }
 
 // beforeMutate pushes the current state onto the undo stack, clears the redo
@@ -434,7 +439,7 @@ func (m model) updateGlobal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "y":
 		if m.sel() >= 0 {
-			_ = clipboard.WriteAll(m.items[m.sel()].Text)
+			_ = copyText(m.items[m.sel()].Text)
 		}
 	case "e":
 		m.enterArchive()
@@ -681,7 +686,7 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "y":
 		if idx >= 0 {
-			_ = clipboard.WriteAll(m.rowText(ref))
+			_ = copyText(m.rowText(ref))
 		}
 	case "e":
 		m.enterArchive()
@@ -1125,7 +1130,7 @@ func (m model) updateDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "o":
 		return m, openLink(p.Link)
 	case "y":
-		_ = clipboard.WriteAll(p.Text)
+		_ = copyText(p.Text)
 	default:
 		if detailFieldKeys[msg.String()] && !m.global {
 			m.fieldEdit = true // save/cancel comes back here, not to the list
