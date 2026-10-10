@@ -27,6 +27,7 @@ syncable.
 - [storage](#storage)
 - [herdr integration](#herdr-integration)
 - [develop](#develop)
+- [support](#support)
 
 No setup required — everything defaults under `~/.config/shepherd/` (or
 `$XDG_CONFIG_HOME/shepherd/` when that is set):
@@ -550,3 +551,8 @@ description = "shepherd (zoomed)"
 ## develop
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## support
+
+shepherd is free and MIT licensed. If it keeps your agents and todos in line,
+you can [sponsor its development](https://github.com/sponsors/jwarykowski).
