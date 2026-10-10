@@ -417,6 +417,11 @@ shepherd agent 3 --here           # no herdr / no worktree: run the agent in thi
 shepherd sync --all               # complete items whose agent branch has merged (needs gh)
 ```
 
+On the board, `r` does the same for the selected item (worktree + agent in
+herdr, else the agent takes over the terminal until it exits). As a herdr
+plugin, shepherd keeps `shepherd sync --all --every 2m` running in the
+background, so handed-off items complete on their own once merged.
+
 The prompt is the item's text plus its note. Inside
 [herdr](https://herdr.dev) the item records its branch (`branch:todo/<slug>`),
 which `shepherd sync` checks with `gh`: once that pull request merges, the

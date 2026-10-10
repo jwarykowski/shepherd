@@ -32,7 +32,7 @@ Run `shepherd help` for the authoritative command list. Summary:
 | `shepherd done <ref>... [--json]` / `undone <ref>...` | (un)complete one or more items/subtasks (shorthand for `edit … status:done`/`status:open`) |
 | `shepherd rm <ref>... [--dry-run] [--json]` | remove one or more items/subtasks (`--dry-run`/`-n` previews) |
 | `shepherd agent <ref> [--kind <agent>] [--to <pane>] [--here] [--json]` | hand an item to a coding agent (herdr worktree + agent, an existing pane, or this terminal); marks it in-progress and records `branch:` |
-| `shepherd sync [--all] [--dry-run] [--json]` | complete open items whose `branch:` pull request has merged (needs `gh`) |
+| `shepherd sync [--all] [--dry-run] [--json] [--every <dur>]` | complete open items whose `branch:` pull request has merged (needs `gh`) |
 | `shepherd archive <ref>... [--json]` | move whole items off the board into `archive.md` (subtasks can't be archived alone) |
 
 A `<ref>` is either an item's **stable id** (the `id` field from `list --json`)
