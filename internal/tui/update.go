@@ -11,6 +11,7 @@ import (
 	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
 
+	"shepherd/internal/agent"
 	"shepherd/internal/store"
 	"shepherd/internal/todo"
 )
@@ -307,6 +308,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.note.SetWidth(m.width()) // keep the note editor sized while open
 		}
 		return m, nil
+	case agentStartedMsg:
+		if msg.err != nil {
+			m.notice = "agent: " + msg.err.Error()
+			return m, nil
+		}
+		m.markAgent(msg.id, msg.branch)
+		m.notice = "agent started on " + msg.branch
+		return m, nil
 	case editorDoneMsg:
 		// Reload from disk — the file may have changed under us.
 		m.items = store.Load(m.path)
@@ -393,9 +402,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // never saves the aggregate to disk.
 func (m model) updateGlobal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	rows := m.rows()
+	m.notice = ""
 	switch msg.String() {
 	case "q":
 		return m.quit()
+	case "r": // read-only view: say where hand-off works instead of doing nothing
+		m.notice = "agent: select a top-level item on a board"
 	case "esc", "A": // A toggles both ways, like it does on a board
 		m.toggleGlobal()
 	case "F":
@@ -448,6 +460,76 @@ func (m model) updateGlobal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// agentStartedMsg reports a background agent hand-off (herdr worktree +
+// agent start) finishing: the item id, the branch it records, or an error.
+type agentStartedMsg struct {
+	id, branch string
+	err        error
+}
+
+// startAgent hands the selected top-level item to a coding agent (r). Inside
+// herdr the worktree + agent start runs in the background and agentStartedMsg
+// marks the item; without herdr the agent CLI takes over this terminal (the
+// item is marked first) and the board reloads when it exits.
+func (m model) startAgent() (tea.Model, tea.Cmd) {
+	ref := m.selRef()
+	if m.global || ref.item < 0 || ref.sub >= 0 {
+		m.notice = "agent: select a top-level item on a board"
+		return m, nil
+	}
+	// save first so a new item has its id before it leaves the board
+	_ = store.Save(m.path, m.items)
+	m.markSaved()
+	m.lastMod = store.FileModTime(m.path)
+	it := m.items[ref.item]
+	if it.Done {
+		m.notice = "agent: item is already done"
+		return m, nil
+	}
+	kind, prefix := agent.Config()
+	board := m.board
+	if herdr := agent.Herdr(); herdr != "" {
+		m.notice = "agent: starting " + kind + "…"
+		return m, func() tea.Msg {
+			repo, err := agent.RepoDir(board)
+			branch := ""
+			if err == nil {
+				branch, err = agent.StartWorktree(herdr, repo, kind, prefix, it)
+			}
+			return agentStartedMsg{id: it.ID, branch: branch, err: err}
+		}
+	}
+	repo, err := agent.RepoDir(board)
+	if err != nil {
+		m.notice = "agent: " + err.Error()
+		return m, nil
+	}
+	m.markAgent(it.ID, "")
+	c := agent.Command(repo, kind, agent.Prompt(it))
+	return m, tea.ExecProcess(c, func(error) tea.Msg { return editorDoneMsg{} })
+}
+
+// markAgent marks item id in-progress, records branch (if any), and saves so
+// shepherd sync sees the branch straight away.
+func (m *model) markAgent(id, branch string) {
+	for i := range m.items {
+		if m.items[i].ID != id {
+			continue
+		}
+		m.beforeMutate()
+		todo.SetStatus(&m.items[i], "in-progress")
+		if branch != "" {
+			m.items[i].Branch = branch
+		}
+		_ = store.Save(m.path, m.items)
+		m.markSaved()
+		m.lastMod = store.FileModTime(m.path)
+		m.resort()
+		m.clamp()
+		return
+	}
+}
+
 // openLink launches the OS browser on url (open on macOS, xdg-open elsewhere),
 // detached. A no-op when url is empty. The exec error is dropped: there's no
 // board-side recovery and the TUI must not block on a spawn.
@@ -477,9 +559,12 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	rows := m.cursorRows()
 	ref := m.selRef()
 	idx := ref.item
+	m.notice = ""
 	switch msg.String() {
 	case "q":
 		return m.quit()
+	case "r":
+		return m.startAgent()
 	case "w":
 		_ = store.Save(m.path, m.items)
 		m.markSaved()
