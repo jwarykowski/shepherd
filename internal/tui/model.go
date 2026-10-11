@@ -223,6 +223,7 @@ type model struct {
 	projCur       int           // cursor into projRows
 	projArchived  bool          // picker is showing archived boards (unarchive-only)
 	projNotice    string        // transient picker error (e.g. invalid/duplicate board name)
+	notice        string        // transient list message (e.g. a hand-off error); cleared on the next key
 	projPending   string        // board whose working dir is being set (modeBoardDir)
 	projDirEdit   bool          // dir editor opened from the detail view (empty clears, return to detail); false = creation flow (empty skips)
 	fieldEdit     bool          // a field editor was opened from the item detail view, so save/cancel returns there instead of the list

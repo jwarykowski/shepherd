@@ -16,12 +16,12 @@ import (
 
 var (
 	lineRE = regexp.MustCompile(`^- \[([ xX])\] (?:\(([HMLhml])\) )?(.*)$`)
-	metaRE = regexp.MustCompile(`^  (id|created|completed|defer|note|category|tags|due|link|status): (.*)$`)
+	metaRE = regexp.MustCompile(`^  (id|created|completed|defer|note|category|tags|due|link|branch|status): (.*)$`)
 	// subtask lines are the same checklist syntax indented two spaces, with
 	// their own meta indented four. They never collide with metaRE (which needs
 	// a bare `word:` at two spaces, never `- [`).
 	subLineRE = regexp.MustCompile(`^  - \[([ xX])\] (?:\(([HMLhml])\) )?(.*)$`)
-	subMetaRE = regexp.MustCompile(`^    (id|created|completed|defer|note|category|tags|due|link|status): (.*)$`)
+	subMetaRE = regexp.MustCompile(`^    (id|created|completed|defer|note|category|tags|due|link|branch|status): (.*)$`)
 )
 
 // boardRE is the allowed board-name slug. Anchored and free of path
@@ -418,6 +418,8 @@ func applyMeta(it *todo.Item, key, val string) {
 		it.Due = val
 	case "link":
 		it.Link = val
+	case "branch":
+		it.Branch = val
 	case "note":
 		// each physical line is its own note: line, appended on load;
 		// a leading blank line is the one lost edge, not worth it.
@@ -506,6 +508,9 @@ func writeItem(b *strings.Builder, it todo.Item, indent string) {
 	}
 	if it.Link != "" {
 		fmt.Fprintf(b, "%slink: %s\n", meta, strings.ReplaceAll(it.Link, "\n", " "))
+	}
+	if it.Branch != "" {
+		fmt.Fprintf(b, "%sbranch: %s\n", meta, strings.ReplaceAll(it.Branch, "\n", " "))
 	}
 	if it.Note != "" {
 		for _, ln := range strings.Split(it.Note, "\n") {

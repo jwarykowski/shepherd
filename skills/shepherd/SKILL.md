@@ -99,7 +99,8 @@ found via `--all`, mutate with the same `--board` as its board — the item's
   whole set (bare `tags:` or `#` clears) · `!h`/`!m`/`!l` priority ·
   `due:<today|tomorrow|friday|+3d|15-07-2026>`
 - `defer:<same date forms>` — start/defer date (item shown but not "started"
-  until then) · `link:<url>` — a reference URL
+  until then) · `link:<url>` — a reference URL · `branch:<name>` — the git
+  branch the item is worked on
 - `status:<name>` — set a status · `note:<text>` — a note (holds spaces, takes
   the rest of the line, so put it last)
 

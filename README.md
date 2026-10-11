@@ -101,6 +101,7 @@ herdr plugin install jwarykowski/shepherd
 | `x` | delete item |
 | `c` | sweep all done items to `archive.md` |
 | `C` | archive the selected item to `archive.md` (whole items only — dimmed on a subtask row) |
+| `@` | hand the selected item or subtask to your `handoff` command — see [hand off an item](#hand-off-an-item) |
 | `?` | full help page |
 | `q` | save + quit |
 
@@ -405,6 +406,34 @@ shepherd with the same verbs. Discovery is layered:
 
 All three point at the same `shepherd` CLI — no per-tool server, no MCP.
 
+### hand off an item
+
+`shepherd handoff <ref>` (or `@` on the board) passes an item — or one subtask,
+`3.2`, with its parent as context — to a command you choose, and marks it
+`in-progress`. shepherd doesn't know about agents, worktrees or pull requests:
+the command decides. Set it in `config.toml`:
+
+```toml
+# one of:
+handoff = ["claude", "--", "{prompt}"]                 # a coding agent in this terminal
+handoff = ["codex", "{prompt}"]
+handoff = ["sh", "-c", "my-handoff \"$SHEPHERD_ITEM_ID\""] # a script of your own
+```
+
+Placeholders in the arguments: `{prompt}` (the text, then the note; for a
+subtask, the parent too), `{text}`, `{note}`, `{id}`, `{board}`, `{dir}` (the
+board's working directory) and `{branch}`. The same values ride in the
+environment as `SHEPHERD_ITEM_ID`, `SHEPHERD_BOARD`, `SHEPHERD_BOARD_DIR` and
+`SHEPHERD_PROMPT`. The command runs in the board's working directory when it
+has one (`shepherd board dir`), attached to your terminal, and the board
+reloads when it exits. Put `--` before `{prompt}` for agents that take options,
+so an item starting with `-` isn't read as one.
+
+An item can record the branch it's worked on with `branch:<name>` (`edit 3
+branch:todo/fix-login`; a bare `branch:` clears it). It shows in `list --json`
+and `/` filters on it, so a hand-off script or [drover](https://shepherdcli.dev/pro/)
+can find the item again.
+
 ## configuration
 
 Optional `config.toml` at `$XDG_CONFIG_HOME/shepherd/config.toml` (defaults to
@@ -418,6 +447,7 @@ autosave = 60                              # seconds idle before writing; 0 disa
 categories = ["work", "home", "personal"]  # tab-cycles in the category prompt
 statuses = ["open", "in-progress", "done"] # tab cycles item status in the list
 hidefooter = false                         # true starts with the footer help grid hidden (F toggles at runtime)
+handoff = ["claude", "--", "{prompt}"]     # @ / shepherd handoff: the command an item is handed to
 ```
 
 - `view` — default grouping/layout on launch (`v` still cycles at runtime).
@@ -426,6 +456,7 @@ hidefooter = false                         # true starts with the footer help gr
 - `categories` — press `tab` in the category prompt (`g`) to cycle through them.
 - `statuses` — ordered list `tab` cycles through in the list; `done` is always kept and forced last. Defaults to `["open", "done"]`. Intermediate statuses persist as a `status:` line and show a `◐` glyph; [`shepherd stats`](#stats) breaks items down by status in this order.
 - `hidefooter` — start with the footer help grid hidden for a cleaner board (the `jwarykowski/shepherd` · version line stays); `F` toggles it at runtime.
+- `handoff` — the command `@` and `shepherd handoff` pass an item to, as an array of arguments with placeholders; see [hand off an item](#hand-off-an-item). Not managed by the settings screen.
 
 Edit these in the running board with `,` (settings): `enter` cycles `view`/`density`/`footer` and edits `autosave`/`categories`/`statuses`, and each change is written straight back to `config.toml`. shepherd owns the file — a settings save rewrites the managed keys.
 
@@ -453,6 +484,7 @@ sub-lines:
   tags: api, docs
   status: in-progress
   link: https://github.com/org/repo/pull/1
+  branch: todo/ship-the-release
   note: block on the migration first
 ```
 

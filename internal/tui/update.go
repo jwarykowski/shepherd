@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"shepherd/internal/handoff"
 	"strconv"
 	"strings"
 	"time"
@@ -35,6 +36,9 @@ func (m *model) beforeMutate() {
 
 // editorDoneMsg is sent when the external editor exits.
 type editorDoneMsg struct{}
+
+// handoffDoneMsg is sent when the handoff command (@) exits.
+type handoffDoneMsg struct{ err error }
 
 // tickMsg drives the periodic external-change check.
 type tickMsg struct{}
@@ -312,6 +316,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.note.SetWidth(m.width()) // keep the note editor sized while open
 		}
 		return m, nil
+	case handoffDoneMsg:
+		if msg.err != nil {
+			m.notice = "handoff: " + msg.err.Error()
+		}
+		return m.Update(editorDoneMsg{}) // the command may have edited the board too
 	case editorDoneMsg:
 		// Reload from disk — the file may have changed under us.
 		m.items = store.Load(m.path)
@@ -482,7 +491,10 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	rows := m.cursorRows()
 	ref := m.selRef()
 	idx := ref.item
+	m.notice = ""
 	switch msg.String() {
+	case "@":
+		return m.handoff()
 	case "q":
 		return m.quit()
 	case "w":
@@ -1352,4 +1364,59 @@ func (m model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.clamp()
 	}
 	return m, cmd
+}
+
+// handoff passes the selected item or subtask (with its parent as context) to
+// the handoff command in config.toml (@). The command takes over the terminal;
+// the item is marked in-progress first, and the board reloads when the command
+// exits. An unset or missing command leaves the item alone and says why.
+func (m model) handoff() (tea.Model, tea.Cmd) {
+	ref := m.selRef()
+	if ref.item < 0 {
+		return m, nil
+	}
+	// save first so a new item has its id before it leaves the board
+	_ = store.Save(m.path, m.items)
+	m.markSaved()
+	m.lastMod = store.FileModTime(m.path)
+	task := handoff.Task{Item: m.items[ref.item], Board: m.board}
+	if ref.sub >= 0 {
+		parent := m.items[ref.item]
+		task = handoff.Task{Item: parent.Subs[ref.sub], Parent: &parent, Board: m.board}
+	}
+	if task.Item.Done {
+		m.notice = "handoff: item is already done"
+		return m, nil
+	}
+	cmd, err := handoff.Cmd(task)
+	if err != nil {
+		m.notice = "handoff: " + err.Error()
+		return m, nil
+	}
+	m.markInProgress(task.Item.ID)
+	return m, tea.ExecProcess(cmd, func(err error) tea.Msg { return handoffDoneMsg{err} })
+}
+
+// markInProgress sets item or subtask id to in-progress and saves, so the
+// handoff command reads the board as it now stands.
+func (m *model) markInProgress(id string) {
+	for i := range m.items {
+		it := &m.items[i]
+		for s := range m.items[i].Subs {
+			if m.items[i].Subs[s].ID == id {
+				it = &m.items[i].Subs[s]
+			}
+		}
+		if it.ID != id {
+			continue
+		}
+		m.beforeMutate()
+		todo.SetStatus(it, "in-progress")
+		_ = store.Save(m.path, m.items)
+		m.markSaved()
+		m.lastMod = store.FileModTime(m.path)
+		m.resort()
+		m.clamp()
+		return
+	}
 }

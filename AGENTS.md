@@ -36,7 +36,7 @@ stdout.
 
 Quick-add tokens (shared by `add`, `sub`, `edit`): `@category`, `#tag`,
 `tags:<a,b>`, `!h`/`!m`/`!l` priority, `due:<today|tomorrow|friday|+3d|15-07-2026>`,
-`defer:<same date forms>` (start/defer date; a weekday means the next one, and a date shepherd can't read fails with exit 2 rather than being dropped), `link:<url>`, `status:<name>`,
+`defer:<same date forms>` (start/defer date; a weekday means the next one, and a date shepherd can't read fails with exit 2 rather than being dropped), `link:<url>`, `branch:<name>` (the git branch the item is worked on), `status:<name>`,
 and `note:<text>` (holds spaces, takes the rest of the line — put it last).
 `list --json` reports `id` (the stable handle), `completed` (done timestamp),
 `defer`, `link`, `tags`, and `status` per item.
@@ -73,3 +73,8 @@ Exit codes for scripting: `0` success, `2` usage/input error (bad flag, unknown
 command, unknown ref), `1` runtime/IO failure. `-q`/`--quiet` on a
 mutation drops its confirmation line but never the requested data. Run
 `shepherd help` for the full contract.
+
+`shepherd handoff <ref>` passes an item (or subtask) to the user's own
+`handoff` command from `config.toml` and marks it `in-progress`. It runs
+attached to the terminal and is meant for the user, so don't call it yourself
+unless asked; it fails with exit 2 when no command is set.
