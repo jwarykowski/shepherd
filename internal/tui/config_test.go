@@ -10,7 +10,7 @@ import (
 // TestSaveConfigKeepsUnmanagedKeys pins that a settings save rewrites only the
 // keys the board owns: placement/direction (open.sh) and comments survive,
 // managed keys aren't duplicated, and a managed array written across several
-// lines leaves no orphaned lines behind.
+// lines is read in full and rewritten on one line, leaving no orphans behind.
 func TestSaveConfigKeepsUnmanagedKeys(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.toml")
 	orig := "# my shepherd\nview = \"priority\"\nplacement = \"overlay\"\ndirection = \"down\"\n" +
@@ -34,6 +34,9 @@ func TestSaveConfigKeepsUnmanagedKeys(t *testing.T) {
 		if n := strings.Count(got, key); n != 1 {
 			t.Errorf("%s written %d times:\n%s", key, n, got)
 		}
+	}
+	if !strings.Contains(got, `categories = ["work", "home"]`) {
+		t.Errorf("multi-line categories not kept:\n%s", got)
 	}
 	if strings.Contains(got, "  \"work\",") {
 		t.Errorf("multi-line array left orphaned lines:\n%s", got)

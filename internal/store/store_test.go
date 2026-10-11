@@ -523,3 +523,16 @@ func TestBaseDirXDG(t *testing.T) {
 		t.Fatalf("HOME fallback wrong: got %s want %s", got, want)
 	}
 }
+
+// TestScanKVMultiLineArray pins that an array written across several lines
+// reads as one value, with comments and blank lines inside it skipped, and that
+// the keys after it still read.
+func TestScanKVMultiLineArray(t *testing.T) {
+	got := ScanKV("categories = [\n  \"work\",\n\n  # errands\n  \"home\",\n]\nview = \"lane\"\n")
+	if cats := ParseList(got["categories"], false); strings.Join(cats, "|") != "work|home" {
+		t.Errorf("categories = %q, want work|home", cats)
+	}
+	if got["view"] != `"lane"` {
+		t.Errorf("view = %q, want \"lane\"", got["view"])
+	}
+}

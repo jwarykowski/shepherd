@@ -97,17 +97,31 @@ func ConfigPath() string {
 // ScanKV parses the lenient `key = value` shape shepherd reads and writes
 // (config.toml, boards.toml, the embedded plugin manifest): blanks and
 // #-comments skipped, lines without an `=` ignored, values kept raw so the
-// caller unquotes or splits them. Later keys win.
+// caller unquotes or splits them. An array opened on one line runs on to its
+// closing bracket, so a hand-written multi-line list reads as one value. Later
+// keys win.
 func ScanKV(data string) map[string]string {
 	out := map[string]string{}
+	open := "" // the key of an array still waiting for its "]"
 	for _, ln := range strings.Split(data, "\n") {
 		ln = strings.TrimSpace(ln)
 		if ln == "" || strings.HasPrefix(ln, "#") {
 			continue
 		}
+		if open != "" {
+			out[open] += " " + ln
+			if strings.Contains(ln, "]") {
+				open = ""
+			}
+			continue
+		}
 		if k, v, ok := strings.Cut(ln, "="); ok {
 			if k = strings.TrimSpace(k); k != "" {
-				out[k] = strings.TrimSpace(v)
+				v = strings.TrimSpace(v)
+				out[k] = v
+				if strings.HasPrefix(v, "[") && !strings.Contains(v, "]") {
+					open = k
+				}
 			}
 		}
 	}
