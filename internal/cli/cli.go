@@ -43,12 +43,13 @@ Items (ref = an item's stable id from 'list --json', or its 1-based index n;
 
 Agents:
   agent <ref> [--kind <agent>] [--to <pane>] [--here] [--json]
-               hand an item to a coding agent and mark it in-progress: in herdr,
+               hand an item or subtask (3.2) to a coding agent, mark it in-progress: in herdr,
                a new worktree on branch todo/<slug> (recorded as branch:) with
                the agent started there; --to sends it to a running agent's pane;
                --here (or no herdr) runs the agent CLI in this terminal
-  sync [--all] [--dry-run] [--json]
-               complete items whose branch: pull request has merged (needs gh)
+  sync [--all] [--dry-run] [--json] [--every <dur>]
+               complete items whose branch: pull request has merged (needs gh);
+               --every repeats until killed (the herdr plugin runs it)
 
   --json  echo the resulting item(s) as JSON (like 'list --json'), and report
           failures as {"error":…} on stdout instead of text on stderr.

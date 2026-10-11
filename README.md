@@ -100,6 +100,7 @@ herdr plugin install jwarykowski/shepherd
 | `x` | delete item |
 | `c` | sweep all done items to `archive.md` |
 | `C` | archive the selected item to `archive.md` (whole items only — dimmed on a subtask row) |
+| `@` | hand the selected item or subtask to a coding agent — see [hand an item to an agent](#hand-an-item-to-an-agent) |
 | `?` | full help page |
 | `q` | save + quit |
 
@@ -406,21 +407,29 @@ All three point at the same `shepherd` CLI — no per-tool server, no MCP.
 
 ### hand an item to an agent
 
-`shepherd agent <ref>` turns a todo into work for a coding agent and marks it
-`in-progress`:
+`shepherd agent <ref>` turns a todo (or one subtask, `3.2`) into work for a
+coding agent and marks it `in-progress`:
 
 ```sh
 shepherd agent 3                  # in herdr: worktree todo/<slug> + claude started there
 shepherd agent 3 --kind codex     # any agent herdr can start (claude, codex, opencode, …)
 shepherd agent 3 --to w2:p1       # send to an agent already running in that herdr pane
 shepherd agent 3 --here           # no herdr / no worktree: run the agent in this terminal
+shepherd agent 3.2                # just one subtask, with its parent as context
 shepherd sync --all               # complete items whose agent branch has merged (needs gh)
 ```
 
-The prompt is the item's text plus its note. Inside
+On the board, `@` does the same for the selected item or subtask (worktree + agent in
+herdr, else the agent takes over the terminal until it exits). As a herdr
+plugin, shepherd keeps `shepherd sync --all --every 2m` running in the
+background, so handed-off items complete on their own once merged.
+
+The prompt is the item's text plus its note; a subtask's adds its parent's
+text and note as context, and its branch is `todo/<parent>-<subtask>`. Inside
 [herdr](https://herdr.dev) the item records its branch (`branch:todo/<slug>`),
 which `shepherd sync` checks with `gh`: once that pull request merges, the
-item completes. The repository is the board's working directory
+item completes (a subtask completes on its own, and its parent with the last
+one). The repository is the board's working directory
 (`shepherd board dir <name> <path>`), else the current git repo. Defaults come
 from `agent_kind` / `agent_branch_prefix` in [configuration](#configuration).
 

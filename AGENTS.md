@@ -17,8 +17,8 @@ format.
 - `shepherd done <ref>... [--json]` / `shepherd undone <ref>...` — (un)complete one or more items/subtasks
 - `shepherd archive <ref>... [--json]` — move whole items off the live board into the sibling `archive.md` (per-item counterpart to whole-board `board archive`); subtasks can't be archived alone
 - `shepherd rm <ref>... [--dry-run] [--json]` — remove one or more items/subtasks (`--dry-run`/`-n` previews without writing)
-- `shepherd agent <ref> [--kind <agent>] [--to <pane>] [--here] [--json]` — hand an item to a coding agent and mark it `in-progress`. Inside [herdr](https://herdr.dev) it creates a git worktree on branch `todo/<slug>` (recorded on the item as `branch:`) and starts the agent there with the item text + note as its prompt; `--to <pane>` sends it to an agent already running in that herdr pane instead; `--here` (or no herdr) runs the agent CLI in this terminal. The repo is the board's `dir`, else the current git repo
-- `shepherd sync [--all] [--dry-run] [--json]` — complete every open item whose `branch:` pull request has merged (asks `gh`); run it periodically or after merging
+- `shepherd agent <ref> [--kind <agent>] [--to <pane>] [--here] [--json]` — hand an item or subtask (`3.2`) to a coding agent and mark it `in-progress`; a subtask's prompt adds its parent as context. Inside [herdr](https://herdr.dev) it creates a git worktree on branch `todo/<slug>` (recorded on the item as `branch:`) and starts the agent there with the item text + note as its prompt; `--to <pane>` sends it to an agent already running in that herdr pane instead; `--here` (or no herdr) runs the agent CLI in this terminal. The repo is the board's `dir`, else the current git repo
+- `shepherd sync [--all] [--dry-run] [--json] [--every <dur>]` — complete every open item or subtask whose `branch:` pull request has merged (asks `gh`); `--every 2m` repeats until killed (the herdr plugin keeps one running)
 
 `edit` is the single setter for every field — status, note, category, tags,
 priority, due, defer, link, and text all change through its tokens (`edit 2 "status:in-progress"`,

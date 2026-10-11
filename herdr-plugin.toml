@@ -9,6 +9,10 @@ platforms = ["linux", "macos"]
 [[build]]
 command = ["go", "build", "-o", "bin/shepherd", "."]
 
+# complete items whose agent branch merged (shepherd agent / sync); needs gh
+[[startup]]
+command = ["bash", "sync.sh"]
+
 [[actions]]
 id = "open"
 title = "shepherd"

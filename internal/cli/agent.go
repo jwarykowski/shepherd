@@ -1,139 +1,37 @@
 package cli
 
 // agent.go: hand an item to a coding agent (shepherd agent) and complete the
-// item once the agent's branch merges (shepherd sync). herdr, gh and the agent
-// CLIs are driven as external commands through the run/interactive vars, so
-// tests stub them without spawning processes.
+// item once the agent's branch merges (shepherd sync). The herdr / gh / agent
+// orchestration lives in internal/agent, shared with the TUI.
 
 import (
-	"bytes"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
-	"os"
-	"os/exec"
-	"path/filepath"
-	"regexp"
-	"strings"
+	"time"
 
+	"shepherd/internal/agent"
 	"shepherd/internal/store"
 	"shepherd/internal/todo"
 )
 
-// run executes name in dir and returns its stdout; a failure carries the
-// command's stderr. A package var so tests can stub external commands.
-var run = func(dir, name string, args ...string) ([]byte, error) {
-	cmd := exec.Command(name, args...)
-	cmd.Dir = dir
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	out, err := cmd.Output()
-	if err != nil {
-		if s := strings.TrimSpace(stderr.String()); s != "" {
-			err = fmt.Errorf("%s: %s", filepath.Base(name), s)
-		}
-	}
-	return out, err
-}
-
-// interactive runs name in dir attached to this terminal, for running an agent
-// directly when herdr isn't available. A package var for tests.
-var interactive = func(dir, name string, args ...string) error {
-	cmd := exec.Command(name, args...)
-	cmd.Dir = dir
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-	return cmd.Run()
-}
-
-// herdrBin finds a reachable herdr: $HERDR_BIN_PATH (set inside herdr panes)
-// or herdr on PATH, answering `herdr api snapshot`. "" when herdr isn't usable.
-var herdrBin = func() string {
-	bin := os.Getenv("HERDR_BIN_PATH")
-	if bin == "" {
-		p, err := exec.LookPath("herdr")
-		if err != nil {
-			return ""
-		}
-		bin = p
-	}
-	if _, err := run("", bin, "api", "snapshot"); err != nil {
-		return ""
-	}
-	return bin
-}
-
-// agentConfig reads the agent defaults from the shared config.toml:
-// agent_kind (default "claude") and agent_branch_prefix (default "todo/").
-func agentConfig() (kind, prefix string) {
-	kv := store.ScanKVFile(store.ConfigPath())
-	kind = strings.Trim(kv["agent_kind"], `"`)
-	if kind == "" {
-		kind = "claude"
-	}
-	prefix, ok := kv["agent_branch_prefix"]
-	if !ok {
-		prefix = "todo/"
-	}
-	return kind, strings.Trim(prefix, `"`)
-}
-
-var nonSlug = regexp.MustCompile(`[^a-z0-9]+`)
-
-// slug turns item text into a branch-safe name: lowercase alphanumeric runs
-// joined by "-", at most 40 bytes, never ending in "-".
-func slug(text string) string {
-	s := strings.Trim(nonSlug.ReplaceAllString(strings.ToLower(text), "-"), "-")
-	if len(s) > 40 {
-		s = strings.TrimRight(s[:40], "-")
-	}
-	if s == "" {
-		s = "item"
-	}
-	return s
-}
-
-// agentPrompt is what the agent is asked to do: the item text, then its note.
-func agentPrompt(it todo.Item) string {
-	if it.Note == "" {
-		return it.Text
-	}
-	return it.Text + "\n\n" + it.Note
-}
-
-// repoDir is where the agent works: the board's working directory (board dir)
-// if set, else the git repository containing the current directory.
-func repoDir(board string) (string, error) {
-	dir := store.BoardDir(board)
-	if dir == "" {
-		wd, err := os.Getwd()
-		if err != nil {
-			return "", err
-		}
-		dir = wd
-	}
-	out, err := run(dir, "git", "rev-parse", "--show-toplevel")
-	if err != nil {
-		return "", fmt.Errorf("%s is not in a git repository (set one with: shepherd board dir %s <path>)", dir, board)
-	}
-	return strings.TrimSpace(string(out)), nil
-}
-
 // splitRef pulls the item ref out of args (it may come before or after the
 // flags) and returns it with the remaining flag args.
 func splitRef(args []string) (string, []string) {
-	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+	if len(args) > 0 && len(args[0]) > 0 && args[0][0] != '-' {
 		return args[0], args[1:]
 	}
 	return "", args
 }
 
-// cmdAgent hands item <ref> to a coding agent: shepherd agent <ref>
+// cmdAgent hands item or subtask <ref> to a coding agent: shepherd agent <ref>
 // [--kind <agent>] [--to <pane>] [--here] [--json].
 //
 //   - inside herdr (default): create a git worktree on branch <prefix><slug>
 //     through herdr, start the agent there with the item as its prompt, and
-//     record the branch on the item (branch: token) for shepherd sync.
+//     record the branch on the item (branch: token) for shepherd sync. A
+//     subtask's prompt adds its parent as context, and its slug starts with
+//     a short parent slug.
 //   - --to <pane>: send the item to an agent already running in herdr pane
 //     <pane> instead; no worktree.
 //   - --here, or no herdr: run the agent CLI in the foreground in the repo.
@@ -153,26 +51,29 @@ func cmdAgent(args []string, board string, w io.Writer) int {
 		ref = fs.Arg(0)
 	}
 	if ref == "" {
-		return usageErr(w, *asJSON, "agent needs an item, e.g. shepherd agent 3")
+		return usageErr(w, *asJSON, "agent needs an item, e.g. shepherd agent 3 or 3.2")
 	}
 	items := store.Load(store.TodoPathFor(board))
 	p, s, ok := resolveRef(ref, items)
-	if !ok || s != 0 {
+	if !ok {
 		return refErr(w, *asJSON, ref, len(items))
 	}
-	it := items[p-1]
+	task := agent.Task{Item: items[p-1]}
+	if s > 0 {
+		task = agent.Task{Item: items[p-1].Subs[s-1], Parent: &items[p-1]}
+	}
+	it := task.Item
 	if it.Done {
 		return usageErr(w, *asJSON, fmt.Sprintf("item %s is already done", ref))
 	}
-	kind, prefix := agentConfig()
+	kind, prefix := agent.Config()
 	if *kindFlag != "" {
 		kind = *kindFlag
 	}
-	prompt := agentPrompt(it)
 
 	herdr := ""
 	if !*here {
-		herdr = herdrBin()
+		herdr = agent.Herdr()
 	}
 	branch := ""
 	switch {
@@ -180,36 +81,19 @@ func cmdAgent(args []string, board string, w io.Writer) int {
 		if herdr == "" {
 			return usageErr(w, *asJSON, "--to needs herdr")
 		}
-		if _, err := run("", herdr, "agent", "prompt", *to, prompt); err != nil {
+		if err := agent.SendTo(herdr, *to, task); err != nil {
 			return saveErr(w, *asJSON, err)
 		}
 	case herdr != "":
-		repo, err := repoDir(board)
+		repo, err := agent.RepoDir(board)
 		if err != nil {
 			return saveErr(w, *asJSON, err)
 		}
-		name := slug(it.Text)
-		branch = prefix + name
-		out, err := run(repo, herdr, "worktree", "create", "--cwd", repo, "--branch", branch, "--label", name, "--focus")
-		if err != nil {
-			return saveErr(w, *asJSON, err)
-		}
-		var created struct {
-			Result struct {
-				RootPane struct {
-					PaneID string `json:"pane_id"`
-				} `json:"root_pane"`
-			} `json:"result"`
-		}
-		if err := json.Unmarshal(out, &created); err != nil || created.Result.RootPane.PaneID == "" {
-			return saveErr(w, *asJSON, fmt.Errorf("herdr worktree create: unexpected output"))
-		}
-		pane := created.Result.RootPane.PaneID
-		if _, err := run(repo, herdr, "agent", "start", name, "--kind", kind, "--pane", pane, "--", prompt); err != nil {
+		if branch, err = agent.StartWorktree(herdr, repo, kind, prefix, task); err != nil {
 			return saveErr(w, *asJSON, err)
 		}
 	default:
-		repo, err := repoDir(board)
+		repo, err := agent.RepoDir(board)
 		if err != nil {
 			return saveErr(w, *asJSON, err)
 		}
@@ -217,7 +101,7 @@ func cmdAgent(args []string, board string, w io.Writer) int {
 		if code := setAgentState(board, it.ID, "", w, false); code != 0 {
 			return code
 		}
-		if err := interactive(repo, kind, prompt); err != nil {
+		if err := agent.Interactive(repo, kind, task.Prompt()); err != nil {
 			return saveErr(w, *asJSON, err)
 		}
 		return 0
@@ -225,44 +109,69 @@ func cmdAgent(args []string, board string, w io.Writer) int {
 	return setAgentState(board, it.ID, branch, w, *asJSON)
 }
 
-// setAgentState marks item id in-progress (and records branch, if any) under
-// the board lock, then reports it like edit does.
+// setAgentState marks item or subtask id in-progress (and records branch, if
+// any) under the board lock, then reports it like edit does.
 func setAgentState(board, id, branch string, w io.Writer, asJSON bool) int {
 	return locked(board, w, asJSON, func(path string, items []todo.Item) (int, error) {
-		p, _, ok := resolveID(items, id)
+		p, s, ok := resolveID(items, id)
 		if !ok {
 			return refErr(w, asJSON, id, len(items)), nil
 		}
-		todo.SetStatus(&items[p-1], "in-progress")
+		it := &items[p-1]
+		if s > 0 {
+			it = &items[p-1].Subs[s-1]
+		}
+		todo.SetStatus(it, "in-progress")
 		if branch != "" {
-			items[p-1].Branch = branch
+			it.Branch = branch
 		}
 		if err := store.Save(path, items); err != nil {
 			return 0, err
 		}
-		if asJSON {
+		switch {
+		case asJSON:
 			return emitJSON(w, toJSON(items[p-1], p)), nil
+		case s == 0:
+			say(w, formatLine(p, items[p-1]))
+		default:
+			say(w, formatSub(p, s, items[p-1].Subs[s-1]))
 		}
-		say(w, formatLine(p, items[p-1]))
 		return 0, nil
 	})
 }
 
+// sleep is time.Sleep, a var so tests can stop a --every loop.
+var sleep = time.Sleep
+
 // cmdSync completes items whose agent branch has merged: shepherd sync
-// [--all] [--dry-run] [--json]. For every open item carrying a branch: token
-// it asks gh for that branch's pull request, in the board's repository; a
-// MERGED one completes the item (subtasks cascade, as with done).
+// [--all] [--dry-run] [--json] [--every <dur>]. For every open item or subtask
+// carrying a branch: token it asks gh for that branch's pull request, in the
+// board's repository; a MERGED one completes it, exactly as done would (an
+// item's subtasks cascade; a subtask completes its parent once it's the last).
+// --every repeats the pass on that interval until killed (the herdr plugin
+// runs it in the background).
 func cmdSync(args []string, board string, w io.Writer) int {
 	fs := flag.NewFlagSet("sync", flag.ContinueOnError)
 	asJSON := fs.Bool("json", false, "echo the completed items as JSON")
 	all := fs.Bool("all", false, "sync every board")
 	dry := fs.Bool("dry-run", false, "report what would complete without writing")
 	fs.BoolVar(dry, "n", false, "shorthand for --dry-run")
+	every := fs.Duration("every", 0, "repeat on this interval until killed, e.g. 1m")
 	if err := fs.Parse(args); err != nil {
 		return parseExit(err)
 	}
+	for {
+		if code := syncOnce(board, *all, *dry, *asJSON, w); code != 0 || *every <= 0 {
+			return code
+		}
+		sleep(*every)
+	}
+}
+
+// syncOnce is one sync pass over board (or every board).
+func syncOnce(board string, all, dry, asJSON bool, w io.Writer) int {
 	boards := []string{board}
-	if *all {
+	if all {
 		boards = nil
 		for _, b := range store.Boards() {
 			boards = append(boards, b.Name)
@@ -270,26 +179,43 @@ func cmdSync(args []string, board string, w io.Writer) int {
 	}
 	completed := []itemJSON{}
 	for _, b := range boards {
-		merged := mergedIDs(b)
+		merged := agent.MergedIDs(b)
 		if len(merged) == 0 {
 			continue
 		}
-		code := locked(b, w, *asJSON, func(path string, items []todo.Item) (int, error) {
-			for i := range items {
-				if items[i].Done || !merged[items[i].ID] {
-					continue
-				}
-				if !*dry {
-					todo.SetParentDone(&items[i], true)
-				}
+		code := locked(b, w, asJSON, func(path string, items []todo.Item) (int, error) {
+			report := func(i, s int, it todo.Item) {
 				j := toJSON(items[i], i+1)
 				j.Board = b
 				completed = append(completed, j)
-				if !*asJSON {
-					say(w, fmt.Sprintf("%s (%s merged)", formatLine(i+1, items[i]), items[i].Branch))
+				if asJSON {
+					return
+				}
+				line := formatLine(i+1, it)
+				if s > 0 {
+					line = formatSub(i+1, s, it)
+				}
+				say(w, fmt.Sprintf("%s (%s merged)", line, it.Branch))
+			}
+			for i := range items {
+				if !items[i].Done && merged[items[i].ID] {
+					if !dry {
+						todo.SetParentDone(&items[i], true)
+					}
+					report(i, 0, items[i])
+					continue
+				}
+				for s := range items[i].Subs {
+					if items[i].Subs[s].Done || !merged[items[i].Subs[s].ID] {
+						continue
+					}
+					if !dry {
+						todo.SetSubDone(&items[i], s, true)
+					}
+					report(i, s+1, items[i].Subs[s])
 				}
 			}
-			if *dry {
+			if dry {
 				return 0, nil
 			}
 			return 0, store.Save(path, items)
@@ -298,34 +224,8 @@ func cmdSync(args []string, board string, w io.Writer) int {
 			return code
 		}
 	}
-	if *asJSON {
+	if asJSON {
 		return emitJSON(w, completed)
 	}
 	return 0
-}
-
-// mergedIDs returns the ids of board's open items whose branch: has a merged
-// pull request. Items without a reachable repo or PR are skipped.
-func mergedIDs(board string) map[string]bool {
-	var candidates []todo.Item
-	for _, it := range store.Load(store.TodoPathFor(board)) {
-		if !it.Done && it.Branch != "" {
-			candidates = append(candidates, it)
-		}
-	}
-	if len(candidates) == 0 {
-		return nil
-	}
-	repo, err := repoDir(board)
-	if err != nil {
-		return nil
-	}
-	merged := map[string]bool{}
-	for _, it := range candidates {
-		out, err := run(repo, "gh", "pr", "view", it.Branch, "--json", "state", "-q", ".state")
-		if err == nil && strings.TrimSpace(string(out)) == "MERGED" {
-			merged[it.ID] = true
-		}
-	}
-	return merged
 }

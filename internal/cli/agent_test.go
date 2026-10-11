@@ -8,7 +8,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"shepherd/internal/agent"
 	"shepherd/internal/store"
 	"shepherd/internal/todo"
 )
@@ -24,9 +26,9 @@ type fakeCmds struct {
 func stubCommands(t *testing.T, herdr string, reply func(name string, args []string) (string, error)) *fakeCmds {
 	t.Helper()
 	f := &fakeCmds{reply: reply}
-	prevRun, prevInteractive, prevHerdr := run, interactive, herdrBin
-	t.Cleanup(func() { run, interactive, herdrBin = prevRun, prevInteractive, prevHerdr })
-	run = func(dir, name string, args ...string) ([]byte, error) {
+	prevRun, prevInteractive, prevHerdr := agent.Run, agent.Interactive, agent.Herdr
+	t.Cleanup(func() { agent.Run, agent.Interactive, agent.Herdr = prevRun, prevInteractive, prevHerdr })
+	agent.Run = func(dir, name string, args ...string) ([]byte, error) {
 		f.calls = append(f.calls, strings.Join(append([]string{name}, args...), " "))
 		f.dirs = append(f.dirs, dir)
 		if name == "git" {
@@ -35,12 +37,12 @@ func stubCommands(t *testing.T, herdr string, reply func(name string, args []str
 		out, err := f.reply(name, args)
 		return []byte(out), err
 	}
-	interactive = func(dir, name string, args ...string) error {
-		f.calls = append(f.calls, "interactive "+strings.Join(append([]string{name}, args...), " "))
+	agent.Interactive = func(dir, kind, prompt string) error {
+		f.calls = append(f.calls, "interactive "+kind+" "+prompt)
 		f.dirs = append(f.dirs, dir)
 		return nil
 	}
-	herdrBin = func() string { return herdr }
+	agent.Herdr = func() string { return herdr }
 	return f
 }
 
@@ -221,20 +223,6 @@ func TestSyncCompletesMergedBranches(t *testing.T) {
 	}
 }
 
-func TestSlug(t *testing.T) {
-	for in, want := range map[string]string{
-		"Add retry to API client!":   "add-retry-to-api-client",
-		"  --weird__spacing--  ":     "weird-spacing",
-		"":                           "item",
-		"!!!":                        "item",
-		strings.Repeat("abcde ", 10): "abcde-abcde-abcde-abcde-abcde-abcde-abcd",
-	} {
-		if got := slug(in); got != want {
-			t.Errorf("slug(%q) = %q, want %q", in, got, want)
-		}
-	}
-}
-
 func TestBranchToken(t *testing.T) {
 	it := todo.ParseQuickAdd("fix login branch:fix/login")
 	if it.Text != "fix login" || it.Branch != "fix/login" {
@@ -253,5 +241,91 @@ func TestBranchToken(t *testing.T) {
 	}
 	if !todo.Match(store.Load(path)[0], "todo/x") {
 		t.Fatal("filter should match the branch")
+	}
+}
+
+func TestSyncEvery(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "todo.md")
+	t.Setenv("SHEPHERD_TODO_FILE", path)
+	cmdAdd([]string{"x branch:todo/x"}, "", &bytes.Buffer{})
+	f := stubCommands(t, "herdr", func(name string, args []string) (string, error) { return "OPEN\n", nil })
+
+	type stop struct{}
+	prev := sleep
+	t.Cleanup(func() { sleep = prev })
+	naps := 0
+	sleep = func(d time.Duration) {
+		if d != 2*time.Minute {
+			t.Errorf("slept %v, want the --every interval", d)
+		}
+		if naps++; naps == 2 {
+			panic(stop{})
+		}
+	}
+	defer func() {
+		if _, ok := recover().(stop); !ok {
+			t.Fatal("--every should keep looping until stopped")
+		}
+		lookups := 0
+		for _, c := range f.calls {
+			if strings.HasPrefix(c, "gh pr view todo/x") {
+				lookups++
+			}
+		}
+		if lookups != 2 {
+			t.Fatalf("want one gh lookup per pass (2), got %d", lookups)
+		}
+	}()
+	cmdSync([]string{"--every", "2m"}, "", &bytes.Buffer{})
+}
+
+func TestAgentSubtask(t *testing.T) {
+	path := agentBoard(t, "")
+	cmdSub([]string{"1", "write the tests note:table-driven"}, "", &bytes.Buffer{})
+	f := stubCommands(t, "herdr", worktreeReply)
+
+	if code := cmdAgent([]string{"1.1"}, "", &bytes.Buffer{}); code != 0 {
+		t.Fatalf("agent exit %d", code)
+	}
+	const branch = "todo/add-retry-to-api-cli-write-the-tests"
+	if !strings.Contains(f.calls[1], "--branch "+branch) {
+		t.Fatalf("subtask branch: %q", f.calls[1])
+	}
+	wantPrompt := "write the tests\n\ntable-driven\n\nThis is one part of: Add retry to API client!\n\nuse exponential backoff"
+	if !strings.HasSuffix(f.calls[2], "-- "+wantPrompt) {
+		t.Fatalf("subtask prompt: %q", f.calls[2])
+	}
+	items := store.Load(path)
+	if sub := items[0].Subs[0]; sub.Status != "in-progress" || sub.Branch != branch {
+		t.Fatalf("subtask not marked: %+v", sub)
+	}
+	if items[0].Status != "" || items[0].Branch != "" {
+		t.Fatalf("parent must be left alone: %+v", items[0])
+	}
+}
+
+func TestSyncCompletesMergedSubtask(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "todo.md")
+	t.Setenv("SHEPHERD_TODO_FILE", path)
+	cmdAdd([]string{"parent"}, "", &bytes.Buffer{})
+	cmdSub([]string{"1", "merged sub branch:todo/sub"}, "", &bytes.Buffer{})
+	cmdSub([]string{"1", "other sub"}, "", &bytes.Buffer{})
+	stubCommands(t, "herdr", func(name string, args []string) (string, error) {
+		if name == "gh" && args[2] == "todo/sub" {
+			return "MERGED\n", nil
+		}
+		return "OPEN\n", nil
+	})
+
+	var buf bytes.Buffer
+	if code := cmdSync(nil, "", &buf); code != 0 {
+		t.Fatalf("sync exit %d", code)
+	}
+	items := store.Load(path)
+	if !items[0].Subs[0].Done || items[0].Subs[1].Done || items[0].Done {
+		t.Fatalf("only the merged subtask should complete: %+v", items[0])
+	}
+	if !strings.Contains(buf.String(), "1.1") || !strings.Contains(buf.String(), "todo/sub merged") {
+		t.Fatalf("output should name the subtask: %q", buf.String())
 	}
 }
