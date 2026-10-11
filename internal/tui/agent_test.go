@@ -34,6 +34,9 @@ func stubAgent(t *testing.T, herdr string, fail error) {
 	}
 }
 
+// idTag is the id suffix agent.Task.Name puts on an item's branch.
+func idTag(it todo.Item) string { return "-" + it.ID[len(it.ID)-6:] }
+
 func agentModel(t *testing.T) model {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "todo.md")
@@ -60,17 +63,26 @@ func TestAgentKeyInHerdr(t *testing.T) {
 
 	nm, _ = m.Update(cmd())
 	m = nm.(model)
-	if m.items[0].Status != "in-progress" || m.items[0].Branch != "todo/wire-the-webhook" {
+	branch := "todo/wire-the-webhook" + idTag(m.items[0])
+	if m.items[0].Status != "in-progress" || m.items[0].Branch != branch {
 		t.Fatalf("item not marked: status=%q branch=%q", m.items[0].Status, m.items[0].Branch)
 	}
-	if !strings.Contains(m.notice, "todo/wire-the-webhook") {
-		t.Fatalf("notice should name the branch: %q", m.notice)
+	if !strings.Contains(m.notice, branch) || !strings.Contains(m.notice, "board dir set to /repo") {
+		t.Fatalf("notice should name the branch and the adopted dir: %q", m.notice)
 	}
-	if got := store.Load(m.path)[0].Branch; got != "todo/wire-the-webhook" {
+	if got := store.Load(m.path)[0].Branch; got != branch {
 		t.Fatalf("branch not saved for shepherd sync: %q", got)
 	}
-	if !strings.Contains(m.listFooter(), "todo/wire-the-webhook") {
+	if store.BoardDir("default") != "/repo" {
+		t.Fatal("the board should adopt the repo as its working directory")
+	}
+	if !strings.Contains(m.listFooter(), branch) {
 		t.Fatal("footer should show the notice")
+	}
+
+	// a second @ on the same item is refused rather than starting again
+	if nm, cmd := m.Update(key("@")); cmd != nil || !strings.Contains(nm.(model).notice, "already with an agent") {
+		t.Fatalf("re-hand-off should be refused: %q", nm.(model).notice)
 	}
 	m = drive(m, "j")
 	if m.notice != "" {
@@ -122,7 +134,7 @@ func TestAgentKeyOnSubtask(t *testing.T) {
 	}
 	nm, _ = nm.(model).Update(cmd())
 	m = nm.(model)
-	const branch = "todo/wire-the-webhook-sub"
+	branch := "todo/wire-the-webhook-sub" + idTag(m.items[0].Subs[0])
 	if sub := m.items[0].Subs[0]; sub.Status != "in-progress" || sub.Branch != branch {
 		t.Fatalf("subtask not marked: %+v", sub)
 	}

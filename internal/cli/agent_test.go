@@ -61,6 +61,23 @@ func agentBoard(t *testing.T, config string) string {
 	return path
 }
 
+// idTag is the id suffix agent.Task.Name puts on an item's branch.
+func idTag(it todo.Item) string { return "-" + it.ID[len(it.ID)-6:] }
+
+// syncBoard isolates a board and config for sync tests, with the default
+// board's working directory set (sync skips boards without one).
+func syncBoard(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "todo.md")
+	t.Setenv("SHEPHERD_TODO_FILE", path)
+	t.Setenv("SHEPHERD_CONFIG", filepath.Join(dir, "config.toml"))
+	if err := store.SetBoardDir("default", "/repo"); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
 func worktreeReply(name string, args []string) (string, error) {
 	if name == "herdr" && len(args) > 1 && args[0] == "worktree" {
 		return `{"result":{"root_pane":{"pane_id":"w9:p1"}}}`, nil
@@ -72,20 +89,78 @@ func TestAgentHerdrWorktree(t *testing.T) {
 	path := agentBoard(t, "")
 	f := stubCommands(t, "herdr", worktreeReply)
 
-	if code := cmdAgent([]string{"1"}, "", &bytes.Buffer{}); code != 0 {
+	var out bytes.Buffer
+	if code := cmdAgent([]string{"1"}, "", &out); code != 0 {
 		t.Fatalf("agent exit %d", code)
 	}
+	name := "add-retry-to-api-client" + idTag(store.Load(path)[0])
 	want := []string{
 		"git rev-parse --show-toplevel",
-		"herdr worktree create --cwd /repo --branch todo/add-retry-to-api-client --label add-retry-to-api-client --focus",
-		"herdr agent start add-retry-to-api-client --kind claude --pane w9:p1 -- Add retry to API client!\n\nuse exponential backoff",
+		"herdr worktree create --cwd /repo --branch todo/" + name + " --label " + name + " --focus",
+		"herdr agent start " + name + " --kind claude --pane w9:p1 -- Add retry to API client!\n\nuse exponential backoff",
 	}
 	if strings.Join(f.calls, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("calls:\n%s\nwant:\n%s", strings.Join(f.calls, "\n"), strings.Join(want, "\n"))
 	}
 	it := store.Load(path)[0]
-	if it.Status != "in-progress" || it.Branch != "todo/add-retry-to-api-client" {
+	if it.Status != "in-progress" || it.Branch != "todo/"+name {
 		t.Fatalf("item not marked: status=%q branch=%q", it.Status, it.Branch)
+	}
+	// the board had no working directory: it adopts the repo, and says so
+	if got := store.BoardDir("default"); got != "/repo" {
+		t.Fatalf("board dir should be adopted from the current repo, got %q", got)
+	}
+	if !strings.Contains(out.String(), "board default now works in /repo") {
+		t.Fatalf("adoption should be reported: %q", out.String())
+	}
+
+	// a second hand-off of the same item is refused, not a second worktree
+	f.calls = nil
+	if code := cmdAgent([]string{"1"}, "", &bytes.Buffer{}); code != 2 {
+		t.Fatalf("re-hand-off exit %d, want 2", code)
+	}
+	if len(f.calls) != 0 {
+		t.Fatalf("a refused hand-off must not call out: %q", f.calls)
+	}
+}
+
+func TestAgentBranchUniquePerItem(t *testing.T) {
+	path := agentBoard(t, "")
+	cmdAdd([]string{"Add retry to API client!"}, "", &bytes.Buffer{}) // same text, new item
+	stubCommands(t, "herdr", worktreeReply)
+
+	for _, ref := range []string{"1", "2"} {
+		if code := cmdAgent([]string{ref}, "", &bytes.Buffer{}); code != 0 {
+			t.Fatalf("agent %s exit %d", ref, code)
+		}
+	}
+	items := store.Load(path)
+	if items[0].Branch == items[1].Branch {
+		t.Fatalf("items with the same text must get different branches: %q", items[0].Branch)
+	}
+	for _, it := range items {
+		if !strings.HasPrefix(it.Branch, "todo/add-retry-to-api-client-") || !strings.HasSuffix(it.Branch, idTag(it)) {
+			t.Fatalf("branch should be the slug then the id: %q", it.Branch)
+		}
+	}
+}
+
+func TestAgentUsesBoardDir(t *testing.T) {
+	agentBoard(t, "")
+	if err := store.SetBoardDir("default", "/elsewhere"); err != nil {
+		t.Fatal(err)
+	}
+	f := stubCommands(t, "herdr", worktreeReply)
+
+	var out bytes.Buffer
+	if code := cmdAgent([]string{"1"}, "", &out); code != 0 {
+		t.Fatalf("agent exit %d", code)
+	}
+	if f.dirs[0] != "/elsewhere" {
+		t.Fatalf("repo should come from the board dir, ran git in %q", f.dirs[0])
+	}
+	if store.BoardDir("default") != "/elsewhere" || strings.Contains(out.String(), "now works in") {
+		t.Fatal("an existing board dir must be left alone")
 	}
 }
 
@@ -99,11 +174,12 @@ func TestAgentConfigAndKindFlag(t *testing.T) {
 	if !strings.Contains(f.calls[1], "--branch agent/add-retry") || !strings.Contains(f.calls[2], "--kind codex") {
 		t.Fatalf("config not applied: %q", f.calls)
 	}
-	if store.Load(path)[0].Branch != "agent/add-retry-to-api-client" {
+	if store.Load(path)[0].Branch != "agent/add-retry-to-api-client"+idTag(store.Load(path)[0]) {
 		t.Fatal("branch not recorded with the configured prefix")
 	}
 
 	f.calls = nil
+	cmdEdit([]string{"1", "branch:"}, "", &bytes.Buffer{}) // clear it, so it can be handed off again
 	cmdAgent([]string{"1", "--kind", "opencode"}, "", &bytes.Buffer{})
 	if !strings.Contains(f.calls[2], "--kind opencode") {
 		t.Fatalf("--kind should override config: %q", f.calls[2])
@@ -176,8 +252,7 @@ func TestAgentErrors(t *testing.T) {
 }
 
 func TestSyncCompletesMergedBranches(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "todo.md")
-	t.Setenv("SHEPHERD_TODO_FILE", path)
+	path := syncBoard(t)
 	cmdAdd([]string{"merged one branch:todo/merged"}, "", &bytes.Buffer{})
 	cmdAdd([]string{"open one branch:todo/open"}, "", &bytes.Buffer{})
 	cmdAdd([]string{"no branch"}, "", &bytes.Buffer{})
@@ -245,8 +320,7 @@ func TestBranchToken(t *testing.T) {
 }
 
 func TestSyncEvery(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "todo.md")
-	t.Setenv("SHEPHERD_TODO_FILE", path)
+	syncBoard(t)
 	cmdAdd([]string{"x branch:todo/x"}, "", &bytes.Buffer{})
 	f := stubCommands(t, "herdr", func(name string, args []string) (string, error) { return "OPEN\n", nil })
 
@@ -287,7 +361,7 @@ func TestAgentSubtask(t *testing.T) {
 	if code := cmdAgent([]string{"1.1"}, "", &bytes.Buffer{}); code != 0 {
 		t.Fatalf("agent exit %d", code)
 	}
-	const branch = "todo/add-retry-to-api-cli-write-the-tests"
+	branch := "todo/add-retry-to-api-cli-write-the-tests" + idTag(store.Load(path)[0].Subs[0])
 	if !strings.Contains(f.calls[1], "--branch "+branch) {
 		t.Fatalf("subtask branch: %q", f.calls[1])
 	}
@@ -305,8 +379,7 @@ func TestAgentSubtask(t *testing.T) {
 }
 
 func TestSyncCompletesMergedSubtask(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "todo.md")
-	t.Setenv("SHEPHERD_TODO_FILE", path)
+	path := syncBoard(t)
 	cmdAdd([]string{"parent"}, "", &bytes.Buffer{})
 	cmdSub([]string{"1", "merged sub branch:todo/sub"}, "", &bytes.Buffer{})
 	cmdSub([]string{"1", "other sub"}, "", &bytes.Buffer{})
@@ -327,5 +400,24 @@ func TestSyncCompletesMergedSubtask(t *testing.T) {
 	}
 	if !strings.Contains(buf.String(), "1.1") || !strings.Contains(buf.String(), "todo/sub merged") {
 		t.Fatalf("output should name the subtask: %q", buf.String())
+	}
+}
+
+func TestSyncSkipsBoardWithoutDir(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "todo.md")
+	t.Setenv("SHEPHERD_TODO_FILE", path)
+	t.Setenv("SHEPHERD_CONFIG", filepath.Join(dir, "config.toml"))
+	cmdAdd([]string{"merged one branch:todo/merged"}, "", &bytes.Buffer{})
+	f := stubCommands(t, "herdr", func(name string, args []string) (string, error) { return "MERGED\n", nil })
+
+	if code := cmdSync(nil, "", &bytes.Buffer{}); code != 0 {
+		t.Fatalf("sync exit %d", code)
+	}
+	if len(f.calls) != 0 {
+		t.Fatalf("a board without a working directory must not be checked: %q", f.calls)
+	}
+	if store.Load(path)[0].Done {
+		t.Fatal("nothing should complete without the board's repo")
 	}
 }

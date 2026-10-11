@@ -31,12 +31,16 @@ func splitRef(args []string) (string, []string) {
 //     through herdr, start the agent there with the item as its prompt, and
 //     record the branch on the item (branch: token) for shepherd sync. A
 //     subtask's prompt adds its parent as context, and its slug starts with
-//     a short parent slug.
+//     a short parent slug; the branch ends in the tail of the item's id, so
+//     it is never shared with another item. An item already carrying a branch
+//     is refused (clear it with edit … branch: to start over).
 //   - --to <pane>: send the item to an agent already running in herdr pane
 //     <pane> instead; no worktree.
 //   - --here, or no herdr: run the agent CLI in the foreground in the repo.
 //
-// The item is marked in-progress once the agent has it.
+// A board without a working directory adopts the current git repository as
+// its own, so shepherd sync checks the same repository later. The item is
+// marked in-progress once the agent has it.
 func cmdAgent(args []string, board string, w io.Writer) int {
 	ref, args := splitRef(args)
 	fs := flag.NewFlagSet("agent", flag.ContinueOnError)
@@ -85,7 +89,10 @@ func cmdAgent(args []string, board string, w io.Writer) int {
 			return saveErr(w, *asJSON, err)
 		}
 	case herdr != "":
-		repo, err := agent.RepoDir(board)
+		if it.Branch != "" {
+			return usageErr(w, *asJSON, fmt.Sprintf("item %s is already with an agent on %s (clear it to start over: shepherd edit %s branch:)", ref, it.Branch, ref))
+		}
+		repo, err := adoptRepo(board, w, *asJSON)
 		if err != nil {
 			return saveErr(w, *asJSON, err)
 		}
@@ -93,7 +100,7 @@ func cmdAgent(args []string, board string, w io.Writer) int {
 			return saveErr(w, *asJSON, err)
 		}
 	default:
-		repo, err := agent.RepoDir(board)
+		repo, err := adoptRepo(board, w, *asJSON)
 		if err != nil {
 			return saveErr(w, *asJSON, err)
 		}
@@ -107,6 +114,20 @@ func cmdAgent(args []string, board string, w io.Writer) int {
 		return 0
 	}
 	return setAgentState(board, it.ID, branch, w, *asJSON)
+}
+
+// adoptRepo resolves the repository the agent works in (agent.AdoptRepoDir)
+// and, when that set the board's working directory, says so.
+func adoptRepo(board string, w io.Writer, asJSON bool) (string, error) {
+	repo, adopted, err := agent.AdoptRepoDir(board)
+	if err == nil && adopted && !asJSON {
+		name := board
+		if name == "" {
+			name = "default"
+		}
+		say(w, fmt.Sprintf("board %s now works in %s (shepherd sync checks its pull requests there; change with: shepherd board dir %s <path>)", name, repo, name))
+	}
+	return repo, err
 }
 
 // setAgentState marks item or subtask id in-progress (and records branch, if

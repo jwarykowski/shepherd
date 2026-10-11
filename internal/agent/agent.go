@@ -109,14 +109,26 @@ func slugN(text string, n int) string {
 	return s
 }
 
-// Name is the task's worktree / agent name: the item's slug, or for a subtask
-// a short parent slug then the subtask's, so sibling subtasks never collide
-// with each other or with the parent.
+// idSuffixLen is how much of the item's id ends a task name. It's the id's
+// tail: an id starts with its creation timestamp (todo.NewID), so items made
+// around the same time share a prefix, while the tail is random.
+const idSuffixLen = 6
+
+// Name is the task's worktree / agent name (and, after the prefix, its
+// branch): the item's slug, or for a subtask a short parent slug then the
+// subtask's, ending in the tail of the item's id. The id keeps the branch
+// unique to this item: two items with the same text, or a new item reusing an
+// old one's text, would otherwise share a branch, and shepherd sync would
+// complete the new item from the old item's merged pull request.
 func (t Task) Name() string {
-	if t.Parent == nil {
-		return Slug(t.Item.Text)
+	name := Slug(t.Item.Text)
+	if t.Parent != nil {
+		name = slugN(t.Parent.Text, 20) + "-" + name
 	}
-	return slugN(t.Parent.Text, 20) + "-" + Slug(t.Item.Text)
+	if id := t.Item.ID; id != "" {
+		name += "-" + id[max(0, len(id)-idSuffixLen):]
+	}
+	return name
 }
 
 // Prompt is what the agent is asked to do: the item text, then its note; for
@@ -135,21 +147,53 @@ func (t Task) Prompt() string {
 	return strings.Join(parts, "\n\n")
 }
 
-// RepoDir is where the agent works: the board's working directory (board dir)
-// if set, else the git repository containing the current directory. board ""
-// is the default board.
+// RepoDir is the git repository the board's agents work in and its pull
+// requests are checked in: the repository root of the board's working
+// directory (shepherd board dir). board "" is the default board. It errors when
+// the board has no working directory or it isn't in a git repository; shepherd
+// sync relies on that to skip such boards rather than guess from wherever it
+// happens to run.
 func RepoDir(board string) (string, error) {
-	if board == "" {
-		board = "default"
-	}
+	board = boardName(board)
 	dir := store.BoardDir(board)
 	if dir == "" {
-		wd, err := os.Getwd()
-		if err != nil {
-			return "", err
-		}
-		dir = wd
+		return "", fmt.Errorf("board %s has no working directory (set one with: shepherd board dir %s <path>)", board, board)
 	}
+	return repoRoot(dir, board)
+}
+
+// AdoptRepoDir is RepoDir for a hand-off: when the board has no working
+// directory yet it uses the git repository containing the current directory
+// and records it as the board's (adopted reports that), so shepherd sync later
+// checks the same repository the agent worked in.
+func AdoptRepoDir(board string) (repo string, adopted bool, err error) {
+	board = boardName(board)
+	if store.BoardDir(board) != "" {
+		repo, err = RepoDir(board)
+		return repo, false, err
+	}
+	wd, err := os.Getwd()
+	if err != nil {
+		return "", false, err
+	}
+	if repo, err = repoRoot(wd, board); err != nil {
+		return "", false, err
+	}
+	if err := store.SetBoardDir(board, repo); err != nil {
+		return "", false, err
+	}
+	return repo, true, nil
+}
+
+func boardName(board string) string {
+	if board == "" {
+		return "default"
+	}
+	return board
+}
+
+// repoRoot is the root of the git repository containing dir.
+func repoRoot(dir, board string) (string, error) {
 	out, err := Run(dir, "git", "rev-parse", "--show-toplevel")
 	if err != nil {
 		return "", fmt.Errorf("%s is not in a git repository (set one with: shepherd board dir %s <path>)", dir, board)
@@ -190,8 +234,9 @@ func SendTo(herdr, pane string, t Task) error {
 }
 
 // MergedIDs returns the ids of board's open items and subtasks whose branch:
-// has a merged pull request (asked of gh in the board's repository). Items
-// without a reachable repo or PR are skipped.
+// has a merged pull request (asked of gh in the board's repository, see
+// RepoDir). A board without a working directory, and items without a PR, are
+// skipped.
 func MergedIDs(board string) map[string]bool {
 	var candidates []todo.Item
 	for _, it := range store.Load(store.TodoPathFor(board)) {

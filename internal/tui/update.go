@@ -315,6 +315,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.markAgent(msg.id, msg.branch)
 		m.notice = "agent started on " + msg.branch
+		if msg.adopted != "" {
+			m.notice += " · board dir set to " + msg.adopted
+		}
 		return m, nil
 	case editorDoneMsg:
 		// Reload from disk — the file may have changed under us.
@@ -464,6 +467,7 @@ func (m model) updateGlobal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // agent start) finishing: the item id, the branch it records, or an error.
 type agentStartedMsg struct {
 	id, branch string
+	adopted    string // repo recorded as the board's working directory, if this hand-off set it
 	err        error
 }
 
@@ -495,17 +499,25 @@ func (m model) startAgent() (tea.Model, tea.Cmd) {
 	kind, prefix := agent.Config()
 	board := m.board
 	if herdr := agent.Herdr(); herdr != "" {
+		if it.Branch != "" {
+			m.notice = "agent: already with an agent on " + it.Branch + " (clear its branch to start over)"
+			return m, nil
+		}
 		m.notice = "agent: starting " + kind + "…"
 		return m, func() tea.Msg {
-			repo, err := agent.RepoDir(board)
+			repo, adopted, err := agent.AdoptRepoDir(board)
 			branch := ""
 			if err == nil {
 				branch, err = agent.StartWorktree(herdr, repo, kind, prefix, task)
 			}
-			return agentStartedMsg{id: it.ID, branch: branch, err: err}
+			msg := agentStartedMsg{id: it.ID, branch: branch, err: err}
+			if adopted {
+				msg.adopted = repo
+			}
+			return msg
 		}
 	}
-	repo, err := agent.RepoDir(board)
+	repo, _, err := agent.AdoptRepoDir(board)
 	if err != nil {
 		m.notice = "agent: " + err.Error()
 		return m, nil

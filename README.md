@@ -411,7 +411,7 @@ All three point at the same `shepherd` CLI — no per-tool server, no MCP.
 coding agent and marks it `in-progress`:
 
 ```sh
-shepherd agent 3                  # in herdr: worktree todo/<slug> + claude started there
+shepherd agent 3                  # in herdr: worktree todo/<slug>-<id> + claude started there
 shepherd agent 3 --kind codex     # any agent herdr can start (claude, codex, opencode, …)
 shepherd agent 3 --to w2:p1       # send to an agent already running in that herdr pane
 shepherd agent 3 --here           # no herdr / no worktree: run the agent in this terminal
@@ -425,12 +425,15 @@ plugin, shepherd keeps `shepherd sync --all --every 2m` running in the
 background, so handed-off items complete on their own once merged.
 
 The prompt is the item's text plus its note; a subtask's adds its parent's
-text and note as context, and its branch is `todo/<parent>-<subtask>`. Inside
-[herdr](https://herdr.dev) the item records its branch (`branch:todo/<slug>`),
+text and note as context, and its branch is `todo/<parent>-<subtask>-<id>`. Inside
+[herdr](https://herdr.dev) the item records its branch (`branch:todo/<slug>-<id>`,
+where `<id>` is the tail of the item's id, so no two items ever share a branch),
 which `shepherd sync` checks with `gh`: once that pull request merges, the
 item completes (a subtask completes on its own, and its parent with the last
-one). The repository is the board's working directory
-(`shepherd board dir <name> <path>`), else the current git repo. Defaults come
+one). An item that already has a branch isn't handed off again until you clear
+it (`shepherd edit 3 branch:`). The repository is the board's working directory
+(`shepherd board dir <name> <path>`); a board without one adopts the current git
+repo on its first hand-off, and `shepherd sync` skips boards that have none. Defaults come
 from `agent_kind` / `agent_branch_prefix` in [configuration](#configuration).
 
 ## configuration
