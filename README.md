@@ -1,14 +1,14 @@
 <table>
 <tr>
-<td width="200" valign="top"><img src="assets/shepherd.png" alt="Shepherd" width="180"></td>
+<td width="140" valign="top"><img src="assets/shepherd.svg" alt="Shepherd" width="120"></td>
 <td valign="top">
 
 # 𓋾 Shepherd
 
-Your todos herded. An interactive todo board that runs standalone in any
-terminal, or as a [herdr](https://herdr.dev) plugin in a split, tab, overlay,
-or zoomed pane. Backed by a plain markdown file: greppable, hand-editable,
-syncable.
+An agent-native task queue: a terminal board backed by plain markdown files.
+Run it standalone in any terminal, or as a [herdr](https://herdr.dev) plugin in
+a split, tab, overlay, or zoomed pane. Greppable, hand-editable, syncable, and
+your coding agents can work from it too.
 
 </td>
 </tr>
