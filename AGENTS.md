@@ -35,8 +35,8 @@ resulting item(s) like `list --json` and reports failures as `{"error":…}` on
 stdout.
 
 Quick-add tokens (shared by `add`, `sub`, `edit`): `@category`, `#tag`,
-`tags:<a,b>`, `!h`/`!m`/`!l` priority, `due:<today|tomorrow|+3d|15-07-2026>`,
-`defer:<same date forms>` (start/defer date), `link:<url>`, `status:<name>`,
+`tags:<a,b>`, `!h`/`!m`/`!l` priority, `due:<today|tomorrow|friday|+3d|15-07-2026>`,
+`defer:<same date forms>` (start/defer date; a weekday means the next one, and a date shepherd can't read fails with exit 2 rather than being dropped), `link:<url>`, `status:<name>`,
 and `note:<text>` (holds spaces, takes the rest of the line — put it last).
 `list --json` reports `id` (the stable handle), `completed` (done timestamp),
 `defer`, `link`, `tags`, and `status` per item.

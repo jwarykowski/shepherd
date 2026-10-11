@@ -37,9 +37,22 @@ func DisplayDate(iso string) string {
 	return iso
 }
 
+// weekdays maps day names, full and short, to their time.Weekday.
+var weekdays = map[string]time.Weekday{
+	"sunday": time.Sunday, "sun": time.Sunday,
+	"monday": time.Monday, "mon": time.Monday,
+	"tuesday": time.Tuesday, "tue": time.Tuesday, "tues": time.Tuesday,
+	"wednesday": time.Wednesday, "wed": time.Wednesday,
+	"thursday": time.Thursday, "thu": time.Thursday, "thur": time.Thursday, "thurs": time.Thursday,
+	"friday": time.Friday, "fri": time.Friday,
+	"saturday": time.Saturday, "sat": time.Saturday,
+}
+
 // ParseDue resolves preset keywords and relative forms to a YYYY-MM-DD date.
-// Presets: today, tomorrow, week/next week, month/next month, and "+Nd".
-// Empty clears; an already-valid date passes through; anything else clears.
+// Presets: today, tomorrow, week/next week, month/next month, a weekday name
+// (the next one after today, so "friday" on a Friday is a week away), and
+// "+Nd". Empty clears; an already-valid date passes through; anything else
+// clears (ValidDate reports whether s would resolve).
 func ParseDue(s string) string {
 	s = strings.ToLower(strings.TrimSpace(s))
 	if s == "" {
@@ -58,6 +71,10 @@ func ParseDue(s string) string {
 		return base.AddDate(0, 0, 7).Format(dateFormat)
 	case "month", "next month":
 		return base.AddDate(0, 1, 0).Format(dateFormat)
+	}
+	if wd, ok := weekdays[s]; ok {
+		days := (int(wd)-int(base.Weekday())+6)%7 + 1 // 1..7: never today
+		return base.AddDate(0, 0, days).Format(dateFormat)
 	}
 	// relative: <n><unit>, unit d/w/m/y, optional leading + (e.g. 3d, 2w, 5m, 1y)
 	if r := strings.TrimPrefix(s, "+"); len(r) >= 2 {
@@ -82,6 +99,12 @@ func ParseDue(s string) string {
 		return t.Format(dateFormat)
 	}
 	return "" // unrecognised: clear rather than store garbage
+}
+
+// ValidDate reports whether s is a date ParseDue resolves, or empty (which
+// clears). It lets callers reject a typo instead of silently clearing the date.
+func ValidDate(s string) bool {
+	return strings.TrimSpace(s) == "" || ParseDue(s) != ""
 }
 
 // DueLabel renders a due date relative to today, and whether it's due/overdue.

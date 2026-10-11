@@ -670,11 +670,11 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "t":
 		if idx >= 0 {
-			m.prompt(modeDue, m.rowItem(ref).Due, "today · tomorrow · 3d · 2w · 5m · 1y · DD-MM-YYYY")
+			m.prompt(modeDue, m.rowItem(ref).Due, "today · tomorrow · fri · 3d · 2w · 5m · 1y · DD-MM-YYYY")
 		}
 	case "s":
 		if idx >= 0 {
-			m.prompt(modeDefer, m.rowItem(ref).Defer, "start/defer: today · tomorrow · 3d · 2w · DD-MM-YYYY")
+			m.prompt(modeDefer, m.rowItem(ref).Defer, "start/defer: today · tomorrow · fri · 3d · 2w · DD-MM-YYYY")
 		}
 	case "L":
 		if idx >= 0 {

@@ -78,7 +78,7 @@ herdr plugin install jwarykowski/shepherd
 | `h` / `m` / `l` | set priority high / medium / low |
 | `g` | set category |
 | `T` | set tags (space- or comma-separated; empty clears) |
-| `t` | set due date — `today`, `tomorrow`, `3d`/`2w`/`5m`/`1y`, or `DD-MM-YYYY` (empty clears) |
+| `t` | set due date — `today`, `tomorrow`, a weekday (`fri`, `friday`: the next one, never today), `3d`/`2w`/`5m`/`1y`, or `DD-MM-YYYY` (empty clears) |
 | `s` | set defer/start date (same formats as due; item shows dimmed with `starts Nd` until then) |
 | `L` | set a reference link (url) |
 | `o` | open the selected item's link in the browser |
@@ -304,7 +304,7 @@ Global flags (any command):
 - `-h`, `--help` — print a command's flags, exit 0.
 
 Exit codes: `0` success · `2` usage/input error (bad flag, unknown command,
-unknown ref) · `1` runtime/IO failure. A mistyped command suggests the
+unknown ref, a `due:`/`defer:` date it can't read) · `1` runtime/IO failure. A mistyped command suggests the
 closest real one.
 
 `done`/`undone`/`rm` take one or more refs (id or index) and apply them as a
@@ -341,7 +341,7 @@ shepherd list --board web
 
 `add` accepts the same quick-add tokens as the board: `@category`, `#tag`
 (`tags:a,b` replaces the set), `!h`/`!m`/`!l` priority,
-`due:<today|tomorrow|+3d|15-07-2026>`, `defer:`, `link:`, `status:`, and `note:`
+`due:<today|tomorrow|friday|+3d|15-07-2026>`, `defer:`, `link:`, `status:`, and `note:`
 (takes the rest of the line). Agents should read with
 `list --json` (stable machine shape) and mutate with `add`/`edit`/`done`/`rm`;
 an open board picks up the change within ~2s. `edit` is the single setter for

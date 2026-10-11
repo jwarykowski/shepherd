@@ -230,6 +230,33 @@ func TestReclassifyArchived(t *testing.T) {
 
 // TestCLIEdit checks that edit merges tokens onto an item (text preserved on a
 // token-only edit, replaced when plain words are given) and can target a subtask.
+// A date the parser can't read is a usage error on every writing verb, and
+// nothing is written: silently clearing it would lose the date from a script.
+func TestCLIRejectsUnknownDates(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "todo.md")
+	t.Setenv("SHEPHERD_TODO_FILE", path)
+
+	if code := cmdAdd([]string{"ship it due:someday"}, "", &bytes.Buffer{}); code != 2 {
+		t.Fatalf("add exit %d, want 2", code)
+	}
+	if n := len(store.Load(path)); n != 0 {
+		t.Fatalf("add with a bad date wrote %d items", n)
+	}
+	cmdAdd([]string{"ship it due:2026-07-20"}, "", &bytes.Buffer{})
+	if code := cmdEdit([]string{"1", "defer:nope"}, "", &bytes.Buffer{}); code != 2 {
+		t.Fatalf("edit exit %d, want 2", code)
+	}
+	if code := cmdSub([]string{"1", "tag it due:soon"}, "", &bytes.Buffer{}); code != 2 {
+		t.Fatalf("sub exit %d, want 2", code)
+	}
+	if it := store.Load(path)[0]; it.Due != "2026-07-20" || it.Defer != "" || len(it.Subs) != 0 {
+		t.Fatalf("a rejected write changed the item: %+v", it)
+	}
+	if code := cmdAdd([]string{"ship it due:fri"}, "", &bytes.Buffer{}); code != 0 {
+		t.Fatalf("weekday add exit %d", code)
+	}
+}
+
 func TestCLIEdit(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "todo.md")
 	t.Setenv("SHEPHERD_TODO_FILE", path)

@@ -995,7 +995,7 @@ func (m model) helpBody() []string {
 	line("subtasks: completing a parent completes its subtasks; completing the last subtask completes the parent")
 	blank()
 	sec("due dates")
-	line("today · tomorrow · Nd/Nw/Nm/Ny (e.g. 3d, 2w) · DD-MM-YYYY. Anything unrecognised clears the date. Overdue items are pinned to a group at the top.")
+	line("today · tomorrow · a weekday (fri: the next one) · Nd/Nw/Nm/Ny (e.g. 3d, 2w) · DD-MM-YYYY. Anything unrecognised clears the date here; the command API rejects it. Overdue items are pinned to a group at the top.")
 	blank()
 	sec("view & find")
 	line("v — cycle view: category / priority / tag / table / lane (the global view adds a board grouping instead of lane). The tag view groups by an item's first tag (untagged last) and shows its other tags on the row")
