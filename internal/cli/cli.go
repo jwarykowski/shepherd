@@ -684,6 +684,9 @@ func cmdAdd(args []string, board string, w io.Writer) int {
 	if text == "" {
 		return usageErr(w, asJSON, `add needs text, e.g. shepherd add "buy milk @home !h"`)
 	}
+	if err := todo.CheckDates(text); err != nil {
+		return usageErr(w, asJSON, err.Error())
+	}
 	it := todo.ParseQuickAdd(text)
 	if it.Text == "" {
 		return usageErr(w, asJSON, "nothing to add after parsing tokens")
@@ -718,6 +721,9 @@ func cmdSub(args []string, board string, w io.Writer) int {
 		text := strings.TrimSpace(strings.Join(args[1:], " "))
 		if text == "" {
 			return usageErr(w, asJSON, `sub needs text, e.g. shepherd sub 1 "parse tokens"`), nil
+		}
+		if err := todo.CheckDates(text); err != nil {
+			return usageErr(w, asJSON, err.Error()), nil
 		}
 		sub := todo.ParseQuickAdd(text)
 		if sub.Text == "" {
@@ -754,6 +760,9 @@ func cmdEdit(args []string, board string, w io.Writer) int {
 		text := strings.TrimSpace(strings.Join(args[1:], " "))
 		if text == "" {
 			return usageErr(w, asJSON, `edit needs tokens, e.g. shepherd edit 2 "@home !h due:tomorrow"`), nil
+		}
+		if err := todo.CheckDates(text); err != nil {
+			return usageErr(w, asJSON, err.Error()), nil
 		}
 		if s == 0 {
 			todo.ApplyEdit(&items[p-1], text)

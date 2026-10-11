@@ -95,7 +95,7 @@ func buildSchema() schemaDoc {
 			{Token: "status:<name>", Field: "status", Desc: "bare status: resets to open"},
 			{Token: "note:<text>", Field: "note", Desc: "takes the rest of the line; put last"},
 		},
-		DueForms: []string{"YYYY-MM-DD", "today", "tomorrow", "week", "next week", "month", "next month", "+Nd"},
+		DueForms: []string{"YYYY-MM-DD", "today", "tomorrow", "monday…sunday (or mon…sun)", "week", "next week", "month", "next month", "+Nd"},
 	}
 }
 

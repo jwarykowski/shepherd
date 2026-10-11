@@ -3,7 +3,10 @@
 // dependencies.
 package todo
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
 // Item is a single todo entry.
 type Item struct {
@@ -129,6 +132,24 @@ func noteIndex(s string) int {
 		return i + 1
 	}
 	return -1
+}
+
+// CheckDates returns an error naming the first due: or defer: token in s whose
+// date ParseDue can't resolve. ApplyEdit clears such a date, which is right for
+// the board's prompt but would silently lose it from a script, so the command
+// API checks first. Anything after note: is note text, not tokens.
+func CheckDates(s string) error {
+	if i := noteIndex(s); i >= 0 {
+		s = s[:i]
+	}
+	for _, tok := range strings.Fields(s) {
+		for _, key := range []string{"due:", "defer:"} {
+			if v, ok := strings.CutPrefix(tok, key); ok && !ValidDate(v) {
+				return fmt.Errorf("unrecognised date in %s: use today, tomorrow, a weekday, 3d, 2w, 5m, 1y or DD-MM-YYYY", tok)
+			}
+		}
+	}
+	return nil
 }
 
 // ParseQuickAdd builds a new item from an add line, splitting text from

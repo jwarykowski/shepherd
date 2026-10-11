@@ -186,11 +186,35 @@ func TestParseDue(t *testing.T) {
 		"1y":         "2027-07-10",
 		"25-12-2026": "2026-12-25", // DMY input -> ISO storage
 		"2026-12-25": "2026-12-25",
-		"whatever":   "", // unrecognized -> blank
+		"whatever":   "",           // unrecognized -> blank
+		"monday":     "2026-07-13", // 2026-07-10 is a Friday
+		"Thurs":      "2026-07-16",
+		"sat":        "2026-07-11",
+		"friday":     "2026-07-17", // never today: a week away
+		"fri":        "2026-07-17",
 	}
 	for in, want := range cases {
 		if got := ParseDue(in); got != want {
 			t.Fatalf("ParseDue(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestCheckDates(t *testing.T) {
+	pinToday(t, "2026-07-10")
+	for _, ok := range []string{
+		"ship it",
+		"ship it due:friday defer:2d",
+		"ship it due: defer:",          // bare keys clear, which is fine
+		"ship it note:due:whenever ok", // note text isn't a token
+	} {
+		if err := CheckDates(ok); err != nil {
+			t.Errorf("CheckDates(%q) = %v, want nil", ok, err)
+		}
+	}
+	for _, bad := range []string{"ship it due:someday", "ship it defer:31-02-2026"} {
+		if err := CheckDates(bad); err == nil {
+			t.Errorf("CheckDates(%q) = nil, want an error", bad)
 		}
 	}
 }
