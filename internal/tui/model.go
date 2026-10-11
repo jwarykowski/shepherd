@@ -71,8 +71,15 @@ func loadConfig(path string) config {
 	return c
 }
 
-// saveConfig writes the managed config keys to config.toml. shepherd owns the
-// file (every key has a settings-UI control), so it's a plain rewrite.
+// managedConfigKeys are the config.toml keys the settings UI owns and rewrites.
+var managedConfigKeys = map[string]bool{
+	"view": true, "density": true, "autosave": true,
+	"categories": true, "statuses": true, "hidefooter": true,
+}
+
+// saveConfig writes the managed config keys to config.toml and keeps every
+// other line: the same file carries keys the settings UI has no control for
+// (open.sh's placement and direction) and the user's comments.
 func saveConfig(path string, c config) error {
 	den := "compact"
 	if c.density == comfort {
@@ -92,10 +99,36 @@ func saveConfig(path string, c config) error {
 	fmt.Fprintf(&b, "categories = %s\n", list(c.categories))
 	fmt.Fprintf(&b, "statuses = %s\n", list(c.statuses))
 	fmt.Fprintf(&b, "hidefooter = %v\n", c.hideFooter)
+	if old, err := os.ReadFile(path); err == nil {
+		keepUnmanaged(&b, string(old))
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
 	return os.WriteFile(path, []byte(b.String()), 0o644)
+}
+
+// keepUnmanaged copies old's lines into b, minus blank lines and the managed
+// keys saveConfig has just written. A managed array written across several
+// lines is skipped up to its closing bracket, so no orphaned lines are left.
+func keepUnmanaged(b *strings.Builder, old string) {
+	inArray := false
+	for _, ln := range strings.Split(old, "\n") {
+		if inArray {
+			inArray = !strings.Contains(ln, "]")
+			continue
+		}
+		k, v, isKV := strings.Cut(ln, "=")
+		if isKV && managedConfigKeys[strings.TrimSpace(k)] {
+			v = strings.TrimSpace(v)
+			inArray = strings.HasPrefix(v, "[") && !strings.Contains(v, "]")
+			continue
+		}
+		if strings.TrimSpace(ln) == "" {
+			continue
+		}
+		b.WriteString(ln + "\n")
+	}
 }
 
 // normalizeStatuses dedups the configured statuses and guarantees a non-terminal
