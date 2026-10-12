@@ -15,6 +15,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
+	"shepherd/internal/drover"
 	"shepherd/internal/store"
 	"shepherd/internal/todo"
 )
@@ -238,29 +239,31 @@ type model struct {
 	noteEditing   bool           // a change was captured this note session (one undo snapshot)
 	w             int
 	height        int
-	past          [][]todo.Item // undo stack (snapshots before each mutation)
-	future        [][]todo.Item // redo stack (snapshots undone)
-	dirty         bool          // cached: board differs from disk; recomputed per event
-	saved         string        // fingerprint of the board as last saved to disk
-	lastEdit      time.Time     // when the last mutation happened (debounce autosave)
-	autosaveEvery time.Duration // idle gap before autosaving; 0 disables
-	lastMod       time.Time     // todo file mtime we last saw
-	helpScroll    int           // scroll offset in the help page
-	categories    []string      // configured categories (tab-cycle in category mode)
-	catIdx        int           // cursor into categories while cycling
-	statuses      []string      // configured statuses, ordered, "done" last (Tab-cycle in list)
-	density       density       // spacing mode
-	global        bool          // read-only aggregate across all boards
-	board         string        // the board to return to when leaving global
-	projRows      []store.Board // board list for the picker (modeBoards)
-	projCur       int           // cursor into projRows
-	projArchived  bool          // picker is showing archived boards (unarchive-only)
-	projNotice    string        // transient picker error (e.g. invalid/duplicate board name)
-	projPending   string        // board whose working dir is being set (modeBoardDir)
-	projDirEdit   bool          // dir editor opened from the detail view (empty clears, return to detail); false = creation flow (empty skips)
-	fieldEdit     bool          // a field editor was opened from the item detail view, so save/cancel returns there instead of the list
-	settingsCur   int           // cursor into the settings rows (modeSettings)
-	hideFooter    bool          // hide the list footer (help grid + version line)
+	past          [][]todo.Item         // undo stack (snapshots before each mutation)
+	future        [][]todo.Item         // redo stack (snapshots undone)
+	dirty         bool                  // cached: board differs from disk; recomputed per event
+	saved         string                // fingerprint of the board as last saved to disk
+	lastEdit      time.Time             // when the last mutation happened (debounce autosave)
+	autosaveEvery time.Duration         // idle gap before autosaving; 0 disables
+	lastMod       time.Time             // todo file mtime we last saw
+	helpScroll    int                   // scroll offset in the help page
+	categories    []string              // configured categories (tab-cycle in category mode)
+	catIdx        int                   // cursor into categories while cycling
+	statuses      []string              // configured statuses, ordered, "done" last (Tab-cycle in list)
+	density       density               // spacing mode
+	global        bool                  // read-only aggregate across all boards
+	board         string                // the board to return to when leaving global
+	projRows      []store.Board         // board list for the picker (modeBoards)
+	projCur       int                   // cursor into projRows
+	projArchived  bool                  // picker is showing archived boards (unarchive-only)
+	projNotice    string                // transient picker error (e.g. invalid/duplicate board name)
+	notice        string                // transient list message (e.g. how @ went); cleared on the next key
+	runs          map[string]drover.Run // drover's live runs by item id, for the waiting/running marks
+	projPending   string                // board whose working dir is being set (modeBoardDir)
+	projDirEdit   bool                  // dir editor opened from the detail view (empty clears, return to detail); false = creation flow (empty skips)
+	fieldEdit     bool                  // a field editor was opened from the item detail view, so save/cancel returns there instead of the list
+	settingsCur   int                   // cursor into the settings rows (modeSettings)
+	hideFooter    bool                  // hide the list footer (help grid + version line)
 }
 
 // currentConfig snapshots the live, editable settings for the settings screen

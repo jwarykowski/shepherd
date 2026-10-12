@@ -20,7 +20,7 @@ import (
 // so clipboard.WriteAll's wait never returns there.
 var copyText = clipboard.WriteAll
 
-func (m model) Init() tea.Cmd { return tick() }
+func (m model) Init() tea.Cmd { return tea.Batch(tick(), loadRuns) }
 
 // beforeMutate pushes the current state onto the undo stack, clears the redo
 // stack (a fresh edit invalidates the redo future), and marks the model dirty.
@@ -321,6 +321,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.lastMod = store.FileModTime(m.path)
 		m.markSaved()
 		return m, nil
+	case runsMsg:
+		m.runs = msg
+		return m, pollRuns()
+	case sentMsg:
+		return m.sent(msg)
 	case tickMsg:
 		// only auto-reload external edits when we have no pending in-memory
 		// changes, so a dotfile sync can't clobber the user's work.
@@ -482,7 +487,10 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	rows := m.cursorRows()
 	ref := m.selRef()
 	idx := ref.item
+	m.notice = ""
 	switch msg.String() {
+	case "@":
+		return m.sendToAgent()
 	case "q":
 		return m.quit()
 	case "w":

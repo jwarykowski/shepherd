@@ -23,6 +23,7 @@ your coding agents can work from it too.
 - [command api](#command-api)
 - [stats](#stats)
 - [agentic tools](#agentic-tools)
+- [send tasks to your agent](#send-tasks-to-your-agent)
 - [configuration](#configuration)
 - [storage](#storage)
 - [herdr integration](#herdr-integration)
@@ -404,6 +405,31 @@ shepherd with the same verbs. Discovery is layered:
   tool's global rules / instructions slot.
 
 All three point at the same `shepherd` CLI — no per-tool server, no MCP.
+
+## send tasks to your agent
+
+Shepherd hands tasks to a coding agent (Claude Code or Codex) through
+[drover](https://shepherdcli.dev/pro/), which runs the agent and keeps its log.
+Every run waits for you to say go.
+
+```sh
+shepherd agents setup     # finds claude or codex, sets drover up for every board, starts it
+shepherd board dir web ~/src/web   # where the agent works for the web board
+```
+
+Then add a task and press `@` on it (or `shepherd go <ref>`). A task drover is
+holding shows **waiting**; once it's sent it shows **running**. `@` on a waiting
+task releases it; on any other open task it starts a run now.
+
+```sh
+shepherd agents status    # is drover running in the background?
+shepherd agents stop | start
+shepherd pro activate <key>   # Shepherd Pro: GitHub, Sentry and webhook sources, auto-release
+shepherd pro status
+```
+
+drover's own config (`~/.config/drover/drover.toml`) is where you add GitHub or
+Sentry sources and change what the agent is told to do.
 
 ## configuration
 

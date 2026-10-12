@@ -49,6 +49,14 @@ Items (ref = an item's stable id from 'list --json', or its 1-based index n;
           due:<date>  defer:<date>  link:<url>  status:<name>
           note:<text> (takes the rest of the line)
 
+Agents (powered by drover; see shepherdcli.dev/docs):
+  agents setup [--runner claude|codex]  set up drover for every board and start it
+  agents start|stop|status [--json]     drover's background service
+  go <ref> [--json]            send an item to your coding agent (releases a
+                               run drover is holding, or starts one now)
+  pro activate <key>           activate Shepherd Pro
+  pro status [--json]          show the edition
+
 Boards (the default board can't be renamed/deleted/archived):
   board rename <old> <new>
   board archive <name>            stash under boards/archived/ (reversible)
@@ -77,7 +85,7 @@ func Usage() string { return cliUsage }
 // knownVerbs is the dispatch table, used both to route and to suggest a
 // correction for a mistyped verb. Version reporting is the `--version` board
 // flag (the clig standard), handled in main — not a subcommand here.
-var knownVerbs = []string{"help", "list", "watch", "boards", "board", "stats", "schema", "add", "sub", "edit", "done", "undone", "archive", "rm"}
+var knownVerbs = []string{"help", "list", "watch", "boards", "board", "stats", "schema", "add", "sub", "edit", "done", "undone", "archive", "rm", "go", "agents", "pro"}
 
 // Run handles one command-API invocation and returns a process exit code.
 //
@@ -128,6 +136,12 @@ func Run(verb string, args []string) int {
 		return cmdArchive(rest, board, os.Stdout)
 	case "rm":
 		return cmdRemove(rest, board, os.Stdout)
+	case "go":
+		return cmdGo(rest, board, os.Stdout)
+	case "agents":
+		return cmdAgents(rest, os.Stdout)
+	case "pro":
+		return cmdPro(rest, os.Stdout)
 	default:
 		fmt.Fprintf(os.Stderr, "shepherd: unknown command %q\n", verb)
 		if s := suggest(verb); s != "" {

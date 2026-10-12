@@ -249,6 +249,9 @@ func (m model) rowContent(it todo.Item, indent, badge string, isSub bool) string
 		}
 		label += c
 	}
+	if run := m.runLabel(it.ID); run != "" {
+		text += " " + run
+	}
 	left := fmt.Sprintf("%s%s %s", indent, boxSt.Render(box), text)
 	return spread(w, left, label)
 }
@@ -656,10 +659,14 @@ func (m model) listFooter() string {
 	case modeAdd, modeAddSub, modeEdit, modeCategory, modeTags, modeDue, modeDefer, modeLink:
 		return rule + "\n" + m.inputPrompt()
 	default:
-		if m.hideFooter { // keep the repo/version line; drop the help grid
-			return rule + "\n" + m.bottomBar()
+		notice := ""
+		if m.notice != "" {
+			notice = warnStyle.Render(m.notice) + "\n"
 		}
-		return rule + "\n" + m.helpGrid() + "\n" + rule + "\n" + m.bottomBar()
+		if m.hideFooter { // keep the repo/version line; drop the help grid
+			return rule + "\n" + notice + m.bottomBar()
+		}
+		return rule + "\n" + notice + m.helpGrid() + "\n" + rule + "\n" + m.bottomBar()
 	}
 }
 
@@ -682,7 +689,7 @@ type keyCol struct {
 func (m model) helpGrid() string {
 	cols := []keyCol{
 		{"move", [][2]string{{"j/k", "move"}, {"←/→", "lane"}, {"space", "toggle"}, {"d", "detail"}, {"v", "view"}, {"A", "global"}, {"e", "archive"}, {"b", "boards"}, {"F", "footer"}}},
-		{"edit", [][2]string{{"a", "add"}, {"S", "sub"}, {"u", "edit"}, {"tab", "status"}, {"x", "del"}, {"c", "sweep"}, {"C", "arch"}}},
+		{"edit", [][2]string{{"a", "add"}, {"S", "sub"}, {"u", "edit"}, {"tab", "status"}, {"x", "del"}, {"c", "sweep"}, {"C", "arch"}, {"@", "agent"}}},
 		{"fields", [][2]string{{"h/m/l", "prio"}, {"g", "cat"}, {"T", "tags"}, {"t", "due"}, {"s", "defer"}, {"L", "link"}, {"o", "open"}, {"y", "copy"}}},
 		{"board", [][2]string{{"w", "save"}, {"^e", "editor"}, {"U", "undo"}, {"^r", "redo"}, {"/", "filter"}, {",", "settings"}, {"?", "help"}, {"q", "quit"}}},
 	}
@@ -989,6 +996,7 @@ func (m model) helpBody() []string {
 	line("g — set category · T — set tags (space- or comma-separated; empty clears) · t — set due date · s — set defer/start date")
 	line("L — set link · o — open the link in the browser")
 	line("y — copy the selected item's title to the clipboard")
+	line("@ — send the selected item or subtask to your coding agent (via drover: releases a run it's holding, or starts one). Rows drover is holding show waiting; rows it's working on show running. Set up with shepherd agents setup")
 	line("space — toggle done · tab — cycle status · x — delete")
 	line("rows carry two flush-right values: subtask progress (else the due/defer label), then whichever grouping axis the headers don't already name — priority in the category and tag views, category in the priority view. The box shape is the status (○ open, ◐ named status, ✓ done)")
 	line("c — archive all done items · C — archive the selected item (whole items only, not subtasks)")
