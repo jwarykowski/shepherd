@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
@@ -41,8 +40,6 @@ func agentModel(t *testing.T) (model, string) {
 	m.w, m.height = 100, 40
 	return m, path
 }
-
-func now(d time.Duration) string { return time.Now().Add(-d).UTC().Format(time.RFC3339) }
 
 // @ saves the board, sends the item in the background and says how it went;
 // the refresh after it doesn't start a second polling loop.
@@ -218,7 +215,7 @@ func TestAgentsKeys(t *testing.T) {
 
 	// C archives a run that hasn't run
 	m.agCur = at("gone")
-	nm, cmd := m.updateAgents(key("C"))
+	_, cmd := m.updateAgents(key("C"))
 	if cmd == nil || cmd().(archivedMsg).err != nil {
 		t.Fatal("C should archive the run")
 	}
@@ -236,7 +233,7 @@ func TestAgentsKeys(t *testing.T) {
 	}
 	// C refuses a running one
 	m.agCur = at("r2")
-	nm, cmd = m.updateAgents(key("C"))
+	nm, cmd := m.updateAgents(key("C"))
 	if cmd != nil || !strings.Contains(nm.(model).notice, "still running") {
 		t.Fatalf("notice %q", nm.(model).notice)
 	}
