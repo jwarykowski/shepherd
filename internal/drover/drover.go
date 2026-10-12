@@ -13,8 +13,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -66,6 +68,13 @@ type Run struct {
 	Completed string            `json:"completed"`
 	Data      map[string]string `json:"data"`
 	Archived  bool              `json:"archived"` // off the live list
+	Thread    string            `json:"thread"`   // the runs of one action about one thing share one
+	Runner    string            `json:"runner"`   // the coding agent that ran it
+	Session   string            `json:"session"`  // its conversation, to take over or carry on
+	Worktree  string            `json:"worktree"` // where it worked
+	Branch    string            `json:"branch"`
+	Result    string            `json:"result"` // the pull request it opened or updated
+	Events    int               `json:"events"` // later events folded into it while it waited
 }
 
 // Waiting is a run held for a person to say go.
@@ -86,9 +95,28 @@ func (r Run) Active() bool { return r.Queued() || r.Running() }
 // External is a run whose text came from a source outsiders can write.
 func (r Run) External() bool { return r.Data["external"] == "true" }
 
-// URL is where the run's subject lives: the link it carries, else the url its
-// event sent (an issue, an error).
-func (r Run) URL() string { return cmp.Or(r.Link, r.Data["url"]) }
+// URL is the run's most useful link: the pull request it made, else where its
+// subject lives (an issue, an error).
+func (r Run) URL() string { return cmp.Or(r.Result, r.Link, r.Data["url"]) }
+
+// TakeOver is the command that carries on the run's conversation by hand, in
+// its worktree, or nil when there's none to carry on.
+func (r Run) TakeOver() *exec.Cmd {
+	if r.Session == "" || r.Worktree == "" {
+		return nil
+	}
+	var c *exec.Cmd
+	switch r.Runner {
+	case "claude":
+		c = exec.Command("claude", "--resume", r.Session)
+	case "codex":
+		c = exec.Command("codex", "resume", r.Session)
+	default:
+		return nil
+	}
+	c.Dir = r.Worktree
+	return c
+}
 
 // When is the run's most telling time: finished, else started, else created.
 func (r Run) When() time.Time {
@@ -363,6 +391,47 @@ func Restart() (ok bool, err error) {
 		return false, err
 	}
 	return true, Start()
+}
+
+// Action is what the agents do with one kind of event from one source.
+type Action struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	On      string `json:"on"`     // the event type
+	Source  string `json:"source"` // the source it's scoped to; "" for every source
+	Auto    bool   `json:"auto"`
+	Off     bool   `json:"off"`
+	Timeout string `json:"timeout"`
+	Do      string `json:"do"` // what the agent is told
+}
+
+// Actions lists every action.
+func Actions() ([]Action, error) {
+	var a []Action
+	err := output(&a, nil, "action", "list", "--json")
+	return a, err
+}
+
+// SetActionOff switches an action off (it matches nothing) or back on.
+func SetActionOff(id string, off bool) error {
+	return run(nil, "action", "edit", id, "--off", strconv.FormatBool(off))
+}
+
+// SetActionPrompt replaces what an action tells the agent.
+func SetActionPrompt(id, prompt string) error {
+	f, err := os.CreateTemp("", "shepherd-prompt-*.md")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.Remove(f.Name()) }()
+	if _, err := f.WriteString(prompt); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	return run(nil, "action", "edit", id, "--do-file", f.Name())
 }
 
 // Licence is the edition agents run as.

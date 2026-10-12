@@ -8,6 +8,8 @@ package cli
 //	shepherd agents add github|webhook …            more places tasks come from (Pro)
 //	shepherd agents sources [--json] | remove <name>
 //	shepherd agents secret <name> [--scheme github]  take only signed deliveries
+//	shepherd agents actions [--json]                what each kind of event does
+//	shepherd agents action <name> on|off|edit       switch one, or change its prompt
 //	shepherd go <ref>                               send an item to your agent
 //	shepherd pro activate <key> | status [--json]   drover Pro
 
@@ -19,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -32,7 +35,7 @@ import (
 
 func cmdAgents(args []string, w io.Writer) int {
 	if len(args) == 0 {
-		return usageErr(w, false, "agents needs a subcommand: setup|start|stop|status|add|sources|remove|secret")
+		return usageErr(w, false, "agents needs a subcommand: setup|start|stop|status|add|sources|remove|secret|actions|action")
 	}
 	sub, rest := args[0], args[1:]
 	switch sub {
@@ -60,8 +63,12 @@ func cmdAgents(args []string, w io.Writer) int {
 		return agentsRemove(rest, w)
 	case "secret":
 		return agentsSecret(rest, os.Stdin, w)
+	case "actions":
+		return agentsActions(rest, w)
+	case "action":
+		return agentsAction(rest, os.Stdin, w)
 	default:
-		return usageErr(w, false, fmt.Sprintf("unknown agents subcommand %q (setup|start|stop|status|add|sources|remove|secret)", sub))
+		return usageErr(w, false, fmt.Sprintf("unknown agents subcommand %q (setup|start|stop|status|add|sources|remove|secret|actions|action)", sub))
 	}
 }
 
@@ -255,6 +262,138 @@ func agentsSecret(args []string, stdin *os.File, w io.Writer) int {
 		say(w, fmt.Sprintf("%s now takes only signed deliveries.", name))
 	}
 	return 0
+}
+
+// agentsActions lists what each kind of event does: its source, its label,
+// whether it waits, runs by itself or is off, and the start of its prompt.
+func agentsActions(args []string, w io.Writer) int {
+	asJSON, _ := extractFlag(args, "--json")
+	acts, err := drover.Actions()
+	if code := agentErr(err); code != 0 {
+		return code
+	}
+	if asJSON {
+		if acts == nil {
+			acts = []drover.Action{}
+		}
+		return emitJSON(w, acts)
+	}
+	for _, a := range acts {
+		state := "waits for go"
+		switch {
+		case a.Off:
+			state = "off"
+		case a.Auto:
+			state = "runs itself"
+		}
+		source := cmp.Or(a.Source, "boards")
+		if source == "shepherd" {
+			source = "boards"
+		}
+		label := strings.TrimPrefix(a.Name, a.Source+": ")
+		emit(w, fmt.Sprintf("%-10s %-22s %-13s %s", source, label, state, firstLine(a.Do, 60)))
+	}
+	return 0
+}
+
+// agentsAction switches an action on or off, or edits its prompt:
+// shepherd agents action <name> on|off|edit. name is its label, "source label"
+// or its id. edit opens $EDITOR at a terminal, else reads the prompt on stdin.
+func agentsAction(args []string, stdin *os.File, w io.Writer) int {
+	if len(args) < 2 {
+		return usageErr(w, false, "agents action needs a name and on, off or edit, e.g. shepherd agents action \"sentry fix\" off")
+	}
+	ref, verb := strings.Join(args[:len(args)-1], " "), args[len(args)-1]
+	acts, err := drover.Actions()
+	if code := agentErr(err); code != 0 {
+		return code
+	}
+	a, ok := findAction(acts, ref)
+	if !ok {
+		return usageErr(w, false, fmt.Sprintf("no action %q: see shepherd agents actions", ref))
+	}
+	switch verb {
+	case "on", "off":
+		if code := agentErr(drover.SetActionOff(a.ID, verb == "off")); code != 0 {
+			return code
+		}
+		say(w, fmt.Sprintf("%s is %s.", a.Name, verb))
+		return 0
+	case "edit":
+		prompt, err := editPrompt(a.Do, stdin)
+		if code := agentErr(err); code != 0 {
+			return code
+		}
+		if strings.TrimSpace(prompt) == "" || prompt == a.Do {
+			say(w, "Prompt unchanged.")
+			return 0
+		}
+		if code := agentErr(drover.SetActionPrompt(a.ID, prompt)); code != 0 {
+			return code
+		}
+		say(w, fmt.Sprintf("Updated what %s tells the agent.", a.Name))
+		return 0
+	}
+	return usageErr(w, false, fmt.Sprintf("agents action: want on, off or edit, got %q", verb))
+}
+
+// findAction matches an action by id, by its name, by its label without the
+// source, or by "source label".
+func findAction(acts []drover.Action, ref string) (drover.Action, bool) {
+	norm := func(s string) string {
+		return strings.ToLower(strings.Join(strings.Fields(strings.ReplaceAll(s, ":", " ")), " "))
+	}
+	want := norm(ref)
+	var found []drover.Action
+	for _, a := range acts {
+		label := strings.TrimPrefix(a.Name, a.Source+": ")
+		if a.ID == ref || norm(a.Name) == want || norm(label) == want || norm(a.Source+" "+label) == want {
+			found = append(found, a)
+		}
+	}
+	if len(found) != 1 {
+		return drover.Action{}, false
+	}
+	return found[0], true
+}
+
+// editPrompt opens the prompt in $VISUAL or $EDITOR at a terminal; otherwise
+// it reads the new prompt from stdin.
+func editPrompt(current string, stdin *os.File) (string, error) {
+	if !term.IsTerminal(stdin.Fd()) {
+		b, err := io.ReadAll(stdin)
+		return strings.TrimSpace(string(b)), err
+	}
+	f, err := os.CreateTemp("", "shepherd-prompt-*.md")
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = os.Remove(f.Name()) }()
+	if _, err := f.WriteString(current + "\n"); err != nil {
+		_ = f.Close()
+		return "", err
+	}
+	if err := f.Close(); err != nil {
+		return "", err
+	}
+	editor := cmp.Or(os.Getenv("VISUAL"), os.Getenv("EDITOR"), "vi")
+	parts := strings.Fields(editor)
+	c := exec.Command(parts[0], append(parts[1:], f.Name())...)
+	c.Stdin, c.Stdout, c.Stderr = stdin, os.Stdout, os.Stderr
+	if err := c.Run(); err != nil {
+		return "", fmt.Errorf("editor: %w", err)
+	}
+	b, err := os.ReadFile(f.Name())
+	return strings.TrimSpace(string(b)), err
+}
+
+// firstLine is s's first line, cut to n characters.
+func firstLine(s string, n int) string {
+	s, _, _ = strings.Cut(strings.TrimSpace(s), "\n")
+	if len([]rune(s)) > n {
+		s = string([]rune(s)[:n-1]) + "…"
+	}
+	return s
 }
 
 // agentsRemove stops tasks coming from a source; a webhook's URL stops working.

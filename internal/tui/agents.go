@@ -47,6 +47,28 @@ type logMsg struct {
 }
 
 // archiveRunsMsg carries every run drover keeps, for the agents archive.
+// takeOverMsg is sent when a taken-over conversation ends.
+type takeOverMsg struct{ err error }
+
+// actionsMsg carries the actions' labels.
+type actionsMsg struct{ names map[string]string }
+
+func loadActions() tea.Msg {
+	acts, err := drover.Actions()
+	if err != nil {
+		return actionsMsg{}
+	}
+	names := map[string]string{}
+	for _, a := range acts {
+		label := a.Name
+		if a.Source != "" {
+			label = strings.TrimPrefix(label, a.Source+": ")
+		}
+		names[a.ID] = label
+	}
+	return actionsMsg{names: names}
+}
+
 type archiveRunsMsg struct {
 	runs []drover.Run
 	err  error
@@ -230,13 +252,15 @@ var agentGroups = []struct{ state, label string }{
 
 // agentRows is the agents view's selectable runs, in display order: by state,
 // then runs of standalone tasks and sources before subtask runs, which sit
-// together under their parent. Finished runs stay until they're archived.
+// together under their parent. A thread shows only its newest run. Finished
+// runs stay until they're archived.
 func (m model) agentRows() []drover.Run {
+	heads, _ := threadHeads(m.allRuns)
 	var out []drover.Run
 	for _, g := range agentGroups {
 		var solo, subs []drover.Run
-		for _, r := range m.allRuns {
-			if r.Archived || r.State() != g.state {
+		for _, r := range heads {
+			if r.State() != g.state {
 				continue
 			}
 			if bi, ok := m.itemIdx[r.Subject]; ok && bi.parent != nil {
@@ -277,7 +301,27 @@ func (m model) openAgents() (tea.Model, tea.Cmd) {
 	m.agArchive = false
 	m.agCur = 0
 	m.indexItems()
-	return m, loadRuns
+	return m, tea.Batch(loadRuns, loadActions)
+}
+
+// threadHeads is each thread's newest live run, with how many live runs each
+// thread has; runs from before threads stand alone. runs are newest first.
+func threadHeads(runs []drover.Run) ([]drover.Run, map[string]int) {
+	var out []drover.Run
+	count := map[string]int{}
+	for _, r := range runs {
+		if r.Archived {
+			continue
+		}
+		if r.Thread != "" {
+			count[r.Thread]++
+			if count[r.Thread] > 1 {
+				continue
+			}
+		}
+		out = append(out, r)
+	}
+	return out, count
 }
 
 // runTitle is the run's task's current title when it's a board item, the run's
@@ -355,6 +399,11 @@ func (m model) agentsView() string {
 	w := m.width()
 	var out []string
 	cursorLine := 0
+	heads, inThread := threadHeads(m.allRuns)
+	threadsOn := map[string]int{} // a subject's threads: more than one names each by its action
+	for _, r := range heads {
+		threadsOn[r.Subject]++
+	}
 	row := func(i int, r drover.Run, indent string) {
 		title, gone := m.runTitle(r)
 		if gone {
@@ -362,8 +411,17 @@ func (m model) agentsView() string {
 		}
 		st := r.State()
 		left := indent + stateStyle(st)(stateGlyph[st]) + " " + title
+		if name := m.actionNames[r.Action]; name != "" && threadsOn[r.Subject] > 1 && !m.agArchive {
+			left += " " + dimStyle.Render("· "+name)
+		}
 		if r.External() {
 			left += " " + warnStyle.Render("external")
+		}
+		if n := inThread[r.Thread]; n > 1 && !m.agArchive {
+			left += " " + dimStyle.Render(fmt.Sprintf("· %d runs", n))
+		}
+		if r.Events > 0 {
+			left += " " + dimStyle.Render(fmt.Sprintf("· +%d event%s", r.Events, plural(r.Events)))
 		}
 		right := dimStyle.Render(m.runWhere(r)) + "  " + dimStyle.Render(runDetail(r))
 		line := spread(w, left, right)
@@ -429,7 +487,7 @@ func (m model) agentsView() string {
 	if m.notice != "" {
 		foot = append(foot, warnStyle.Render(m.notice))
 	}
-	keys := "@ go/retry · l log · o open · enter task · C archive · c clear finished · e archive · esc back"
+	keys := "@ go/retry · l log · o open · t take over · enter task · C archive · c clear finished · e archive · esc back"
 	if m.agArchive {
 		keys = "@ run again · l log · o open · enter task · e live runs · esc back"
 	}
@@ -446,10 +504,11 @@ func (m model) agentsHeader(title string, count int) string {
 	right := dimStyle.Render(title)
 	if !m.agArchive {
 		var parts []string
+		heads, _ := threadHeads(m.allRuns)
 		for _, g := range agentGroups[:4] {
 			n := 0
-			for _, r := range m.allRuns {
-				if !r.Archived && r.State() == g.state {
+			for _, r := range heads {
+				if r.State() == g.state {
 					n++
 				}
 			}
@@ -563,6 +622,22 @@ func (m model) updateAgents(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, openLink(u)
 		}
 		m.notice = "this run has no link"
+	case "t":
+		if r.Running() {
+			m.notice = "still running: take over once it stops"
+			return m, nil
+		}
+		c := r.TakeOver()
+		for _, o := range m.allRuns { // a waiting run carries on its thread's conversation
+			if c == nil && r.Thread != "" && o.Thread == r.Thread {
+				c = o.TakeOver()
+			}
+		}
+		if c == nil {
+			m.notice = "no conversation to take over: the run hasn't started, or its worktree is gone"
+			return m, nil
+		}
+		return m, tea.ExecProcess(c, func(err error) tea.Msg { return takeOverMsg{err: err} })
 	case "C":
 		if m.agArchive {
 			return m, nil
@@ -719,6 +794,9 @@ func (m model) detailRuns(it todo.Item) string {
 			when = ago(t)
 		}
 		line := stateStyle(st)(fmt.Sprintf("%s %-8s", stateGlyph[st], st)) + " " + dimStyle.Render(fmt.Sprintf("%-9s", when)) + " " + r.Note
+		if r.Result != "" {
+			line += " " + dimStyle.Render(r.Result)
+		}
 		b.WriteString(ansi.Truncate(line, m.width(), "…") + "\n")
 	}
 	return b.String()

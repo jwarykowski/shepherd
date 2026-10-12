@@ -164,8 +164,22 @@ func openedAgents(t *testing.T) model {
 	m, _ := agentModel(t)
 	drovertest.Fake(t, agentRuns)
 	nm, cmd := m.updateList(key("R"))
-	m = nm.(model)
-	nm, _ = m.Update(cmd())
+	return runAll(nm.(model), cmd)
+}
+
+// runAll runs cmd, and every command in a batch, feeding each message back.
+func runAll(m model, cmd tea.Cmd) model {
+	if cmd == nil {
+		return m
+	}
+	msg := cmd()
+	if batch, ok := msg.(tea.BatchMsg); ok {
+		for _, c := range batch {
+			m = runAll(m, c)
+		}
+		return m
+	}
+	nm, _ := m.Update(msg)
 	return nm.(model)
 }
 
@@ -289,3 +303,53 @@ func TestAgentsArchive(t *testing.T) {
 }
 
 var _ tea.Model = model{}
+
+const threadRuns = `[
+ {"id":"rev","text":"TypeError","status":"hold","subject":"42","source":"sentry","thread":"th1","action":"a-fix","events":2,"data":{"via":"sentry"},"created":"2026-10-12T03:00:00Z"},
+ {"id":"fix","text":"TypeError","done":true,"subject":"42","source":"sentry","thread":"th1","action":"a-fix","runner":"claude","session":"sess-1","worktree":"/tmp","result":"https://github.com/acme/api/pull/51","completed":"2026-10-12T02:00:00Z","data":{"via":"sentry"}},
+ {"id":"jira","text":"TypeError","done":true,"subject":"42","source":"sentry","thread":"th2","action":"a-jira","completed":"2026-10-12T01:00:00Z","data":{"via":"sentry"}}
+]`
+
+// A thread shows as its newest run, with how many runs it has and the events
+// folded in; one subject's threads are named by their action.
+func TestAgentsViewShowsThreads(t *testing.T) {
+	m, _ := agentModel(t)
+	drovertest.Fake(t, threadRuns)
+	nm, cmd := m.updateList(key("R"))
+	m = runAll(nm.(model), cmd)
+	v := ansi.Strip(m.agentsView())
+	for _, want := range []string{"TypeError · fix", "· 2 runs", "· +2 events", "TypeError · jira"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("agents view lacks %q:\n%s", want, v)
+		}
+	}
+	if n := len(m.agentRows()); n != 2 {
+		t.Fatalf("%d rows, want one per thread", n)
+	}
+}
+
+// t takes over a run's conversation in its worktree; a run without one says so.
+func TestTakeOver(t *testing.T) {
+	m, _ := agentModel(t)
+	drovertest.Fake(t, threadRuns)
+	nm, cmd := m.updateList(key("R"))
+	m = runAll(nm.(model), cmd)
+	// the waiting run carries on its thread's conversation
+	if _, cmd = m.updateAgents(key("t")); cmd == nil {
+		t.Fatal("no take over for the thread's conversation")
+	}
+	// the jira thread has no conversation to take over
+	nm, _ = m.updateAgents(key("j"))
+	nm, cmd = nm.(model).updateAgents(key("t"))
+	if cmd != nil || !strings.Contains(nm.(model).notice, "no conversation to take over") {
+		t.Fatalf("notice %q", nm.(model).notice)
+	}
+	r := drover.Run{Runner: "claude", Session: "sess-1", Worktree: "/tmp"}
+	c := r.TakeOver()
+	if c == nil || strings.Join(c.Args, " ") != "claude --resume sess-1" || c.Dir != "/tmp" {
+		t.Fatalf("take over %+v", c)
+	}
+	if (drover.Run{Runner: "claude", Session: "s"}).TakeOver() != nil {
+		t.Fatal("took over without a worktree")
+	}
+}

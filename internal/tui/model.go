@@ -268,6 +268,7 @@ type model struct {
 	agCur         int                   // cursor in the agents view
 	agArchive     bool                  // the agents view shows the archive
 	agArchiveRuns []drover.Run          // every finished run, for the archive
+	actionNames   map[string]string     // action id → its label, to tell a subject's threads apart
 	logRun        drover.Run            // the run whose log is open
 	logTitle      string                // its task's title
 	logRows       []drover.LogRow       // its log; nil while loading

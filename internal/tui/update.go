@@ -339,6 +339,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.notice = msg.err.Error()
 		}
 		return m, loadRuns
+	case takeOverMsg:
+		m.notice = "back from the conversation"
+		if msg.err != nil {
+			m.notice = "take over: " + msg.err.Error()
+		}
+		return m, loadRuns
+	case actionsMsg:
+		m.actionNames = msg.names
+		return m, nil
 	case archiveRunsMsg:
 		m.agArchiveRuns = msg.runs
 		if msg.err != nil {
