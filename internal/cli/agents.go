@@ -7,11 +7,14 @@ package cli
 //	shepherd agents start|stop|status [--json]      the background service
 //	shepherd agents add github|webhook …            more places tasks come from (Pro)
 //	shepherd agents sources [--json] | remove <name>
+//	shepherd agents secret <name> [--scheme github]  take only signed deliveries
 //	shepherd go <ref>                               send an item to your agent
 //	shepherd pro activate <key> | status [--json]   drover Pro
 
 import (
+	"bufio"
 	"cmp"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -20,6 +23,8 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/charmbracelet/x/term"
+
 	"shepherd/internal/drover"
 	"shepherd/internal/store"
 	"shepherd/internal/todo"
@@ -27,7 +32,7 @@ import (
 
 func cmdAgents(args []string, w io.Writer) int {
 	if len(args) == 0 {
-		return usageErr(w, false, "agents needs a subcommand: setup|start|stop|status|add|sources|remove")
+		return usageErr(w, false, "agents needs a subcommand: setup|start|stop|status|add|sources|remove|secret")
 	}
 	sub, rest := args[0], args[1:]
 	switch sub {
@@ -53,8 +58,10 @@ func cmdAgents(args []string, w io.Writer) int {
 		return agentsSources(rest, w)
 	case "remove":
 		return agentsRemove(rest, w)
+	case "secret":
+		return agentsSecret(rest, os.Stdin, w)
 	default:
-		return usageErr(w, false, fmt.Sprintf("unknown agents subcommand %q (setup|start|stop|status|add|sources|remove)", sub))
+		return usageErr(w, false, fmt.Sprintf("unknown agents subcommand %q (setup|start|stop|status|add|sources|remove|secret)", sub))
 	}
 }
 
@@ -139,6 +146,10 @@ func agentsAdd(args []string, w io.Writer) int {
 		if src.Help != "" {
 			say(w, src.Help)
 		}
+		if src.Scheme != "" {
+			say(w, fmt.Sprintf("Then copy %s's signing secret and run shepherd agents secret %s, so only %s can send tasks to that URL.",
+				serviceName(src.Detail), src.Name, serviceName(src.Detail)))
+		}
 	}
 	say(w, "They wait in the agents view (R) for your go, flagged external.")
 	restartAgents(w)
@@ -193,10 +204,55 @@ func agentsSources(args []string, w io.Writer) int {
 		case "github":
 			emit(w, fmt.Sprintf("%-14s GitHub %s", s.Name, s.Detail))
 		case "webhook":
-			emit(w, fmt.Sprintf("%-14s webhook (%s)  %s", s.Name, s.Detail, s.URL))
+			signed := ""
+			if s.Signed != "" {
+				signed = "  signed"
+			}
+			emit(w, fmt.Sprintf("%-14s webhook (%s)  %s%s", s.Name, s.Detail, s.URL, signed))
 		default:
 			emit(w, fmt.Sprintf("%-14s %s", s.Name, s.Kind))
 		}
+	}
+	return 0
+}
+
+// agentsSecret makes a webhook source take only deliveries its service signed:
+// shepherd agents secret <name> [--scheme github]. The secret is read without
+// echo at a terminal, else from stdin; an empty one stops checking.
+func agentsSecret(args []string, stdin *os.File, w io.Writer) int {
+	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
+		return usageErr(w, false, "agents secret needs a webhook source's name: see shepherd agents sources")
+	}
+	name := args[0]
+	fs := flag.NewFlagSet("agents secret", flag.ContinueOnError)
+	scheme := fs.String("scheme", "", "how the service signs, for a generic webhook: github")
+	if err := fs.Parse(args[1:]); err != nil {
+		return 2
+	}
+	var secret string
+	if term.IsTerminal(stdin.Fd()) {
+		fmt.Fprintf(os.Stderr, "Paste %s's signing secret (empty to stop checking): ", name)
+		b, err := term.ReadPassword(stdin.Fd())
+		fmt.Fprintln(os.Stderr)
+		if err != nil {
+			return agentErr(err)
+		}
+		secret = string(b)
+	} else {
+		line, err := bufio.NewReader(stdin).ReadString('\n')
+		if err != nil && !errors.Is(err, io.EOF) {
+			return agentErr(err)
+		}
+		secret = line
+	}
+	secret = strings.TrimSpace(secret)
+	if code := agentErr(drover.SetSecret(name, *scheme, secret)); code != 0 {
+		return code
+	}
+	if secret == "" {
+		say(w, fmt.Sprintf("%s takes deliveries without a signature again.", name))
+	} else {
+		say(w, fmt.Sprintf("%s now takes only signed deliveries.", name))
 	}
 	return 0
 }

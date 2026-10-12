@@ -446,12 +446,15 @@ sends webhooks. Run these in the repository the agent should work in (or pass
 shepherd agents add github acme/api      # open issues labelled agent
 shepherd agents add webhook sentry       # prints a URL to paste into Sentry
 shepherd agents sources                  # list them; agents remove <name> to stop one
+shepherd agents secret sentry            # take only deliveries Sentry signed
 ```
 
 Webhook services: `sentry`, `linear` (issues labelled agent), `datadog`,
 `alertmanager` (Grafana, Prometheus), or `webhook` for anything else. The
 service posts to a private URL on shepherdcli.dev that holds each delivery
-until your agents collect it, so nothing has to reach your computer. Tasks from
+until your agents collect it, so nothing has to reach your computer. Sentry and
+Linear sign what they send: give `agents secret` their signing secret and the
+URL refuses anything else. Tasks from
 these sources wait in the agents view, flagged external, until you say go.
 
 Under the hood, Shepherd runs agents with drover, which it installs alongside.

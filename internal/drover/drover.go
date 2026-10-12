@@ -300,6 +300,8 @@ type Source struct {
 	Detail   string `json:"detail,omitempty"` // the repository, or the service a webhook is for
 	URL      string `json:"url,omitempty"`    // a webhook's URL, to paste into the service
 	Help     string `json:"help,omitempty"`   // where the URL goes, just after adding
+	Scheme   string `json:"scheme,omitempty"` // how its service signs deliveries; "" if unknown
+	Signed   string `json:"signed,omitempty"` // set once only signed deliveries are taken
 	External bool   `json:"external,omitempty"`
 }
 
@@ -332,6 +334,18 @@ func AddWebhook(name, service, dir string) (Source, error) {
 	var s Source
 	err := output(&s, nil, "source", "add", "webhook", name, "--preset", service, "--dir", dir, "--json")
 	return s, err
+}
+
+// SetSecret makes a webhook source take only deliveries signed with secret,
+// the way its service signs (scheme "" uses the service's own; github for any
+// service that signs like GitHub). An empty secret stops checking. The secret
+// goes on stdin, so it never shows in ps.
+func SetSecret(name, scheme, secret string) error {
+	args := []string{"source", "secret", name}
+	if scheme != "" {
+		args = append(args, "--scheme", scheme)
+	}
+	return run(strings.NewReader(secret+"\n"), args...)
 }
 
 // RemoveSource stops tasks coming from the source called name.

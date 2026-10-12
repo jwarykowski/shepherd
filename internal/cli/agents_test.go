@@ -2,8 +2,8 @@ package cli
 
 import (
 	"bytes"
-	"errors"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -174,7 +174,7 @@ func TestAgentsAddWebhookPrintsTheURLAndRestarts(t *testing.T) {
 	if strings.Join(got[1:], "|") != "service status --json|service stop|service start" {
 		t.Fatalf("not restarted: %q", got)
 	}
-	for _, want := range []string{"Paste this URL into Sentry", "https://hooks.test/h/s1", "In Sentry: paste it.", "agents view (R)", "restarted"} {
+	for _, want := range []string{"Paste this URL into Sentry", "https://hooks.test/h/s1", "In Sentry: paste it.", "shepherd agents secret sentry", "agents view (R)", "restarted"} {
 		if !strings.Contains(out.String(), want) {
 			t.Fatalf("output lacks %q: %q", want, out.String())
 		}
@@ -221,7 +221,7 @@ func TestAgentsSourcesAndRemove(t *testing.T) {
 	if code := cmdAgents([]string{"sources"}, &out); code != 0 {
 		t.Fatalf("exit %d", code)
 	}
-	if !strings.Contains(out.String(), "your boards") || !strings.Contains(out.String(), "webhook (sentry)  https://hooks.test/h/s1") {
+	if !strings.Contains(out.String(), "your boards") || !strings.Contains(out.String(), "webhook (sentry)  https://hooks.test/h/s1  signed") {
 		t.Fatalf("output %q", out.String())
 	}
 	out.Reset()
@@ -232,4 +232,34 @@ func TestAgentsSourcesAndRemove(t *testing.T) {
 		t.Fatalf("calls %q, output %q", got, out.String())
 	}
 	noDrover(t, out.String())
+}
+
+func TestAgentsSecretSendsTheSecretOnStdin(t *testing.T) {
+	calls := drovertest.Fake(t, `[]`)
+	in := filepath.Join(t.TempDir(), "in")
+	if err := os.WriteFile(in, []byte("  s3cret \n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.Open(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = f.Close() }()
+	var out bytes.Buffer
+	if code := agentsSecret([]string{"ci", "--scheme", "github"}, f, &out); code != 0 {
+		t.Fatalf("exit %d", code)
+	}
+	if got := calls()[0]; got != "source secret ci --scheme github" {
+		t.Fatalf("call = %q: the secret must not be on argv", got)
+	}
+	if drovertest.Stdin() != "s3cret\n" {
+		t.Fatalf("stdin = %q", drovertest.Stdin())
+	}
+	if !strings.Contains(out.String(), "only signed deliveries") {
+		t.Fatalf("output %q", out.String())
+	}
+	noDrover(t, out.String())
+	if code := cmdAgents([]string{"secret"}, &bytes.Buffer{}); code != 2 {
+		t.Fatalf("no name: exit %d", code)
+	}
 }

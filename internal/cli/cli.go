@@ -57,6 +57,8 @@ Agents (see shepherdcli.dev/docs):
   agents add webhook <service> [--dir path]   a URL for webhook|sentry|linear|
                                datadog|alertmanager to send tasks to (Pro)
   agents sources [--json] | remove <name>     where tasks come from
+  agents secret <name>         take only deliveries the service signed
+                               (Sentry, Linear; --scheme github for others)
   go <ref> [--json]            send an item to your coding agent (releases a
                                run that's waiting, or starts one now)
   pro activate <key>           activate Shepherd Pro
