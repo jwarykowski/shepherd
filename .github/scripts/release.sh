@@ -69,7 +69,7 @@ sed -i.bak \
 	"$file"
 rm "$file.bak"
 git switch -q -c "$formula-$version"
-git -c user.name="Jonathan Warykowski" -c user.email="jonathan.chrisp@gmail.com" \
+git -c user.name="Jonathan Warykowski" -c user.email="jonathan@warykowski.io" \
 	commit -q --no-gpg-sign -am "feat: $formula $version"
 git push -q "https://x-access-token:$TAP_TOKEN@github.com/$tap.git" "$formula-$version"
 GH_TOKEN=$TAP_TOKEN gh pr create -R "$tap" --base main --head "$formula-$version" \
