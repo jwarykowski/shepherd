@@ -58,7 +58,7 @@ func agentsSetup(args []string, w io.Writer) int {
 	case err != nil && strings.Contains(errBuf.String(), "already exists"):
 		say(w, "drover is already set up; keeping its config")
 	case err != nil:
-		os.Stderr.Write(errBuf.Bytes())
+		_, _ = os.Stderr.Write(errBuf.Bytes())
 		return 1
 	}
 	if err := drover.Passthrough(w, os.Stderr, "service", "install"); err != nil {
