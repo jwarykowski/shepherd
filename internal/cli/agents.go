@@ -1,7 +1,7 @@
 package cli
 
-// agents.go: the agent commands. shepherd is the one front door; drover does
-// the work behind it (see internal/drover).
+// agents.go: the agent commands. Everything here talks about agents; drover,
+// which runs them, stays behind internal/drover.
 //
 //	shepherd agents setup [--runner claude|codex]   write drover's config, start it
 //	shepherd agents start|stop|status [--json]      the background service
@@ -9,12 +9,10 @@ package cli
 //	shepherd pro activate <key> | status [--json]   drover Pro
 
 import (
-	"bytes"
 	"flag"
 	"fmt"
 	"io"
 	"os"
-	"strings"
 
 	"shepherd/internal/drover"
 	"shepherd/internal/store"
@@ -29,42 +27,73 @@ func cmdAgents(args []string, w io.Writer) int {
 	switch sub {
 	case "setup":
 		return agentsSetup(rest, w)
-	case "start", "stop":
-		return droverCode(drover.Passthrough(w, os.Stderr, "service", sub))
+	case "start":
+		if code := agentErr(drover.Start()); code != 0 {
+			return code
+		}
+		say(w, "Agents are running in the background.")
+		return 0
+	case "stop":
+		if code := agentErr(drover.Stop()); code != 0 {
+			return code
+		}
+		say(w, "Agents stopped. Nothing runs until shepherd agents start.")
+		return 0
 	case "status":
-		return droverCode(drover.Passthrough(w, os.Stderr, append([]string{"service", "status"}, rest...)...))
+		return agentsStatus(rest, w)
 	default:
 		return usageErr(w, false, fmt.Sprintf("unknown agents subcommand %q (setup|start|stop|status)", sub))
 	}
 }
 
-// agentsSetup writes a starter drover config for every board (unless one
-// exists) and starts drover in the background.
+// agentsSetup writes the agents' starter config for every board (keeping one
+// that exists) and starts them in the background.
 func agentsSetup(args []string, w io.Writer) int {
 	fs := flag.NewFlagSet("agents setup", flag.ContinueOnError)
 	runner := fs.String("runner", "", "coding agent: claude or codex; default the first one installed")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	initArgs := []string{"init"}
-	if *runner != "" {
-		initArgs = append(initArgs, "--runner", *runner)
+	created, agent, err := drover.Setup(*runner)
+	if code := agentErr(err); code != 0 {
+		return code
 	}
-	var errBuf bytes.Buffer
-	switch err := drover.Passthrough(w, &errBuf, initArgs...); {
-	case err == drover.ErrMissing:
-		fmt.Fprintln(os.Stderr, "shepherd:", err)
-		return 1
-	case err != nil && strings.Contains(errBuf.String(), "already exists"):
-		say(w, "drover is already set up; keeping its config")
-	case err != nil:
-		_, _ = os.Stderr.Write(errBuf.Bytes())
-		return 1
+	switch {
+	case !created:
+		say(w, "Agents are already set up; keeping your settings.")
+	case agent != "":
+		say(w, fmt.Sprintf("Set up agents for every board, using %s.", agent))
+	default:
+		say(w, "Set up agents for every board.")
 	}
-	if err := drover.Passthrough(w, os.Stderr, "service", "install"); err != nil {
-		return droverCode(err)
+	if code := agentErr(drover.StartBackground()); code != 0 {
+		return code
 	}
+	say(w, "Agents are running in the background.")
+	say(w, "Each board's tasks run in its working directory: shepherd board dir <board> <path>.")
 	say(w, "Ready. Add a task, then press @ on it in the board (or run shepherd go <ref>).")
+	return 0
+}
+
+// agentsStatus says whether agents are set up and running.
+func agentsStatus(args []string, w io.Writer) int {
+	asJSON, _ := extractFlag(args, "--json")
+	installed, err := drover.Service()
+	if code := agentErr(err); code != 0 {
+		return code
+	}
+	running := drover.Watching()
+	if asJSON {
+		return emitJSON(w, map[string]bool{"set_up": installed || running, "running": running})
+	}
+	switch {
+	case running:
+		emit(w, "agents: running")
+	case installed:
+		emit(w, "agents: stopped (shepherd agents start)")
+	default:
+		emit(w, "agents: not set up (shepherd agents setup)")
+	}
 	return 0
 }
 
@@ -80,9 +109,9 @@ func cmdGo(args []string, board string, w io.Writer) int {
 	if !ok {
 		return refErr(w, asJSON, args[0], len(items))
 	}
-	it := items[p-1]
+	it, parent := items[p-1], (*todo.Item)(nil)
 	if s > 0 {
-		it = items[p-1].Subs[s-1]
+		it, parent = items[p-1].Subs[s-1], &items[p-1]
 	}
 	if it.Done {
 		return usageErr(w, asJSON, fmt.Sprintf("item %s is already done", args[0]))
@@ -93,16 +122,13 @@ func cmdGo(args []string, board string, w io.Writer) int {
 		}
 		items = store.Load(store.TodoPathFor(board))
 		if it = items[p-1]; s > 0 {
-			it = items[p-1].Subs[s-1]
+			it, parent = items[p-1].Subs[s-1], &items[p-1]
 		}
 	}
-	runs, err := drover.Send(drover.Task{Item: it, Board: board})
-	if err != nil && strings.Contains(err.Error(), "no action") {
-		err = fmt.Errorf("%w; shepherd agents setup adds one", err)
-	}
+	runs, err := drover.Send(drover.Task{Item: it, Parent: parent, Board: board})
 	if err != nil {
 		if asJSON {
-			return jsonErr(w, 1, "drover", err.Error())
+			return jsonErr(w, 1, "agents", err.Error())
 		}
 		fmt.Fprintln(os.Stderr, "shepherd:", err)
 		return 1
@@ -129,27 +155,55 @@ func ensureIDs(board string, w io.Writer, asJSON bool) int {
 	})
 }
 
-// cmdPro wraps drover's licence: shepherd pro activate <key> | status [--json].
+// cmdPro activates and reports Shepherd Pro: shepherd pro activate <key> |
+// status [--json].
 func cmdPro(args []string, w io.Writer) int {
 	if len(args) == 0 {
 		return usageErr(w, false, "pro needs a subcommand: activate <key> | status")
 	}
 	switch args[0] {
-	case "activate", "status":
-		return droverCode(drover.Passthrough(w, os.Stderr, append([]string{"license"}, args...)...))
+	case "activate":
+		if len(args) != 2 {
+			return usageErr(w, false, "pro activate needs your licence key: shepherd pro activate <key>")
+		}
+		if code := agentErr(drover.Activate(args[1])); code != 0 {
+			return code
+		}
+		l, err := drover.CurrentLicence()
+		if code := agentErr(err); code != 0 {
+			return code
+		}
+		say(w, fmt.Sprintf("Shepherd Pro is on for %s, until %s.", l.Email, l.Expires.Format("2 January 2006")))
+		return 0
+	case "status":
+		asJSON, _ := extractFlag(args[1:], "--json")
+		l, err := drover.CurrentLicence()
+		if code := agentErr(err); code != 0 {
+			return code
+		}
+		if asJSON {
+			return emitJSON(w, l)
+		}
+		switch {
+		case l.Pro() && l.InGrace:
+			emit(w, fmt.Sprintf("Shepherd Pro, for %s: expired %s; renew within 14 days of that to keep it", l.Email, l.Expires.Format("2 January 2006")))
+		case l.Pro():
+			emit(w, fmt.Sprintf("Shepherd Pro, for %s, until %s", l.Email, l.Expires.Format("2 January 2006")))
+		default:
+			emit(w, "Shepherd Free: tasks come from your boards, and every run waits for your go.")
+			emit(w, "Pro adds GitHub, Sentry and webhook tasks, and runs trusted jobs without asking: shepherdcli.dev/pro")
+		}
+		return 0
 	default:
 		return usageErr(w, false, fmt.Sprintf("unknown pro subcommand %q (activate|status)", args[0]))
 	}
 }
 
-// droverCode maps a passed-through drover command's result to an exit code:
-// drover has already printed its own error.
-func droverCode(err error) int {
+// agentErr reports an agents failure as a runtime error (exit 1).
+func agentErr(err error) int {
 	if err == nil {
 		return 0
 	}
-	if err == drover.ErrMissing {
-		fmt.Fprintln(os.Stderr, "shepherd:", err)
-	}
+	fmt.Fprintln(os.Stderr, "shepherd:", err)
 	return 1
 }

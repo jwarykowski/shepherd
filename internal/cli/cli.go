@@ -49,11 +49,11 @@ Items (ref = an item's stable id from 'list --json', or its 1-based index n;
           due:<date>  defer:<date>  link:<url>  status:<name>
           note:<text> (takes the rest of the line)
 
-Agents (powered by drover; see shepherdcli.dev/docs):
-  agents setup [--runner claude|codex]  set up drover for every board and start it
-  agents start|stop|status [--json]     drover's background service
+Agents (see shepherdcli.dev/docs):
+  agents setup [--runner claude|codex]  set up agents for every board and start them
+  agents start|stop|status [--json]     agents running in the background
   go <ref> [--json]            send an item to your coding agent (releases a
-                               run drover is holding, or starts one now)
+                               run that's waiting, or starts one now)
   pro activate <key>           activate Shepherd Pro
   pro status [--json]          show the edition
 

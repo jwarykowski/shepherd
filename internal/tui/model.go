@@ -177,6 +177,8 @@ const (
 	modeBoardDetail // board detail: name, dir, source + archive paths, counts
 	modeBoardRename
 	modeConfirmDelete
+	modeAgents   // every drover run (R), or its archive
+	modeAgentLog // one run's log
 )
 
 // density controls spacing: compact (tight, default) or comfort (roomier).
@@ -258,7 +260,21 @@ type model struct {
 	projArchived  bool                  // picker is showing archived boards (unarchive-only)
 	projNotice    string                // transient picker error (e.g. invalid/duplicate board name)
 	notice        string                // transient list message (e.g. how @ went); cleared on the next key
-	runs          map[string]drover.Run // drover's live runs by item id, for the waiting/running marks
+	runs          map[string]drover.Run // each item's most telling run, for the row marks
+	allRuns       []drover.Run          // drover's runs, live and recent, newest first
+	watching      bool                  // drover is running (service or drover watch)
+	droverOn      bool                  // drover is installed
+	itemIdx       map[string]boardItem  // every item on every board by id, for the agents view
+	agCur         int                   // cursor in the agents view
+	agArchive     bool                  // the agents view shows the archive
+	agArchiveRuns []drover.Run          // every finished run, for the archive
+	logRun        drover.Run            // the run whose log is open
+	logTitle      string                // its task's title
+	logRows       []drover.LogRow       // its log; nil while loading
+	logErr        string                // why the log couldn't be read
+	logScroll     int                   // scroll offset in the log
+	logBack       mode                  // where esc returns from the log
+	detailBack    mode                  // where esc returns from the detail view (the list, or the agents view)
 	projPending   string                // board whose working dir is being set (modeBoardDir)
 	projDirEdit   bool                  // dir editor opened from the detail view (empty clears, return to detail); false = creation flow (empty skips)
 	fieldEdit     bool                  // a field editor was opened from the item detail view, so save/cancel returns there instead of the list

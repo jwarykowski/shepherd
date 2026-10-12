@@ -11,6 +11,7 @@ import (
 	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
 
+	"shepherd/internal/drover"
 	"shepherd/internal/store"
 	"shepherd/internal/todo"
 )
@@ -20,7 +21,7 @@ import (
 // so clipboard.WriteAll's wait never returns there.
 var copyText = clipboard.WriteAll
 
-func (m model) Init() tea.Cmd { return tea.Batch(tick(), loadRuns) }
+func (m model) Init() tea.Cmd { return tea.Batch(tick(), firstRuns) }
 
 // beforeMutate pushes the current state onto the undo stack, clears the redo
 // stack (a fresh edit invalidates the redo future), and marks the model dirty.
@@ -322,8 +323,28 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.markSaved()
 		return m, nil
 	case runsMsg:
-		m.runs = msg
-		return m, pollRuns()
+		return m.gotRuns(msg)
+	case logMsg:
+		m.logRows = msg.rows
+		if m.logRows == nil {
+			m.logRows = []drover.LogRow{}
+		}
+		if msg.err != nil {
+			m.logErr = msg.err.Error()
+		}
+		return m, nil
+	case archivedMsg:
+		m.notice = msg.notice
+		if msg.err != nil {
+			m.notice = msg.err.Error()
+		}
+		return m, loadRuns
+	case archiveRunsMsg:
+		m.agArchiveRuns = msg.runs
+		if msg.err != nil {
+			m.notice = msg.err.Error()
+		}
+		return m, nil
 	case sentMsg:
 		return m.sent(msg)
 	case tickMsg:
@@ -374,6 +395,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			res, cmd = m.updateHelp(msg)
 		case modeArchive:
 			res, cmd = m.updateArchive(msg)
+		case modeAgents:
+			res, cmd = m.updateAgents(msg)
+		case modeAgentLog:
+			res, cmd = m.updateLog(msg)
 		case modeBoards:
 			res, cmd = m.updateBoards(msg)
 		case modeBoardDetail:
@@ -436,7 +461,7 @@ func (m model) updateGlobal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.clamp()
 	case "d":
 		if m.sel() >= 0 {
-			m.mode = modeDetail
+			m.mode, m.detailBack = modeDetail, modeList
 		}
 	case "o":
 		if m.sel() >= 0 {
@@ -491,6 +516,8 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "@":
 		return m.sendToAgent()
+	case "R":
+		return m.openAgents()
 	case "q":
 		return m.quit()
 	case "w":
@@ -546,7 +573,7 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "d":
 		if idx >= 0 {
-			m.mode = modeDetail
+			m.mode, m.detailBack = modeDetail, modeList
 		}
 	case "S":
 		if idx >= 0 {
@@ -1117,6 +1144,16 @@ func (m model) updateDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.quit()
 	case "esc":
 		m.mode = modeList
+		if m.detailBack == modeAgents {
+			m.mode, m.detailBack = modeAgents, modeList
+		}
+	case "@":
+		return m.sendToAgent()
+	case "r":
+		if runs := m.itemRuns(p.ID); len(runs) > 0 {
+			return m.openLog(runs[0], modeDetail)
+		}
+		m.notice = "no runs yet: @ sends it to your agent"
 	case "n":
 		if !m.global {
 			m.mode = modeNote
