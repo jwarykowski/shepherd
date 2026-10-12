@@ -333,6 +333,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.logErr = msg.err.Error()
 		}
 		return m, nil
+	case archivedMsg:
+		m.notice = msg.notice
+		if msg.err != nil {
+			m.notice = msg.err.Error()
+		}
+		return m, loadRuns
 	case archiveRunsMsg:
 		m.agArchiveRuns = msg.runs
 		if msg.err != nil {

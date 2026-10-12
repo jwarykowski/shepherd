@@ -408,17 +408,16 @@ All three point at the same `shepherd` CLI — no per-tool server, no MCP.
 
 ## send tasks to your agent
 
-Shepherd hands tasks to a coding agent (Claude Code or Codex) through
-[drover](https://shepherdcli.dev/pro/), which runs the agent and keeps its log.
-Every run waits for you to say go.
+Shepherd hands tasks to your coding agent (Claude Code or Codex), keeps its log,
+and waits for you to say go on every run.
 
 ```sh
-shepherd agents setup     # finds claude or codex, sets drover up for every board, starts it
+shepherd agents setup     # finds claude or codex, sets up every board, starts in the background
 shepherd board dir web ~/src/web   # where the agent works for the web board
 ```
 
-Then add a task and press `@` on it (or `shepherd go <ref>`). A task drover is
-holding shows **waiting**, a released one **queued** until an agent is free, then
+Then add a task and press `@` on it (or `shepherd go <ref>`). A task with a run
+ready shows **waiting**, a released one **queued** until an agent is free, then
 **running**; if the agent couldn't finish it shows **failed**, and once a run is
 done the task shows **review** until you tick it. `@` on a waiting task releases
 it, on a failed one retries it, and on any other open task starts a run now. A
@@ -428,19 +427,20 @@ works in its own git worktree and branch, so your checkout is never touched.
 `R` opens the agents view: every run on every board and source (GitHub, Sentry,
 webhooks with Pro), grouped by state, subtasks under their parent. `@` says go
 or retries, `l` shows the run's log, `o` opens its issue or PR, `enter` jumps to
-its task, `C` archives a run you don't want, and `e` shows the archive. The
-detail view (`d`) lists a task's runs, and `r` opens the latest one's log. If
-drover isn't running, the board says so.
+its task, `C` archives a run, `c` clears every finished run into the archive,
+and `e` shows the archive. The detail view (`d`) lists a task's runs, and `r`
+opens the latest one's log. If agents aren't running, the board says so.
 
 ```sh
-shepherd agents status    # is drover running in the background?
+shepherd agents status    # running in the background?
 shepherd agents stop | start
-shepherd pro activate <key>   # Shepherd Pro: GitHub, Sentry and webhook sources, auto-release
+shepherd pro activate <key>   # Shepherd Pro: GitHub, Sentry and webhook tasks, auto-release
 shepherd pro status
 ```
 
-drover's own config (`~/.config/drover/drover.toml`) is where you add GitHub or
-Sentry sources and change what the agent is told to do.
+Under the hood, Shepherd runs agents with drover, which it installs alongside.
+Its config (`~/.config/drover/drover.toml`) is where you add GitHub or Sentry
+sources and change what the agent is told to do.
 
 ## configuration
 

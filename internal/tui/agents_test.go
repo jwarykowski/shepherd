@@ -107,7 +107,7 @@ func TestAtWithoutDrover(t *testing.T) {
 	m, _ := agentModel(t)
 	t.Setenv("PATH", t.TempDir())
 	nm, cmd := m.updateList(key("@"))
-	if cmd != nil || !strings.Contains(nm.(model).notice, "isn't installed") {
+	if cmd != nil || !strings.Contains(nm.(model).notice, "aren't installed") {
 		t.Fatalf("notice %q", nm.(model).notice)
 	}
 }
@@ -158,7 +158,8 @@ const agentRuns = `[
  {"id":"r3","text":"backfill old orders","status":"failed","subject":"s3","source":"cli","note":"timeout on orders_2019"},
  {"id":"r1","text":"ship it","status":"hold","subject":"i1","source":"cli"},
  {"id":"gone","text":"deleted task","status":"hold","subject":"zz","source":"cli"},
- {"id":"old","text":"ship it","done":true,"subject":"i1","source":"cli","completed":"2026-01-01T00:00:00Z"}
+ {"id":"fin","text":"move checkout to Postgres","done":true,"subject":"p1","source":"cli","note":"split it into subtasks"},
+ {"id":"old","text":"ship it","done":true,"archived":true,"subject":"i1","source":"cli","completed":"2026-01-01T00:00:00Z"}
 ]`
 
 func openedAgents(t *testing.T) model {
@@ -186,7 +187,10 @@ func TestAgentsView(t *testing.T) {
 		}
 	}
 	if strings.Count(v, "ship it") != 1 {
-		t.Errorf("a run finished months ago belongs in the archive, not done today:\n%s", v)
+		t.Errorf("an archived run belongs in the archive view only:\n%s", v)
+	}
+	if !strings.Contains(v, "split it into subtasks") {
+		t.Errorf("a finished run stays until it's archived:\n%s", v)
 	}
 	order := []string{"waiting", "failed", "running"}
 	last := -1
@@ -215,8 +219,20 @@ func TestAgentsKeys(t *testing.T) {
 	// C archives a run that hasn't run
 	m.agCur = at("gone")
 	nm, cmd := m.updateAgents(key("C"))
-	if cmd == nil || cmd().(sentMsg).err != nil {
-		t.Fatal("C should archive the run through drover")
+	if cmd == nil || cmd().(archivedMsg).err != nil {
+		t.Fatal("C should archive the run")
+	}
+	// C archives a finished one too, and c clears every finished run
+	m.agCur = at("fin")
+	if _, cmd = m.updateAgents(key("C")); cmd == nil {
+		t.Fatal("C should archive a finished run")
+	} else if am := cmd().(archivedMsg); am.err != nil || !strings.Contains(am.notice, "archived") {
+		t.Fatalf("archive: %+v", am)
+	}
+	if _, cmd = m.updateAgents(key("c")); cmd == nil {
+		t.Fatal("c should clear finished runs")
+	} else if am := cmd().(archivedMsg); !strings.Contains(am.notice, "cleared 1 finished run") {
+		t.Fatalf("clear: %+v", am)
 	}
 	// C refuses a running one
 	m.agCur = at("r2")

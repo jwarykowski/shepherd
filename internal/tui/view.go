@@ -1009,7 +1009,7 @@ func (m model) helpBody() []string {
 	line("L — set link · o — open the link in the browser")
 	line("y — copy the selected item's title to the clipboard")
 	line("@ — send the selected item or subtask to your coding agent (a subtask goes with its parent as context). Rows show where their run stands: waiting (press @ to say go), queued (waiting for a free agent), running, failed (@ retries), or review (a run finished; check its work). Set up with shepherd agents setup")
-	line("R — the agents view: every run on every board and source, grouped by state. @ go/retry · l the run's log · o open its link · enter its task · C archive a run that hasn't run · e the archive · esc back")
+	line("R — the agents view: every run on every board and source, grouped by state. @ go/retry · l the run's log · o open its link · enter its task · C archive a run · c clear every finished run into the archive · e the archive · esc back")
 	line("in the detail view, the item's runs are listed under its note; r opens the latest run's log")
 	line("space — toggle done · tab — cycle status · x — delete")
 	line("rows carry two flush-right values: subtask progress (else the due/defer label), then whichever grouping axis the headers don't already name — priority in the category and tag views, category in the priority view. The box shape is the status (○ open, ◐ named status, ✓ done)")

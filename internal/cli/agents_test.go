@@ -70,8 +70,16 @@ func TestGoWithoutDrover(t *testing.T) {
 	board(t)
 	t.Setenv("PATH", t.TempDir())
 	var out bytes.Buffer
-	if code := cmdGo([]string{"1", "--json"}, "", &out); code != 1 || !strings.Contains(out.String(), "isn't installed") {
+	if code := cmdGo([]string{"1", "--json"}, "", &out); code != 1 || !strings.Contains(out.String(), "aren't installed") {
 		t.Fatalf("exit %d, out %q", code, out.String())
+	}
+}
+
+// noDrover fails if s names drover: people only ever meet Shepherd.
+func noDrover(t *testing.T, s string) {
+	t.Helper()
+	if strings.Contains(strings.ToLower(s), "drover") {
+		t.Errorf("output names drover: %q", s)
 	}
 }
 
@@ -84,9 +92,10 @@ func TestAgentsSetupInitsThenStartsTheService(t *testing.T) {
 	if got := strings.Join(calls(), "|"); got != "init --runner codex|service install" {
 		t.Fatalf("calls = %q", got)
 	}
-	if !strings.Contains(out.String(), "press @") {
+	if !strings.Contains(out.String(), "using codex") || !strings.Contains(out.String(), "press @") {
 		t.Fatalf("output %q", out.String())
 	}
+	noDrover(t, out.String())
 }
 
 func TestAgentsSetupKeepsAnExistingConfig(t *testing.T) {
@@ -102,23 +111,49 @@ func TestAgentsSetupKeepsAnExistingConfig(t *testing.T) {
 	if !strings.Contains(out.String(), "already set up") {
 		t.Fatalf("output %q", out.String())
 	}
+	noDrover(t, out.String())
 }
 
-func TestAgentsAndProPassThrough(t *testing.T) {
+func TestAgentsStatusStartStop(t *testing.T) {
 	calls := drovertest.Fake(t, `[]`)
-	for _, args := range [][]string{{"status", "--json"}, {"stop"}, {"start"}} {
-		if code := cmdAgents(args, &bytes.Buffer{}); code != 0 {
+	var out bytes.Buffer
+	for _, args := range [][]string{{"status"}, {"stop"}, {"start"}} {
+		if code := cmdAgents(args, &out); code != 0 {
 			t.Fatalf("agents %v: exit %d", args, code)
 		}
 	}
-	if code := cmdPro([]string{"activate", "KEY"}, &bytes.Buffer{}); code != 0 {
-		t.Fatalf("pro activate: exit %d", code)
+	// the fake says it's watching
+	if !strings.Contains(out.String(), "agents: running") || !strings.Contains(out.String(), "Agents stopped") {
+		t.Fatalf("output %q", out.String())
 	}
-	want := "service status --json|service stop|service start|license activate KEY"
+	noDrover(t, out.String())
+	want := "service status --json|status --json|service stop|service start"
 	if got := strings.Join(calls(), "|"); got != want {
 		t.Fatalf("calls = %q, want %q", got, want)
 	}
 	if code := cmdAgents([]string{"bogus"}, &bytes.Buffer{}); code != 2 {
 		t.Fatalf("unknown subcommand: exit %d", code)
+	}
+}
+
+func TestPro(t *testing.T) {
+	calls := drovertest.Fake(t, `[]`)
+	var out bytes.Buffer
+	if code := cmdPro([]string{"activate", "KEY"}, &out); code != 0 {
+		t.Fatalf("pro activate: exit %d", code)
+	}
+	if !strings.Contains(out.String(), "Shepherd Pro is on for jo@example.com") {
+		t.Fatalf("output %q", out.String())
+	}
+	if got := calls(); got[0] != "license activate" {
+		t.Fatalf("the key goes on stdin, not argv: %q", got)
+	}
+	out.Reset()
+	if code := cmdPro([]string{"status"}, &out); code != 0 || !strings.Contains(out.String(), "Shepherd Pro, for jo@example.com") {
+		t.Fatalf("status: %d %q", code, out.String())
+	}
+	noDrover(t, out.String())
+	if code := cmdPro([]string{"activate", "BAD"}, &bytes.Buffer{}); code != 1 {
+		t.Fatalf("a bad key should fail, got %d", code)
 	}
 }

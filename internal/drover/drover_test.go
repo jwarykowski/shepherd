@@ -112,3 +112,20 @@ func TestMissingDrover(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+// drover's errors reach people in Shepherd's words.
+func TestErrorsDontNameDrover(t *testing.T) {
+	for in, want := range map[string]string{
+		"no action in /x/drover.toml runs on shepherd.added":                           ErrNoAction.Error(),
+		"drover is already watching (the background service, or another drover watch)": "agents are already running",
+		"run x is still running; archive it when it finishes":                          "run x is still running; archive it when it finishes",
+		"no coding agent found: install claude or codex, or pass --runner":             "no coding agent found: install Claude Code or Codex, or pass --runner",
+	} {
+		if got := translate(in).Error(); got != want {
+			t.Errorf("%q → %q, want %q", in, got, want)
+		}
+	}
+	if got := translate("drover's config is broken").Error(); got != "the agents' config is broken" {
+		t.Errorf("got %q", got)
+	}
+}

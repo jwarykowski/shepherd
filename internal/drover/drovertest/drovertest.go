@@ -25,7 +25,19 @@ init)
 		echo "drover: /x/drover.toml already exists; edit it" >&2
 		exit 1
 	fi
-	echo "wrote /x/drover.toml" ;;
+	echo "wrote /x/drover.toml: Shepherd boards → ${3:-claude}" ;;
+service)
+	case "$2" in
+	status) printf '{"installed":%s,"running":false}\n' "${DROVER_FAKE_INSTALLED:-true}" ;;
+	*) echo "drover $*" ;;
+	esac ;;
+license)
+	case "$2" in
+	status) printf '{"tier":"pro","email":"jo@example.com","expires":"2027-10-12T00:00:00Z"}\n' ;;
+	activate)
+		read -r key
+		if [ "$key" = "BAD" ]; then echo "drover: not activated: licence key signature does not verify" >&2; exit 1; fi ;;
+	esac ;;
 *) echo "drover $*" ;;
 esac
 `

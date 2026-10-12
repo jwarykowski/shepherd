@@ -121,7 +121,7 @@ func (m model) droverDown() string {
 	}
 	for _, r := range m.allRuns {
 		if r.Waiting() || r.Active() {
-			return "drover isn't running, so nothing will run: shepherd agents start"
+			return "agents aren't running, so nothing will start: shepherd agents start"
 		}
 	}
 	return ""
@@ -225,22 +225,18 @@ func (m *model) indexItems() {
 
 // agentGroups is the agents view's order: what needs you first.
 var agentGroups = []struct{ state, label string }{
-	{"waiting", "waiting"}, {"failed", "failed"}, {"running", "running"}, {"queued", "queued"}, {"done", "done today"},
+	{"waiting", "waiting"}, {"failed", "failed"}, {"running", "running"}, {"queued", "queued"}, {"done", "done"},
 }
 
 // agentRows is the agents view's selectable runs, in display order: by state,
 // then runs of standalone tasks and sources before subtask runs, which sit
-// together under their parent. Finished runs show for the day they finished.
+// together under their parent. Finished runs stay until they're archived.
 func (m model) agentRows() []drover.Run {
-	today := time.Now().Format("2006-01-02")
 	var out []drover.Run
 	for _, g := range agentGroups {
 		var solo, subs []drover.Run
 		for _, r := range m.allRuns {
-			if r.State() != g.state {
-				continue
-			}
-			if g.state == "done" && r.When().Local().Format("2006-01-02") != today {
+			if r.Archived || r.State() != g.state {
 				continue
 			}
 			if bi, ok := m.itemIdx[r.Subject]; ok && bi.parent != nil {
@@ -433,7 +429,7 @@ func (m model) agentsView() string {
 	if m.notice != "" {
 		foot = append(foot, warnStyle.Render(m.notice))
 	}
-	keys := "@ go/retry · l log · o open · enter task · C archive · e archive view · esc back"
+	keys := "@ go/retry · l log · o open · enter task · C archive · c clear finished · e archive · esc back"
 	if m.agArchive {
 		keys = "@ run again · l log · o open · enter task · e live runs · esc back"
 	}
@@ -453,7 +449,7 @@ func (m model) agentsHeader(title string, count int) string {
 		for _, g := range agentGroups[:4] {
 			n := 0
 			for _, r := range m.allRuns {
-				if r.State() == g.state {
+				if !r.Archived && r.State() == g.state {
 					n++
 				}
 			}
@@ -512,16 +508,29 @@ func (m model) updateAgents(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.agArchive {
 			return m, func() tea.Msg {
 				runs, err := drover.AllRuns()
-				var done []drover.Run
+				var archived []drover.Run
 				for _, r := range runs {
-					if r.Done {
-						done = append(done, r)
+					if r.Archived {
+						archived = append(archived, r)
 					}
 				}
-				return archiveRunsMsg{runs: done, err: err}
+				return archiveRunsMsg{runs: archived, err: err}
 			}
 		}
 		return m, nil
+	}
+	if msg.String() == "c" && !m.agArchive {
+		var ids []string
+		for _, r := range m.agentRows() {
+			if r.Done {
+				ids = append(ids, r.ID)
+			}
+		}
+		if len(ids) == 0 {
+			m.notice = "no finished runs to clear"
+			return m, nil
+		}
+		return m, archiveCmd(fmt.Sprintf("cleared %d finished run%s into the archive", len(ids), plural(len(ids))), ids...)
 	}
 	r, ok := m.selectedRun()
 	if !ok {
@@ -562,12 +571,8 @@ func (m model) updateAgents(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.notice = "still running: archive it once it finishes"
 			return m, nil
 		}
-		if r.Done {
-			m.notice = "finished runs are archived already; they leave this list tomorrow"
-			return m, nil
-		}
-		m.notice = "archived: " + r.Text
-		return m, func() tea.Msg { return sentMsg{text: r.Text, err: drover.Archive(r.ID)} }
+		title, _ := m.runTitle(r)
+		return m, archiveCmd("archived: "+title, r.ID)
 	}
 	return m, nil
 }
@@ -717,4 +722,22 @@ func (m model) detailRuns(it todo.Item) string {
 		b.WriteString(ansi.Truncate(line, m.width(), "…") + "\n")
 	}
 	return b.String()
+}
+
+// archivedMsg reports an archive from the agents view.
+type archivedMsg struct {
+	notice string
+	err    error
+}
+
+// archiveCmd archives runs in the background, then refreshes the view.
+func archiveCmd(notice string, ids ...string) tea.Cmd {
+	return func() tea.Msg { return archivedMsg{notice: notice, err: drover.Archive(ids...)} }
+}
+
+func plural(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
 }

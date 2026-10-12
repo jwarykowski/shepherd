@@ -22,8 +22,14 @@ import (
 	"shepherd/internal/todo"
 )
 
+// People only ever meet Shepherd: every message from this package talks about
+// "agents", never about drover, which runs them behind the scenes.
+
 // ErrMissing is returned when drover isn't on the PATH.
-var ErrMissing = errors.New("drover isn't installed: brew install jwarykowski/tap/drover, then shepherd agents setup")
+var ErrMissing = errors.New("agents aren't installed: brew install jwarykowski/tap/shepherd, then shepherd agents setup")
+
+// ErrNoAction is returned when nothing is set up to run on a board's tasks.
+var ErrNoAction = errors.New("agents aren't set up for your boards yet: run shepherd agents setup")
 
 // Swappable in tests: where drover is found and how it's run.
 var (
@@ -56,6 +62,7 @@ type Run struct {
 	Started   string            `json:"started"`
 	Completed string            `json:"completed"`
 	Data      map[string]string `json:"data"`
+	Archived  bool              `json:"archived"` // off the live list
 }
 
 // Waiting is a run held for a person to say go.
@@ -246,25 +253,87 @@ func (t Task) data() map[string]string {
 	return d
 }
 
-// Passthrough runs drover with its output on w (and errors on errw), for the
-// commands whose output is for a person: init, service, license.
-func Passthrough(w, errw io.Writer, args ...string) error {
-	if !Installed() {
-		return ErrMissing
+// Setup writes the agents' starter config for every board, using runner
+// (claude or codex; "" picks the first installed). created is false when a
+// config already exists, which is kept. agent names the coding agent chosen.
+func Setup(runner string) (created bool, agent string, err error) {
+	args := []string{"init"}
+	if runner != "" {
+		args = append(args, "--runner", runner)
 	}
-	c := Command(args...)
-	c.Stdout, c.Stderr = w, errw
-	return c.Run()
+	out, err := capture(nil, args...)
+	if err != nil {
+		if strings.Contains(err.Error(), "already exists") {
+			return false, "", nil
+		}
+		return false, "", err
+	}
+	if _, after, ok := strings.Cut(out, "→ "); ok {
+		agent = strings.Fields(after)[0]
+	}
+	return true, agent, nil
 }
 
-// run runs drover for its effect, discarding stdout.
-func run(stdin io.Reader, args ...string) error { return output(nil, stdin, args...) }
+// StartBackground installs the background service (or refreshes it) and starts
+// it; Start and Stop switch an installed one on and off.
+func StartBackground() error { return run(nil, "service", "install") }
+func Start() error           { return run(nil, "service", "start") }
+func Stop() error            { return run(nil, "service", "stop") }
 
-// output runs drover and decodes its JSON stdout into v (nil discards it). A
-// failure carries drover's own message.
+// Service reports whether the background service is installed.
+func Service() (installed bool, err error) {
+	var st struct {
+		Installed bool `json:"installed"`
+	}
+	err = output(&st, nil, "service", "status", "--json")
+	return st.Installed, err
+}
+
+// Licence is the edition agents run as.
+type Licence struct {
+	Tier    string    `json:"tier"` // free | pro
+	Email   string    `json:"email,omitempty"`
+	Expires time.Time `json:"expires,omitzero"`
+	InGrace bool      `json:"in_grace,omitempty"`
+	Reason  string    `json:"reason,omitempty"`
+}
+
+// Pro reports whether this is Shepherd Pro.
+func (l Licence) Pro() bool { return l.Tier == "pro" }
+
+// CurrentLicence reads the edition.
+func CurrentLicence() (Licence, error) {
+	var l Licence
+	err := output(&l, nil, "license", "status", "--json")
+	return l, err
+}
+
+// Activate checks a Pro key and saves it.
+func Activate(key string) error { return run(strings.NewReader(key+"\n"), "license", "activate") }
+
+// run runs drover for its effect, discarding stdout.
+func run(stdin io.Reader, args ...string) error {
+	_, err := capture(stdin, args...)
+	return err
+}
+
+// output runs drover and decodes its JSON stdout into v.
 func output(v any, stdin io.Reader, args ...string) error {
+	out, err := capture(stdin, args...)
+	if err != nil {
+		return err
+	}
+	if err := json.Unmarshal([]byte(out), v); err != nil {
+		return fmt.Errorf("agents: unexpected reply to %s: %w", args[0], err)
+	}
+	return nil
+}
+
+// capture runs drover and returns its stdout. A failure is put in Shepherd's
+// words.
+func capture(stdin io.Reader, args ...string) (string, error) {
 	if !Installed() {
-		return ErrMissing
+		return "", ErrMissing
 	}
 	var stdout, stderr bytes.Buffer
 	c := Command(args...)
@@ -274,13 +343,22 @@ func output(v any, stdin io.Reader, args ...string) error {
 		if msg == "" {
 			msg = err.Error()
 		}
-		return errors.New(msg)
+		return "", translate(msg)
 	}
-	if v == nil {
-		return nil
+	return stdout.String(), nil
+}
+
+// translate turns drover's error messages into Shepherd's: the ones people can
+// act on get their own wording, and the rest lose drover's name.
+func translate(msg string) error {
+	switch {
+	case strings.Contains(msg, "no action"):
+		return ErrNoAction
+	case strings.Contains(msg, "no coding agent found"):
+		return errors.New("no coding agent found: install Claude Code or Codex, or pass --runner")
+	case strings.Contains(msg, "already watching"):
+		return errors.New("agents are already running")
 	}
-	if err := json.Unmarshal(stdout.Bytes(), v); err != nil {
-		return fmt.Errorf("drover %s: unexpected output: %w", args[0], err)
-	}
-	return nil
+	msg = strings.NewReplacer("drover's", "the agents'", "drover", "agents").Replace(msg)
+	return errors.New(msg)
 }
