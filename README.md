@@ -418,8 +418,9 @@ shepherd board dir web ~/src/web   # where the agent works for the web board
 ```
 
 Then add a task and press `@` on it (or `shepherd go <ref>`). A task drover is
-holding shows **waiting**; once it's sent it shows **running**. `@` on a waiting
-task releases it; on any other open task it starts a run now.
+holding shows **waiting**; once it's sent it shows **running**; if the agent
+couldn't finish it shows **failed**. `@` on a waiting task releases it, on a
+failed one retries it, and on any other open task starts a run now.
 
 ```sh
 shepherd agents status    # is drover running in the background?

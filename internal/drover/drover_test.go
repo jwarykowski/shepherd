@@ -49,8 +49,9 @@ func TestBySubjectPrefersActiveRuns(t *testing.T) {
 		{ID: "b", Subject: "s1", Status: "hold"},
 		{ID: "c", Subject: "s2", Status: "hold"},
 		{ID: "d", Subject: "s3", Status: "go", Done: true},
+		{ID: "e", Subject: "s4", Status: "blocked"},
 	})
-	if m["s1"].ID != "a" || !m["s2"].Waiting() || len(m) != 2 {
+	if m["s1"].ID != "a" || !m["s2"].Waiting() || !m["s4"].Failed() || len(m) != 3 {
 		t.Fatalf("by subject = %+v", m)
 	}
 }

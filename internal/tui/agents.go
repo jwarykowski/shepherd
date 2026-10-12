@@ -1,8 +1,9 @@
 package tui
 
 // agents.go: the board's view of drover. Items drover is holding show as
-// waiting and items it's working on as running, and @ sends the selected item
-// to the coding agent (see internal/drover).
+// waiting, items it's working on as running, and items whose run stopped short
+// as failed; @ sends the selected item to the coding agent, or retries it (see
+// internal/drover).
 
 import (
 	"time"
@@ -52,6 +53,8 @@ func (m model) runLabel(id string) string {
 		return ""
 	case r.Waiting():
 		return warnStyle.Render("waiting")
+	case r.Failed():
+		return failStyle.Render("failed")
 	default:
 		return progStyle.Render("running")
 	}

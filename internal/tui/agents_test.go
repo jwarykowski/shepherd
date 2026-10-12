@@ -70,12 +70,16 @@ func TestRunMarks(t *testing.T) {
 	m.runs = map[string]drover.Run{
 		"held": {ID: "r1", Status: "hold", Subject: "held"},
 		"busy": {ID: "r2", Status: "running", Subject: "busy"},
+		"bust": {ID: "r3", Status: "failed", Subject: "bust"},
 	}
 	if l := m.runLabel("held"); !strings.Contains(l, "waiting") {
 		t.Fatalf("held = %q", l)
 	}
 	if l := m.runLabel("busy"); !strings.Contains(l, "running") {
 		t.Fatalf("busy = %q", l)
+	}
+	if l := m.runLabel("bust"); !strings.Contains(l, "failed") {
+		t.Fatalf("bust = %q", l)
 	}
 	if l := m.runLabel("idle"); l != "" {
 		t.Fatalf("idle = %q", l)

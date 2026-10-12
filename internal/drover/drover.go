@@ -38,13 +38,17 @@ func Installed() bool {
 type Run struct {
 	ID      string `json:"id"`
 	Text    string `json:"text"`
-	Status  string `json:"status"` // hold, go, running
+	Status  string `json:"status"` // hold, go, running, failed, blocked
+	Note    string `json:"note"`   // the agent's summary, or why it stopped
 	Done    bool   `json:"done"`
 	Subject string `json:"subject"` // the board item's id
 }
 
 // Waiting is a run held for a person to release it.
 func (r Run) Waiting() bool { return !r.Done && r.Status == "hold" }
+
+// Failed is a run the agent didn't finish: its verdict was failed or blocked.
+func (r Run) Failed() bool { return !r.Done && (r.Status == "failed" || r.Status == "blocked") }
 
 // Active is a run released or under way.
 func (r Run) Active() bool { return !r.Done && (r.Status == "go" || r.Status == "running") }
@@ -79,7 +83,8 @@ type Task struct {
 }
 
 // Send hands t to drover: a run drover is holding for the item is released,
-// otherwise a run starts now, as if the item had just been added. It returns
+// otherwise a run starts now, as if the item had just been added (which also
+// retries a failed one). It returns
 // the runs released or started.
 func Send(t Task) ([]Run, error) {
 	runs, err := Runs()

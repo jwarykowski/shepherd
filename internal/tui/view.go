@@ -26,6 +26,7 @@ var (
 	catStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("6"))
 	countStyle  = lipgloss.NewStyle().Faint(true)
 	warnStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
+	failStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("1"))
 	ruleStyle   = lipgloss.NewStyle().Faint(true).Foreground(lipgloss.Color("240"))
 	prioStyles  = map[byte]lipgloss.Style{
 		'H': lipgloss.NewStyle().Foreground(lipgloss.Color("1")),
@@ -996,7 +997,7 @@ func (m model) helpBody() []string {
 	line("g — set category · T — set tags (space- or comma-separated; empty clears) · t — set due date · s — set defer/start date")
 	line("L — set link · o — open the link in the browser")
 	line("y — copy the selected item's title to the clipboard")
-	line("@ — send the selected item or subtask to your coding agent (via drover: releases a run it's holding, or starts one). Rows drover is holding show waiting; rows it's working on show running. Set up with shepherd agents setup")
+	line("@ — send the selected item or subtask to your coding agent (via drover: releases a run it's holding, or starts one). Rows drover is holding show waiting; rows it's working on show running; rows whose run failed show failed, and @ retries them. Set up with shepherd agents setup")
 	line("space — toggle done · tab — cycle status · x — delete")
 	line("rows carry two flush-right values: subtask progress (else the due/defer label), then whichever grouping axis the headers don't already name — priority in the category and tag views, category in the priority view. The box shape is the status (○ open, ◐ named status, ✓ done)")
 	line("c — archive all done items · C — archive the selected item (whole items only, not subtasks)")
