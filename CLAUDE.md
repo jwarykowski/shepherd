@@ -75,11 +75,23 @@ flows. Every non-trivial change ships a test.
 ## versioning & commits
 
 Version lives once in `herdr-plugin.toml` (`version = "x.y.z"`), embedded into
-the binary at build. Bump it with a `chore: bump version to x.y.z` commit; tag
-`vX.Y.Z`.
+the binary at build. Bump it with a `chore: bump version to x.y.z` commit in a
+PR. Never tag by hand and never make a GitHub Release: when the bump lands, the
+release workflow (`.github/workflows/release.yml`,
+`.github/scripts/release.sh`) tags the commit `vX.Y.Z` and opens and merges a
+`jwarykowski/homebrew-tap` PR pointing the formula at it (needs the
+`GH_RELEASE_TOKEN` secret).
+
+- `master`: stable versions (`0.21.0`) → `Formula/shepherd.rb`
+- `pro`: pre-releases (`0.21.0-alpha.2`) → `Formula/shepherd-alpha.rb`
+
+A pre-release version on `master`, or a stable one on `pro`, releases nothing.
+`pro` is the integration branch for the agents/Pro work under test: branch
+those features off `pro` and PR into it; it merges into `master` when stable.
 
 Conventional Commits; PR-merge commits carry the trailing `(#NN)`. Branch
-`feat/…`, `fix/…`, `refactor/…`, `chore/…`, `docs/…` off `master`. (Global
+`feat/…`, `fix/…`, `refactor/…`, `chore/…`, `docs/…` off `master` (or off `pro`
+for agents/Pro work). (Global
 rules already apply: `--no-gpg-sign`, no `Co-Authored-By`, never commit on the
 default branch, commit only when asked.) Remote pushes to both GitHub
 (primary, CI) and Codeberg (mirror).
