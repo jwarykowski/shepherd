@@ -3,11 +3,13 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"shepherd/internal/drover"
 	"shepherd/internal/drover/drovertest"
 	"shepherd/internal/store"
 )
@@ -155,5 +157,109 @@ func TestPro(t *testing.T) {
 	noDrover(t, out.String())
 	if code := cmdPro([]string{"activate", "BAD"}, &bytes.Buffer{}); code != 1 {
 		t.Fatalf("a bad key should fail, got %d", code)
+	}
+}
+
+func TestAgentsAddWebhookPrintsTheURLAndRestarts(t *testing.T) {
+	calls := drovertest.Fake(t, `[]`)
+	dir := t.TempDir()
+	var out bytes.Buffer
+	if code := cmdAgents([]string{"add", "webhook", "sentry", "--dir", dir}, &out); code != 0 {
+		t.Fatalf("exit %d", code)
+	}
+	got := calls()
+	if got[0] != "source add webhook sentry --preset sentry --dir "+dir+" --json" {
+		t.Fatalf("calls = %q", got)
+	}
+	if strings.Join(got[1:], "|") != "service status --json|service stop|service start" {
+		t.Fatalf("not restarted: %q", got)
+	}
+	for _, want := range []string{"Paste this URL into Sentry", "https://hooks.test/h/s1", "In Sentry: paste it.", "shepherd agents secret sentry", "agents view (R)", "restarted"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("output lacks %q: %q", want, out.String())
+		}
+	}
+	noDrover(t, out.String())
+	if code := cmdAgents([]string{"add", "webhook", "pagerduty"}, &bytes.Buffer{}); code != 2 {
+		t.Fatalf("unknown service: exit %d", code)
+	}
+}
+
+func TestAgentsAddGitHubWithoutAService(t *testing.T) {
+	calls := drovertest.Fake(t, `[]`)
+	t.Setenv("DROVER_FAKE_INSTALLED", "false")
+	var out bytes.Buffer
+	if code := cmdAgents([]string{"add", "github", "acme/api", "--label", "bot"}, &out); code != 0 {
+		t.Fatalf("exit %d", code)
+	}
+	wd, _ := os.Getwd()
+	if got := calls()[0]; got != "source add github acme/api --dir "+wd+" --json --label bot" {
+		t.Fatalf("call = %q", got)
+	}
+	if !strings.Contains(out.String(), "labelled bot") || !strings.Contains(out.String(), "Restart your agents") {
+		t.Fatalf("output %q", out.String())
+	}
+	noDrover(t, out.String())
+}
+
+func TestAgentsAddNeedsPro(t *testing.T) {
+	drovertest.Fake(t, `[]`)
+	t.Setenv("DROVER_FAKE_FREE", "1")
+	if code := cmdAgents([]string{"add", "github", "acme/api"}, &bytes.Buffer{}); code != 1 {
+		t.Fatalf("exit %d", code)
+	}
+	_, err := drover.AddGitHub("acme/api", "/x", "", "")
+	if !errors.Is(err, drover.ErrPro) {
+		t.Fatalf("err %v", err)
+	}
+	noDrover(t, err.Error())
+}
+
+func TestAgentsSourcesAndRemove(t *testing.T) {
+	calls := drovertest.Fake(t, `[]`)
+	var out bytes.Buffer
+	if code := cmdAgents([]string{"sources"}, &out); code != 0 {
+		t.Fatalf("exit %d", code)
+	}
+	if !strings.Contains(out.String(), "your boards") || !strings.Contains(out.String(), "webhook (sentry)  https://hooks.test/h/s1  signed") {
+		t.Fatalf("output %q", out.String())
+	}
+	out.Reset()
+	if code := cmdAgents([]string{"remove", "sentry"}, &out); code != 0 {
+		t.Fatalf("exit %d", code)
+	}
+	if got := calls(); got[1] != "source rm sentry" || !strings.Contains(out.String(), "Removed sentry") {
+		t.Fatalf("calls %q, output %q", got, out.String())
+	}
+	noDrover(t, out.String())
+}
+
+func TestAgentsSecretSendsTheSecretOnStdin(t *testing.T) {
+	calls := drovertest.Fake(t, `[]`)
+	in := filepath.Join(t.TempDir(), "in")
+	if err := os.WriteFile(in, []byte("  s3cret \n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.Open(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = f.Close() }()
+	var out bytes.Buffer
+	if code := agentsSecret([]string{"ci", "--scheme", "github"}, f, &out); code != 0 {
+		t.Fatalf("exit %d", code)
+	}
+	if got := calls()[0]; got != "source secret ci --scheme github" {
+		t.Fatalf("call = %q: the secret must not be on argv", got)
+	}
+	if drovertest.Stdin() != "s3cret\n" {
+		t.Fatalf("stdin = %q", drovertest.Stdin())
+	}
+	if !strings.Contains(out.String(), "only signed deliveries") {
+		t.Fatalf("output %q", out.String())
+	}
+	noDrover(t, out.String())
+	if code := cmdAgents([]string{"secret"}, &bytes.Buffer{}); code != 2 {
+		t.Fatalf("no name: exit %d", code)
 	}
 }

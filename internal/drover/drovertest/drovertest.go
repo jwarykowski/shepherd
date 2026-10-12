@@ -31,6 +31,18 @@ service)
 	status) printf '{"installed":%s,"running":false}\n' "${DROVER_FAKE_INSTALLED:-true}" ;;
 	*) echo "drover $*" ;;
 	esac ;;
+source)
+	if [ -n "$DROVER_FAKE_FREE" ]; then echo "drover: GitHub and webhook sources need a Pro licence" >&2; exit 1; fi
+	case "$2" in
+	list) printf '[{"name":"shepherd","kind":"shepherd"},{"name":"sentry","kind":"webhook","detail":"sentry","url":"https://hooks.test/h/s1","signed":"sentry","external":true}]\n' ;;
+	add)
+		case "$3" in
+		github) printf '{"name":"api","kind":"github","detail":"%s","external":true}\n' "$4" ;;
+		webhook) printf '{"name":"%s","kind":"webhook","detail":"sentry","url":"https://hooks.test/h/s1","help":"In Sentry: paste it.","scheme":"sentry","external":true}\n' "$4" ;;
+		esac ;;
+	rm) : ;;
+	secret) cat > "$DROVER_FAKE_LOG.stdin" ;;
+	esac ;;
 license)
 	case "$2" in
 	status) printf '{"tier":"pro","email":"jo@example.com","expires":"2027-10-12T00:00:00Z"}\n' ;;

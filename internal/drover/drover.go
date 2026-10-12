@@ -28,6 +28,9 @@ import (
 // ErrMissing is returned when drover isn't on the PATH.
 var ErrMissing = errors.New("agents aren't installed: brew install jwarykowski/tap/shepherd, then shepherd agents setup")
 
+// ErrPro is returned when something needs Shepherd Pro.
+var ErrPro = errors.New("GitHub and webhook sources need Shepherd Pro: shepherdcli.dev/pro, then shepherd pro activate <key>")
+
 // ErrNoAction is returned when nothing is set up to run on a board's tasks.
 var ErrNoAction = errors.New("agents aren't set up for your boards yet: run shepherd agents setup")
 
@@ -289,6 +292,79 @@ func Service() (installed bool, err error) {
 	return st.Installed, err
 }
 
+// Source is a place tasks come from besides the boards: a GitHub repository
+// or a webhook, as the agents list it.
+type Source struct {
+	Name     string `json:"name"`
+	Kind     string `json:"kind"`             // shepherd (the boards), github, webhook or custom
+	Detail   string `json:"detail,omitempty"` // the repository, or the service a webhook is for
+	URL      string `json:"url,omitempty"`    // a webhook's URL, to paste into the service
+	Help     string `json:"help,omitempty"`   // where the URL goes, just after adding
+	Scheme   string `json:"scheme,omitempty"` // how its service signs deliveries; "" if unknown
+	Signed   string `json:"signed,omitempty"` // set once only signed deliveries are taken
+	External bool   `json:"external,omitempty"`
+}
+
+// Sources lists where tasks come from.
+func Sources() ([]Source, error) {
+	var s []Source
+	err := output(&s, nil, "source", "list", "--json")
+	return s, err
+}
+
+// AddGitHub sends repo's open issues carrying label to the agent working in
+// dir. name is the source's name; "" names it after the repository.
+func AddGitHub(repo, dir, label, name string) (Source, error) {
+	args := []string{"source", "add", "github", repo, "--dir", dir, "--json"}
+	if label != "" {
+		args = append(args, "--label", label)
+	}
+	if name != "" {
+		args = append(args, "--name", name)
+	}
+	var s Source
+	err := output(&s, nil, args...)
+	return s, err
+}
+
+// AddWebhook makes a webhook source called name for service (a preset:
+// webhook, sentry, linear, datadog or alertmanager) and returns it with the URL
+// to paste into the service.
+func AddWebhook(name, service, dir string) (Source, error) {
+	var s Source
+	err := output(&s, nil, "source", "add", "webhook", name, "--preset", service, "--dir", dir, "--json")
+	return s, err
+}
+
+// SetSecret makes a webhook source take only deliveries signed with secret,
+// the way its service signs (scheme "" uses the service's own; github for any
+// service that signs like GitHub). An empty secret stops checking. The secret
+// goes on stdin, so it never shows in ps.
+func SetSecret(name, scheme, secret string) error {
+	args := []string{"source", "secret", name}
+	if scheme != "" {
+		args = append(args, "--scheme", scheme)
+	}
+	return run(strings.NewReader(secret+"\n"), args...)
+}
+
+// RemoveSource stops tasks coming from the source called name.
+func RemoveSource(name string) error { return run(nil, "source", "rm", name) }
+
+// Restart restarts the background service, so a source added or removed takes
+// effect. ok is false when there's no service to restart (agents running in a
+// terminal, or not set up).
+func Restart() (ok bool, err error) {
+	installed, err := Service()
+	if err != nil || !installed {
+		return false, err
+	}
+	if err := Stop(); err != nil {
+		return false, err
+	}
+	return true, Start()
+}
+
 // Licence is the edition agents run as.
 type Licence struct {
 	Tier    string    `json:"tier"` // free | pro
@@ -352,6 +428,10 @@ func capture(stdin io.Reader, args ...string) (string, error) {
 // act on get their own wording, and the rest lose drover's name.
 func translate(msg string) error {
 	switch {
+	case strings.Contains(msg, "Pro licence"):
+		return ErrPro
+	case strings.Contains(msg, "no coding agent is set up"):
+		return errors.New("agents aren't set up yet: run shepherd agents setup")
 	case strings.Contains(msg, "no action"):
 		return ErrNoAction
 	case strings.Contains(msg, "no coding agent found"):

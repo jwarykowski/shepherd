@@ -52,6 +52,13 @@ Items (ref = an item's stable id from 'list --json', or its 1-based index n;
 Agents (see shepherdcli.dev/docs):
   agents setup [--runner claude|codex]  set up agents for every board and start them
   agents start|stop|status [--json]     agents running in the background
+  agents add github <owner/repo> [--dir path] [--label agent]
+                               issues with the label become tasks (Pro)
+  agents add webhook <service> [--dir path]   a URL for webhook|sentry|linear|
+                               datadog|alertmanager to send tasks to (Pro)
+  agents sources [--json] | remove <name>     where tasks come from
+  agents secret <name>         take only deliveries the service signed
+                               (Sentry, Linear; --scheme github for others)
   go <ref> [--json]            send an item to your coding agent (releases a
                                run that's waiting, or starts one now)
   pro activate <key>           activate Shepherd Pro
