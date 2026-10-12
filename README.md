@@ -418,9 +418,19 @@ shepherd board dir web ~/src/web   # where the agent works for the web board
 ```
 
 Then add a task and press `@` on it (or `shepherd go <ref>`). A task drover is
-holding shows **waiting**; once it's sent it shows **running**; if the agent
-couldn't finish it shows **failed**. `@` on a waiting task releases it, on a
-failed one retries it, and on any other open task starts a run now.
+holding shows **waiting**, a released one **queued** until an agent is free, then
+**running**; if the agent couldn't finish it shows **failed**, and once a run is
+done the task shows **review** until you tick it. `@` on a waiting task releases
+it, on a failed one retries it, and on any other open task starts a run now. A
+subtask goes with its parent, so the agent knows what it's part of. Each run
+works in its own git worktree and branch, so your checkout is never touched.
+
+`R` opens the agents view: every run on every board and source (GitHub, Sentry,
+webhooks with Pro), grouped by state, subtasks under their parent. `@` says go
+or retries, `l` shows the run's log, `o` opens its issue or PR, `enter` jumps to
+its task, `C` archives a run you don't want, and `e` shows the archive. The
+detail view (`d`) lists a task's runs, and `r` opens the latest one's log. If
+drover isn't running, the board says so.
 
 ```sh
 shepherd agents status    # is drover running in the background?

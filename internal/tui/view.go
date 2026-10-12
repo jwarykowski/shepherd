@@ -54,6 +54,10 @@ func (m model) View() string {
 		content = m.helpView()
 	case m.mode == modeArchive:
 		content = m.archiveView()
+	case m.mode == modeAgents:
+		content = m.agentsView()
+	case m.mode == modeAgentLog:
+		content = m.logView()
 	case m.mode == modeBoardDetail || (m.mode == modeBoardDir && m.projDirEdit):
 		content = m.boardDetailView()
 	case m.mode == modeBoards || m.mode == modeBoardNew || m.mode == modeBoardDir || m.mode == modeBoardRename || m.mode == modeConfirmDelete:
@@ -250,7 +254,7 @@ func (m model) rowContent(it todo.Item, indent, badge string, isSub bool) string
 		}
 		label += c
 	}
-	if run := m.runLabel(it.ID); run != "" {
+	if run := m.runLabel(it); run != "" {
 		text += " " + run
 	}
 	left := fmt.Sprintf("%s%s %s", indent, boxSt.Render(box), text)
@@ -661,8 +665,11 @@ func (m model) listFooter() string {
 		return rule + "\n" + m.inputPrompt()
 	default:
 		notice := ""
+		if d := m.droverDown(); d != "" {
+			notice = failStyle.Render(d) + "\n"
+		}
 		if m.notice != "" {
-			notice = warnStyle.Render(m.notice) + "\n"
+			notice += warnStyle.Render(m.notice) + "\n"
 		}
 		if m.hideFooter { // keep the repo/version line; drop the help grid
 			return rule + "\n" + notice + m.bottomBar()
@@ -690,7 +697,7 @@ type keyCol struct {
 func (m model) helpGrid() string {
 	cols := []keyCol{
 		{"move", [][2]string{{"j/k", "move"}, {"←/→", "lane"}, {"space", "toggle"}, {"d", "detail"}, {"v", "view"}, {"A", "global"}, {"e", "archive"}, {"b", "boards"}, {"F", "footer"}}},
-		{"edit", [][2]string{{"a", "add"}, {"S", "sub"}, {"u", "edit"}, {"tab", "status"}, {"x", "del"}, {"c", "sweep"}, {"C", "arch"}, {"@", "agent"}}},
+		{"edit", [][2]string{{"a", "add"}, {"S", "sub"}, {"u", "edit"}, {"tab", "status"}, {"x", "del"}, {"c", "sweep"}, {"C", "arch"}, {"@", "agent"}, {"R", "agents"}}},
 		{"fields", [][2]string{{"h/m/l", "prio"}, {"g", "cat"}, {"T", "tags"}, {"t", "due"}, {"s", "defer"}, {"L", "link"}, {"o", "open"}, {"y", "copy"}}},
 		{"board", [][2]string{{"w", "save"}, {"^e", "editor"}, {"U", "undo"}, {"^r", "redo"}, {"/", "filter"}, {",", "settings"}, {"?", "help"}, {"q", "quit"}}},
 	}
@@ -720,14 +727,18 @@ func (m model) detailGrid() string {
 		{"fields", [][2]string{{"u", "text"}, {"h/m/l", "prio"}, {"g", "cat"}, {"T", "tags"}}},
 		{"dates", [][2]string{{"t", "due"}, {"s", "defer"}}},
 		{"item", [][2]string{{"n", "note"}, {"L", "link"}, {"tab", "status"}, {"space", "toggle"}}},
+		{"agent", [][2]string{{"@", "send"}, {"r", "run log"}}},
 		{"go", [][2]string{{"o", "open link"}, {"y", "copy title"}, {"esc", "back"}, {"q", "quit"}}},
 	}
 
 	// Same inert rules as the list footer: the global aggregate is read-only, and
 	// category/tags are parent-only on a subtask.
-	globalActive := map[string]bool{"o": true, "y": true, "esc": true, "q": true}
+	globalActive := map[string]bool{"o": true, "y": true, "esc": true, "q": true, "r": true}
 	onSub := !m.global && m.selRef().sub >= 0
 	subInert := map[string]bool{"g": true, "T": true}
+	if ref := m.selRef(); ref.item >= 0 && len(m.itemRuns(m.rowItem(ref).ID)) == 0 {
+		subInert["r"] = true // nothing to show yet
+	}
 	return m.keyGrid(cols, func(key string) bool {
 		return (m.global && !globalActive[key]) || (onSub && subInert[key])
 	})
@@ -997,7 +1008,9 @@ func (m model) helpBody() []string {
 	line("g — set category · T — set tags (space- or comma-separated; empty clears) · t — set due date · s — set defer/start date")
 	line("L — set link · o — open the link in the browser")
 	line("y — copy the selected item's title to the clipboard")
-	line("@ — send the selected item or subtask to your coding agent (via drover: releases a run it's holding, or starts one). Rows drover is holding show waiting; rows it's working on show running; rows whose run failed show failed, and @ retries them. Set up with shepherd agents setup")
+	line("@ — send the selected item or subtask to your coding agent (a subtask goes with its parent as context). Rows show where their run stands: waiting (press @ to say go), queued (waiting for a free agent), running, failed (@ retries), or review (a run finished; check its work). Set up with shepherd agents setup")
+	line("R — the agents view: every run on every board and source, grouped by state. @ go/retry · l the run's log · o open its link · enter its task · C archive a run that hasn't run · e the archive · esc back")
+	line("in the detail view, the item's runs are listed under its note; r opens the latest run's log")
 	line("space — toggle done · tab — cycle status · x — delete")
 	line("rows carry two flush-right values: subtask progress (else the due/defer label), then whichever grouping axis the headers don't already name — priority in the category and tag views, category in the priority view. The box shape is the status (○ open, ◐ named status, ✓ done)")
 	line("c — archive all done items · C — archive the selected item (whole items only, not subtasks)")
@@ -1180,6 +1193,7 @@ func (m model) detailView() string {
 	} else {
 		b.WriteString(dimStyle.Render("(none — press n to add)") + "\n")
 	}
+	b.WriteString(m.detailRuns(it))
 
 	rule := dimStyle.Render(strings.Repeat("─", m.width()))
 	var help string

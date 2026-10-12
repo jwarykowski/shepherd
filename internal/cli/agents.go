@@ -80,9 +80,9 @@ func cmdGo(args []string, board string, w io.Writer) int {
 	if !ok {
 		return refErr(w, asJSON, args[0], len(items))
 	}
-	it := items[p-1]
+	it, parent := items[p-1], (*todo.Item)(nil)
 	if s > 0 {
-		it = items[p-1].Subs[s-1]
+		it, parent = items[p-1].Subs[s-1], &items[p-1]
 	}
 	if it.Done {
 		return usageErr(w, asJSON, fmt.Sprintf("item %s is already done", args[0]))
@@ -93,10 +93,10 @@ func cmdGo(args []string, board string, w io.Writer) int {
 		}
 		items = store.Load(store.TodoPathFor(board))
 		if it = items[p-1]; s > 0 {
-			it = items[p-1].Subs[s-1]
+			it, parent = items[p-1].Subs[s-1], &items[p-1]
 		}
 	}
-	runs, err := drover.Send(drover.Task{Item: it, Board: board})
+	runs, err := drover.Send(drover.Task{Item: it, Parent: parent, Board: board})
 	if err != nil && strings.Contains(err.Error(), "no action") {
 		err = fmt.Errorf("%w; shepherd agents setup adds one", err)
 	}
