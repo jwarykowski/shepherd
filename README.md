@@ -424,8 +424,8 @@ it, on a failed one retries it, and on any other open task starts a run now. A
 subtask goes with its parent, so the agent knows what it's part of. Each run
 works in its own git worktree and branch, so your checkout is never touched.
 
-`R` opens the agents view: every run on every board and source (GitHub, Sentry,
-webhooks with Pro), grouped by state, subtasks under their parent. `@` says go
+`R` opens the agents view: every run on every board and source (GitHub issues
+and webhooks with Pro), grouped by state, subtasks under their parent. `@` says go
 or retries, `l` shows the run's log, `o` opens its issue or PR, `enter` jumps to
 its task, `C` archives a run, `c` clears every finished run into the archive,
 and `e` shows the archive. The detail view (`d`) lists a task's runs, and `r`
@@ -434,13 +434,29 @@ opens the latest one's log. If agents aren't running, the board says so.
 ```sh
 shepherd agents status    # running in the background?
 shepherd agents stop | start
-shepherd pro activate <key>   # Shepherd Pro: GitHub, Sentry and webhook tasks, auto-release
+shepherd pro activate <key>   # Shepherd Pro: GitHub and webhook tasks, auto-release
 shepherd pro status
 ```
 
+With Pro, tasks can also come from GitHub issues and from any service that
+sends webhooks. Run these in the repository the agent should work in (or pass
+`--dir`):
+
+```sh
+shepherd agents add github acme/api      # open issues labelled agent
+shepherd agents add webhook sentry       # prints a URL to paste into Sentry
+shepherd agents sources                  # list them; agents remove <name> to stop one
+```
+
+Webhook services: `sentry`, `linear` (issues labelled agent), `datadog`,
+`alertmanager` (Grafana, Prometheus), or `webhook` for anything else. The
+service posts to a private URL on shepherdcli.dev that holds each delivery
+until your agents collect it, so nothing has to reach your computer. Tasks from
+these sources wait in the agents view, flagged external, until you say go.
+
 Under the hood, Shepherd runs agents with drover, which it installs alongside.
-Its config (`~/.config/drover/drover.toml`) is where you add GitHub or Sentry
-sources and change what the agent is told to do.
+Its config (`~/.config/drover/drover.toml`) is where you change what the agent
+is told to do.
 
 ## configuration
 

@@ -5,14 +5,20 @@ package cli
 //
 //	shepherd agents setup [--runner claude|codex]   write drover's config, start it
 //	shepherd agents start|stop|status [--json]      the background service
+//	shepherd agents add github|webhook …            more places tasks come from (Pro)
+//	shepherd agents sources [--json] | remove <name>
 //	shepherd go <ref>                               send an item to your agent
 //	shepherd pro activate <key> | status [--json]   drover Pro
 
 import (
+	"cmp"
 	"flag"
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
+	"slices"
+	"strings"
 
 	"shepherd/internal/drover"
 	"shepherd/internal/store"
@@ -21,7 +27,7 @@ import (
 
 func cmdAgents(args []string, w io.Writer) int {
 	if len(args) == 0 {
-		return usageErr(w, false, "agents needs a subcommand: setup|start|stop|status")
+		return usageErr(w, false, "agents needs a subcommand: setup|start|stop|status|add|sources|remove")
 	}
 	sub, rest := args[0], args[1:]
 	switch sub {
@@ -41,8 +47,14 @@ func cmdAgents(args []string, w io.Writer) int {
 		return 0
 	case "status":
 		return agentsStatus(rest, w)
+	case "add":
+		return agentsAdd(rest, w)
+	case "sources":
+		return agentsSources(rest, w)
+	case "remove":
+		return agentsRemove(rest, w)
 	default:
-		return usageErr(w, false, fmt.Sprintf("unknown agents subcommand %q (setup|start|stop|status)", sub))
+		return usageErr(w, false, fmt.Sprintf("unknown agents subcommand %q (setup|start|stop|status|add|sources|remove)", sub))
 	}
 }
 
@@ -72,6 +84,133 @@ func agentsSetup(args []string, w io.Writer) int {
 	say(w, "Agents are running in the background.")
 	say(w, "Each board's tasks run in its working directory: shepherd board dir <board> <path>.")
 	say(w, "Ready. Add a task, then press @ on it in the board (or run shepherd go <ref>).")
+	return 0
+}
+
+// agentsAdd adds a GitHub repository or a webhook as a place tasks come from:
+//
+//	shepherd agents add github <owner/repo> [--dir path] [--label agent] [--name n]
+//	shepherd agents add webhook <service> [--name n] [--dir path]
+//
+// The agent works in --dir, the current directory by default. Tasks from
+// either wait in the agents view for a go.
+func agentsAdd(args []string, w io.Writer) int {
+	const want = "agents add needs github <owner/repo> or webhook <service>, e.g. shepherd agents add webhook sentry"
+	if len(args) < 2 || strings.HasPrefix(args[1], "-") {
+		return usageErr(w, false, want)
+	}
+	kind, arg := args[0], args[1]
+	fs := flag.NewFlagSet("agents add", flag.ContinueOnError)
+	dir := fs.String("dir", ".", "directory the agent works in")
+	label := fs.String("label", "", "issues with this label are sent (github; default agent)")
+	name := fs.String("name", "", "the source's name")
+	if err := fs.Parse(args[2:]); err != nil {
+		return 2
+	}
+	abs, err := filepath.Abs(*dir)
+	if err != nil {
+		return agentErr(err)
+	}
+
+	var src drover.Source
+	switch kind {
+	case "github":
+		src, err = drover.AddGitHub(arg, abs, *label, *name)
+	case "webhook":
+		if !slices.Contains(webhookServices, arg) {
+			return usageErr(w, false, fmt.Sprintf("unknown service %q: want %s (webhook takes any service)", arg, strings.Join(webhookServices, ", ")))
+		}
+		src, err = drover.AddWebhook(cmp.Or(*name, arg), arg, abs)
+	default:
+		return usageErr(w, false, want)
+	}
+	if code := agentErr(err); code != 0 {
+		return code
+	}
+
+	switch src.Kind {
+	case "github":
+		say(w, fmt.Sprintf("Added %s: open issues in %s labelled %s become tasks for your agent, in %s.", src.Name, src.Detail, cmp.Or(*label, "agent"), abs))
+	case "webhook":
+		say(w, fmt.Sprintf("Added %s. Paste this URL into %s:", src.Name, serviceName(src.Detail)))
+		emit(w, "")
+		emit(w, "  "+src.URL)
+		emit(w, "")
+		if src.Help != "" {
+			say(w, src.Help)
+		}
+	}
+	say(w, "They wait in the agents view (R) for your go, flagged external.")
+	restartAgents(w)
+	return 0
+}
+
+// webhookServices are the services agents add webhook knows; webhook is any
+// other.
+var webhookServices = []string{"webhook", "sentry", "linear", "datadog", "alertmanager"}
+
+func serviceName(preset string) string {
+	switch preset {
+	case "webhook", "":
+		return "the service"
+	case "alertmanager":
+		return "Grafana or Alertmanager"
+	case "datadog":
+		return "Datadog"
+	default:
+		return strings.ToUpper(preset[:1]) + preset[1:]
+	}
+}
+
+// restartAgents restarts the background agents so a source change takes
+// effect, or says how.
+func restartAgents(w io.Writer) {
+	ok, err := drover.Restart()
+	switch {
+	case err != nil:
+		fmt.Fprintln(os.Stderr, "shepherd:", err)
+	case ok:
+		say(w, "Agents restarted to pick it up.")
+	default:
+		say(w, "Restart your agents to pick it up.")
+	}
+}
+
+// agentsSources lists where tasks come from.
+func agentsSources(args []string, w io.Writer) int {
+	asJSON, _ := extractFlag(args, "--json")
+	srcs, err := drover.Sources()
+	if code := agentErr(err); code != 0 {
+		return code
+	}
+	if asJSON {
+		return emitJSON(w, srcs)
+	}
+	for _, s := range srcs {
+		switch s.Kind {
+		case "shepherd":
+			emit(w, fmt.Sprintf("%-14s your boards", s.Name))
+		case "github":
+			emit(w, fmt.Sprintf("%-14s GitHub %s", s.Name, s.Detail))
+		case "webhook":
+			emit(w, fmt.Sprintf("%-14s webhook (%s)  %s", s.Name, s.Detail, s.URL))
+		default:
+			emit(w, fmt.Sprintf("%-14s %s", s.Name, s.Kind))
+		}
+	}
+	return 0
+}
+
+// agentsRemove stops tasks coming from a source; a webhook's URL stops working.
+func agentsRemove(args []string, w io.Writer) int {
+	if len(args) != 1 {
+		return usageErr(w, false, "agents remove needs a source name: see shepherd agents sources")
+	}
+	if code := agentErr(drover.RemoveSource(args[0])); code != 0 {
+		return code
+	}
+	say(w, fmt.Sprintf("Removed %s.", args[0]))
+	restartAgents(w)
 	return 0
 }
 
@@ -191,7 +330,7 @@ func cmdPro(args []string, w io.Writer) int {
 			emit(w, fmt.Sprintf("Shepherd Pro, for %s, until %s", l.Email, l.Expires.Format("2 January 2006")))
 		default:
 			emit(w, "Shepherd Free: tasks come from your boards, and every run waits for your go.")
-			emit(w, "Pro adds GitHub, Sentry and webhook tasks, and runs trusted jobs without asking: shepherdcli.dev/pro")
+			emit(w, "Pro adds tasks from GitHub issues and webhooks (Sentry, Linear and more), and runs trusted jobs without asking: shepherdcli.dev/pro")
 		}
 		return 0
 	default:
