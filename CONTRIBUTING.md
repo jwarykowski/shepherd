@@ -46,3 +46,12 @@ Enable the pre-commit hook (gofmt's staged Go files, once per clone):
 ```sh
 git config core.hooksPath .githooks
 ```
+
+## Releasing
+
+Bump `version` in `herdr-plugin.toml` in a pull request. When it lands, the
+release workflow tags the commit `v<version>` and points the Homebrew formula
+at it: stable versions (`0.21.0`) from `master` update `shepherd`, and
+pre-releases (`0.21.0-alpha.2`) from `pro` update `shepherd-alpha`. There are no
+GitHub Releases. The workflow needs the `GH_RELEASE_TOKEN` secret, a token that
+can push to and merge pull requests on `jwarykowski/homebrew-tap`.

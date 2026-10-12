@@ -1,0 +1,23 @@
+# Releases on a version bump in herdr-plugin.toml: tags the commit and updates
+# the Homebrew formula (see .github/scripts/release.sh). Stable versions
+# release from master, pre-releases (-alpha, -beta) from pro.
+name: release
+
+on:
+  push:
+    branches: [master, pro]
+
+permissions:
+  contents: write
+
+concurrency: release
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: .github/scripts/release.sh "${GITHUB_REF_NAME}"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAP_TOKEN: ${{ secrets.GH_RELEASE_TOKEN }} # a token that can write to jwarykowski/homebrew-tap
