@@ -452,7 +452,9 @@ shepherd agents secret sentry            # take only deliveries Sentry signed
 Webhook services: `sentry`, `linear` (issues labelled agent), `datadog`,
 `alertmanager` (Grafana, Prometheus), or `webhook` for anything else. The
 service posts to a private URL on shepherdcli.dev that holds each delivery
-until your agents collect it, so nothing has to reach your computer. Sentry and
+until your agents collect it, so nothing has to reach your computer. Each one is
+encrypted as it arrives to a key only your computer holds, so the relay can't
+read what it keeps. Sentry and
 Linear sign what they send: give `agents secret` their signing secret and the
 URL refuses anything else. Tasks from
 these sources wait in the agents view, flagged external, until you say go.
