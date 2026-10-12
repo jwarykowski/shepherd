@@ -263,3 +263,46 @@ func TestAgentsSecretSendsTheSecretOnStdin(t *testing.T) {
 		t.Fatalf("no name: exit %d", code)
 	}
 }
+
+func TestAgentsActions(t *testing.T) {
+	drovertest.Fake(t, `[]`)
+	var out bytes.Buffer
+	if code := cmdAgents([]string{"actions"}, &out); code != 0 {
+		t.Fatalf("exit %d", code)
+	}
+	for _, want := range []string{"sentry", "fix", "waits for go", "Find the root cause", "jira", "off"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("output lacks %q: %q", want, out.String())
+		}
+	}
+	noDrover(t, out.String())
+}
+
+func TestAgentsActionOnOffEdit(t *testing.T) {
+	calls := drovertest.Fake(t, `[]`)
+	var out bytes.Buffer
+	if code := agentsAction([]string{"sentry", "jira", "on"}, os.Stdin, &out); code != 0 {
+		t.Fatalf("on: exit %d", code)
+	}
+	if got := calls(); got[len(got)-1] != "action edit a-jira --off false" {
+		t.Fatalf("calls %q", got)
+	}
+	in := filepath.Join(t.TempDir(), "prompt")
+	if err := os.WriteFile(in, []byte("Fix it, with a test.\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	f, _ := os.Open(in)
+	defer func() { _ = f.Close() }()
+	out.Reset()
+	if code := agentsAction([]string{"sentry: fix", "edit"}, f, &out); code != 0 {
+		t.Fatalf("edit: exit %d", code)
+	}
+	b, _ := os.ReadFile(os.Getenv("DROVER_FAKE_LOG") + ".prompt")
+	if string(b) != "Fix it, with a test." || !strings.Contains(out.String(), "Updated what sentry: fix tells the agent") {
+		t.Fatalf("prompt %q, output %q", b, out.String())
+	}
+	if code := agentsAction([]string{"nope", "off"}, os.Stdin, &bytes.Buffer{}); code != 2 {
+		t.Fatalf("unknown action: exit %d", code)
+	}
+	noDrover(t, out.String())
+}

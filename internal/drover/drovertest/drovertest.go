@@ -43,6 +43,11 @@ source)
 	rm) : ;;
 	secret) cat > "$DROVER_FAKE_LOG.stdin" ;;
 	esac ;;
+action)
+	case "$2" in
+	list) printf '[{"id":"a-fix","name":"sentry: fix","on":"sentry.issue.created","source":"sentry","do":"Find the root cause and fix it."},{"id":"a-jira","name":"sentry: jira","on":"sentry.issue.created","source":"sentry","off":true,"do":"Raise a Jira ticket."}]\n' ;;
+	edit) case "$*" in *--do-file*) cat "$5" > "$DROVER_FAKE_LOG.prompt" ;; esac ;;
+	esac ;;
 license)
 	case "$2" in
 	status) printf '{"tier":"pro","email":"jo@example.com","expires":"2027-10-12T00:00:00Z"}\n' ;;

@@ -425,9 +425,11 @@ subtask goes with its parent, so the agent knows what it's part of. Each run
 works in its own git worktree and branch, so your checkout is never touched.
 
 `R` opens the agents view: every run on every board and source (GitHub issues
-and webhooks with Pro), grouped by state, subtasks under their parent. `@` says go
-or retries, `l` shows the run's log, `o` opens its issue or PR, `enter` jumps to
-its task, `C` archives a run, `c` clears every finished run into the archive,
+and webhooks with Pro), one row per thread (the runs of one job about one
+thing, which share a branch and a conversation), grouped by state, subtasks under their parent. `@` says go
+or retries, `l` shows the run's log, `o` opens its pull request (or its issue), `t`
+takes over its conversation in your terminal (Claude Code or Codex, in the
+run's worktree), `enter` jumps to its task, `C` archives a run, `c` clears every finished run into the archive,
 and `e` shows the archive. The detail view (`d`) lists a task's runs, and `r`
 opens the latest one's log. If agents aren't running, the board says so.
 
@@ -447,7 +449,13 @@ shepherd agents add github acme/api      # open issues labelled agent
 shepherd agents add webhook sentry       # prints a URL to paste into Sentry
 shepherd agents sources                  # list them; agents remove <name> to stop one
 shepherd agents secret sentry            # take only deliveries Sentry signed
+shepherd agents actions                  # what each kind of event does
+shepherd agents action "sentry fix" off  # or on, or edit to change its prompt
 ```
+
+A retry, or a later event about the same thing (a review on the pull request
+an agent opened), carries on the same conversation on the same branch, and the
+agent is told what earlier runs did.
 
 Webhook services: `sentry`, `linear` (issues labelled agent), `datadog`,
 `alertmanager` (Grafana, Prometheus), or `webhook` for anything else. The
