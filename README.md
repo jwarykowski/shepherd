@@ -1,7 +1,4 @@
-<table>
-<tr>
-<td width="140" valign="top"><img src="assets/shepherd.svg" alt="Shepherd" width="120"></td>
-<td valign="top">
+<p align="center"><img src="assets/shepherd.svg" alt="Shepherd" width="120"></p>
 
 # 𓋾 Shepherd
 
@@ -9,10 +6,6 @@ An agent-native task queue: a terminal board backed by plain markdown files.
 Run it standalone in any terminal, or as a [herdr](https://herdr.dev) plugin in
 a split, tab, overlay, or zoomed pane. Greppable, hand-editable, syncable, and
 your coding agents can work from it too.
-
-</td>
-</tr>
-</table>
 
 - [install](#install)
 - [usage](#usage)
