@@ -6,11 +6,10 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
-	"testing"
-
 	"shepherd/internal/store"
 	"shepherd/internal/todo"
+	"strings"
+	"testing"
 )
 
 // TestCLIRoundTrip exercises every write path: add parses quick-add tokens,
@@ -447,7 +446,7 @@ func TestQuiet(t *testing.T) {
 	}
 }
 
-// cmdAddWith runs add through the global-flag extraction so -q is honored, and
+// cmdAddWith runs add through the global-flag extraction so -q is honoured, and
 // resets the quiet global afterward.
 func cmdAddWith(t *testing.T, global, _ string, args []string, w io.Writer) int {
 	t.Helper()

@@ -4,17 +4,17 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"os"
+	"shepherd/internal/store"
+	"shepherd/internal/todo"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
-
-	"shepherd/internal/store"
-	"shepherd/internal/todo"
 )
 
 const cliUsage = `shepherd — todo board
@@ -277,7 +277,7 @@ func extractBoard(args []string) (string, []string, error) {
 		switch {
 		case a == "--board":
 			if i+1 >= len(args) {
-				return "", nil, fmt.Errorf("--board needs a name")
+				return "", nil, errors.New("--board needs a name")
 			}
 			board = args[i+1]
 			i++
@@ -328,7 +328,7 @@ func emit(w io.Writer, s string) { _, _ = io.WriteString(w, s+"\n") }
 // parseExit maps a FlagSet.Parse error to an exit code: 0 when the user asked
 // for help (-h/--help printed the flags), 2 for any real parse error.
 func parseExit(err error) int {
-	if err == flag.ErrHelp {
+	if errors.Is(err, flag.ErrHelp) {
 		return 0
 	}
 	return 2

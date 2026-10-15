@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"shepherd/internal/store"
+	"shepherd/internal/todo"
 	"sort"
 	"strconv"
 	"strings"
@@ -14,9 +16,6 @@ import (
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-
-	"shepherd/internal/store"
-	"shepherd/internal/todo"
 )
 
 const (
@@ -31,7 +30,7 @@ type config struct {
 	view       viewMode
 	density    density
 	categories []string
-	statuses   []string // ordered, normalized so "done" is present and last
+	statuses   []string // ordered, normalised so "done" is present and last
 	autosave   int      // seconds of idle before autosaving; 0 disables
 	hideFooter bool     // start with the list footer (help grid + version) hidden
 }
@@ -113,7 +112,7 @@ func saveConfig(path string, c config) error {
 // lines is skipped up to its closing bracket, so no orphaned lines are left.
 func keepUnmanaged(b *strings.Builder, old string) {
 	inArray := false
-	for _, ln := range strings.Split(old, "\n") {
+	for ln := range strings.SplitSeq(old, "\n") {
 		if inArray {
 			inArray = !strings.Contains(ln, "]")
 			continue
@@ -290,7 +289,7 @@ func (m *model) resort() {
 
 // fingerprint is an order-independent snapshot of board content, so the saved
 // indicator reflects real differences from disk, not row order (switching view
-// reorders items but changes nothing on disk). Naive per-item serialize+sort;
+// reorders items but changes nothing on disk). Naive per-item serialise+sort;
 // fine at histCap-scale boards.
 func fingerprint(items []todo.Item) string {
 	blocks := make([]string, len(items))

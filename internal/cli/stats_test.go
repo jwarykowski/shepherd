@@ -5,10 +5,9 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"shepherd/internal/todo"
 	"strings"
 	"testing"
-
-	"shepherd/internal/todo"
 )
 
 // TestStatsJSON checks the JSON path counts archived done items and emits pure

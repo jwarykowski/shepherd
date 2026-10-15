@@ -1,6 +1,7 @@
 package todo
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -15,9 +16,11 @@ func TestSortStable(t *testing.T) {
 	items := []Item{{Text: "a"}, {Prio: 'L', Text: "b"}, {Prio: 'H', Text: "c"}, {Prio: 'H', Text: "d"}}
 	Sort(items, false)
 	got := ""
+	var gotSb18 strings.Builder
 	for _, it := range items {
-		got += it.Text
+		gotSb18.WriteString(it.Text)
 	}
+	got += gotSb18.String()
 	if got != "cdba" { // H,H (stable), L, none
 		t.Fatalf("want cdba, got %s", got)
 	}
@@ -33,9 +36,11 @@ func TestSortByCategoryThenPrio(t *testing.T) {
 	}
 	Sort(items, false)
 	got := ""
+	var gotSb36 strings.Builder
 	for _, it := range items {
-		got += it.Text + " "
+		gotSb36.WriteString(it.Text + " ")
 	}
+	got += gotSb36.String()
 	if got != "a2 a1 b1 b2 u1 " {
 		t.Fatalf("category+prio order wrong: %q", got)
 	}
@@ -49,9 +54,11 @@ func TestSortBySource(t *testing.T) {
 	}
 	SortBySource(items)
 	got := ""
+	var gotSb52 strings.Builder
 	for _, it := range items {
-		got += it.Text + " "
+		gotSb52.WriteString(it.Text + " ")
 	}
+	got += gotSb52.String()
 	// grouped by source (api<web), category order within a source
 	if got != "a1 w1 w2 " {
 		t.Fatalf("source order wrong: %q", got)
@@ -186,7 +193,7 @@ func TestParseDue(t *testing.T) {
 		"1y":         "2027-07-10",
 		"25-12-2026": "2026-12-25", // DMY input -> ISO storage
 		"2026-12-25": "2026-12-25",
-		"whatever":   "",           // unrecognized -> blank
+		"whatever":   "",           // unrecognised -> blank
 		"monday":     "2026-07-13", // 2026-07-10 is a Friday
 		"Thurs":      "2026-07-16",
 		"sat":        "2026-07-11",
@@ -234,7 +241,7 @@ func TestQuickAdd(t *testing.T) {
 	if it.Text != "ship the thing" || it.Category != "work" || it.Prio != 'H' || it.Due != "2026-07-11" {
 		t.Fatalf("quick-add parse wrong: %+v", it)
 	}
-	it = ParseQuickAdd("buy !x milk") // unrecognized tokens stay in text
+	it = ParseQuickAdd("buy !x milk") // unrecognised tokens stay in text
 	if it.Text != "buy !x milk" {
 		t.Fatalf("bad token should stay: %q", it.Text)
 	}
@@ -329,9 +336,11 @@ func TestSortByTag(t *testing.T) {
 	}
 	SortByTag(items)
 	got := ""
+	var gotSb332 strings.Builder
 	for _, it := range items {
-		got += it.Text + " "
+		gotSb332.WriteString(it.Text + " ")
 	}
+	got += gotSb332.String()
 	// grouped by first tag (api<docs, untagged last), priority order within a tag
 	if got != "a2 a1 b1 u1 " {
 		t.Fatalf("tag order wrong: %q", got)

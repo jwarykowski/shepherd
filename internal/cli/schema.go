@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-
 	"shepherd/internal/store"
 )
 

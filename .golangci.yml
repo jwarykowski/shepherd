@@ -1,6 +1,42 @@
 version: "2"
 
-# Standard linter set: errcheck, govet, ineffassign, staticcheck, unused.
-# Add more under `enable:` if you want stricter checks.
 linters:
-  default: standard
+  default: standard # errcheck, govet, ineffassign, staticcheck, unused
+  enable:
+    - bodyclose
+    - copyloopvar
+    - errorlint
+    - gocritic
+    - intrange
+    - misspell
+    - modernize
+    - nilerr
+    - perfsprint
+    - revive
+    - unconvert
+    - unparam
+    - usestdlibvars
+    - wastedassign
+  settings:
+    misspell:
+      locale: UK # Australian English in comments
+      mode: restricted # comments only: code keeps names like lipgloss.Color and NO_COLOR
+      ignore-rules: [serialize, normalize, color] # Go names that doc comments must spell as declared
+    revive:
+      rules:
+        - name: exported
+        - name: package-comments
+        - name: var-naming
+        - name: indent-error-flow
+        - name: errorf
+        - name: error-strings
+        - name: receiver-naming
+        - name: unused-parameter
+        - name: redefines-builtin-id
+  exclusions:
+    presets: [std-error-handling]
+
+formatters:
+  enable:
+    - gofumpt
+    - goimports

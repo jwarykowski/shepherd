@@ -4,11 +4,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"shepherd/internal/todo"
 	"strings"
 	"sync"
 	"testing"
-
-	"shepherd/internal/todo"
 )
 
 // TestWithLockSerialisesWriters proves the advisory lock closes the lost-update
@@ -23,7 +22,7 @@ func TestWithLockSerialisesWriters(t *testing.T) {
 	}
 	const n = 25
 	var wg sync.WaitGroup
-	for i := 0; i < n; i++ {
+	for i := range n {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
@@ -332,7 +331,7 @@ func TestArchivePath(t *testing.T) {
 
 // seedBoards points BaseDir at a temp HOME and writes a default board plus two
 // board boards (and an archive sibling that must be ignored).
-func seedBoards(t *testing.T) string {
+func seedBoards(t *testing.T) {
 	t.Helper()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -351,7 +350,6 @@ func seedBoards(t *testing.T) string {
 	write(filepath.Join(base, "web.md"), "- [ ] b\n")
 	write(filepath.Join(base, "api.md"), "- [ ] c\n")
 	write(filepath.Join(base, "web-archive.md"), "- [x] old\n") // must be skipped
-	return home
 }
 
 func TestBoards(t *testing.T) {
@@ -510,7 +508,7 @@ func TestLoadAll(t *testing.T) {
 	}
 }
 
-// TestBaseDirXDG checks BaseDir honors $XDG_CONFIG_HOME and falls back to
+// TestBaseDirXDG checks BaseDir honours $XDG_CONFIG_HOME and falls back to
 // ~/.config when it is unset (clig: follow the XDG spec).
 func TestBaseDirXDG(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", filepath.Join(t.TempDir(), "xdg"))

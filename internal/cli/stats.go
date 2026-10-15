@@ -4,10 +4,9 @@ import (
 	"flag"
 	"io"
 	"os"
-	"sort"
-
 	"shepherd/internal/store"
 	"shepherd/internal/todo"
+	"sort"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/term"
@@ -65,10 +64,10 @@ func termWidth() int {
 	return 80
 }
 
-// colorDisabled decides whether to strip ANSI color from the charts, honoring
-// (clig): an explicit --no-color flag, $NO_COLOR (any value), $TERM=dumb, or a
+// colorDisabled decides whether to strip ANSI colour from the charts, honouring
+// (clig): an explicit --no-colour flag, $NO_COLOUR (any value), $TERM=dumb, or a
 // non-tty stdout. lipgloss/termenv already auto-detect the last three, but we
-// gate them explicitly so shepherd owns the behavior rather than inheriting it.
+// gate them explicitly so shepherd owns the behaviour rather than inheriting it.
 func colorDisabled(flagSet bool) bool {
 	if flagSet {
 		return true

@@ -3,15 +3,15 @@
 package store
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
+	"shepherd/internal/todo"
 	"strings"
 	"syscall"
 	"time"
-
-	"shepherd/internal/todo"
 )
 
 var (
@@ -103,7 +103,7 @@ func ConfigPath() string {
 func ScanKV(data string) map[string]string {
 	out := map[string]string{}
 	open := "" // the key of an array still waiting for its "]"
-	for _, ln := range strings.Split(data, "\n") {
+	for ln := range strings.SplitSeq(data, "\n") {
 		ln = strings.TrimSpace(ln)
 		if ln == "" || strings.HasPrefix(ln, "#") {
 			continue
@@ -141,7 +141,7 @@ func ScanKVFile(path string) map[string]string {
 // its entries, dropping blanks; lower lowercases each (statuses).
 func ParseList(v string, lower bool) []string {
 	var out []string
-	for _, part := range strings.Split(strings.Trim(v, "[]"), ",") {
+	for part := range strings.SplitSeq(strings.Trim(v, "[]"), ",") {
 		s := strings.Trim(strings.TrimSpace(part), `"`)
 		if lower {
 			s = strings.ToLower(s)
@@ -240,7 +240,7 @@ func CreateBoard(name string) error {
 // the default board, an invalid target, a missing source, or an existing target.
 func RenameBoard(oldName, newName string) error {
 	if oldName == "" || oldName == "default" {
-		return fmt.Errorf("cannot rename the default board")
+		return errors.New("cannot rename the default board")
 	}
 	if err := ValidBoard(newName); err != nil {
 		return err
@@ -268,7 +268,7 @@ func RenameBoard(oldName, newName string) error {
 // the default board.
 func DeleteBoard(name string) error {
 	if name == "" || name == "default" {
-		return fmt.Errorf("cannot delete the default board")
+		return errors.New("cannot delete the default board")
 	}
 	p := TodoPathFor(name)
 	if !fileExists(p) {
@@ -287,7 +287,7 @@ func DeleteBoard(name string) error {
 // boards/archived/, hiding it from Boards(). Reversible via UnarchiveBoard.
 func ArchiveBoard(name string) error {
 	if name == "" || name == "default" {
-		return fmt.Errorf("cannot archive the default board")
+		return errors.New("cannot archive the default board")
 	}
 	src := TodoPathFor(name)
 	if !fileExists(src) {
@@ -455,7 +455,7 @@ func Load(path string) []todo.Item {
 	}
 	var items []todo.Item
 	curSub := -1 // index into the last parent's Subs, or -1 for the parent itself
-	for _, ln := range strings.Split(string(data), "\n") {
+	for ln := range strings.SplitSeq(string(data), "\n") {
 		if m := lineRE.FindStringSubmatch(ln); m != nil {
 			items = append(items, parseCheck(m))
 			curSub = -1
@@ -522,7 +522,7 @@ func writeItem(b *strings.Builder, it todo.Item, indent string) {
 		fmt.Fprintf(b, "%slink: %s\n", meta, strings.ReplaceAll(it.Link, "\n", " "))
 	}
 	if it.Note != "" {
-		for _, ln := range strings.Split(it.Note, "\n") {
+		for ln := range strings.SplitSeq(it.Note, "\n") {
 			fmt.Fprintf(b, "%snote: %s\n", meta, ln)
 		}
 	}

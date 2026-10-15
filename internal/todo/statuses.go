@@ -18,7 +18,7 @@ func SetStatus(it *Item, name string) {
 }
 
 // StatusOf is an item's effective status name against the configured order:
-// "done" (last after normalization) when Done, the first status when Status is
+// "done" (last after normalisation) when Done, the first status when Status is
 // left implicit (empty), else Status itself.
 func StatusOf(it Item, statuses []string) string {
 	if len(statuses) == 0 {

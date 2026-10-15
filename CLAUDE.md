@@ -11,9 +11,9 @@ markdown file. Go, no frameworks.
 
 - build: `go build -o bin/shepherd .`
 - test: `go test ./...`
-- format: `gofmt -w .` (CI fails if `gofmt -l .` is non-empty)
+- format: `golangci-lint fmt ./...` (gofumpt and goimports; CI fails on unformatted files)
 - vet: `go vet ./...`
-- lint: `golangci-lint run`
+- lint: `golangci-lint run` (v2, `.golangci.yml`)
 
 Run format + vet + test + lint before proposing changes done — CI
 (`.github/workflows/pull-request.yml`) runs all of them on every PR and push to

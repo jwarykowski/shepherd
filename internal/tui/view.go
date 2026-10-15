@@ -4,14 +4,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"shepherd/internal/store"
+	"shepherd/internal/todo"
+	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/table"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
-
-	"shepherd/internal/store"
-	"shepherd/internal/todo"
 )
 
 // ---- styles ----
@@ -39,10 +39,7 @@ var (
 // the middle (always at least one space, so a too-narrow pane still separates
 // them). Measured with lipgloss.Width, so styled input counts its glyphs only.
 func spread(w int, left, right string) string {
-	gap := w - lipgloss.Width(left) - lipgloss.Width(right)
-	if gap < 1 {
-		gap = 1
-	}
+	gap := max(w-lipgloss.Width(left)-lipgloss.Width(right), 1)
 	return left + strings.Repeat(" ", gap) + right
 }
 
@@ -91,10 +88,7 @@ func (m model) innerHeight() int {
 	if m.height == 0 {
 		return 0
 	}
-	h := m.height - 2*m.density.padY()
-	if h < 1 {
-		h = 1
-	}
+	h := max(m.height-2*m.density.padY(), 1)
 	return h
 }
 
@@ -205,13 +199,14 @@ func (m model) rowContent(it todo.Item, indent, badge string, isSub bool) string
 	boxSt := boxStyle
 	text := it.Text
 	deferred := todo.Deferred(it)
-	if it.Done {
+	switch {
+	case it.Done:
 		box = "✓"
 		text = doneStyle.Render(text)
-	} else if it.Status != "" {
+	case it.Status != "":
 		box = "◐"
 		boxSt = progStyle
-	} else if deferred {
+	case deferred:
 		text = dimStyle.Render(text) // not started yet
 	}
 	if m.global && m.view != viewBoard && it.Source != "" {
@@ -311,21 +306,14 @@ func (m model) listView() string {
 	return m.frame(body, footer)
 }
 
-// scrollOffset is the top-of-viewport index that keeps cursorLine centered in
+// scrollOffset is the top-of-viewport index that keeps cursorLine centred in
 // a vh-tall viewport over total rows, clamped at both ends.
 func scrollOffset(total, cursorLine, vh int) int {
-	off := cursorLine - vh/2
-	if off < 0 {
-		off = 0
-	}
-	if off > total-vh {
-		off = total - vh
-	}
-	return off
+	return min(max(cursorLine-vh/2, 0), total-vh)
 }
 
 // windowRows clips the list body to what fits between the header and footer,
-// keeping the cursor line centered in the viewport (clamped at both ends). It
+// keeping the cursor line centred in the viewport (clamped at both ends). It
 // returns rows unchanged when the terminal size is unknown or everything fits.
 func (m model) windowRows(rows []string, cursorLine, footLines int) []string {
 	ih := m.innerHeight()
@@ -636,10 +624,7 @@ func (m model) bottomBar() string {
 	// Link the version to its GitHub release; skip when unbuilt ("dev"/"unknown").
 	// The link is added after spreading so the invisible OSC 8 bytes don't count
 	// toward the gap.
-	gap := m.width() - lipgloss.Width(left) - lipgloss.Width(right)
-	if gap < 1 {
-		gap = 1
-	}
+	gap := max(m.width()-lipgloss.Width(left)-lipgloss.Width(right), 1)
 	if Version != "dev" && Version != "unknown" && Version != "" {
 		right = osc8(right, repoURL+"/releases/tag/v"+Version)
 	}
@@ -769,7 +754,7 @@ func (m model) keyGrid(cols []keyCol, dim func(key string) bool) string {
 	}
 
 	var b strings.Builder
-	for r := 0; r < rows; r++ {
+	for r := range rows {
 		for i := range cols {
 			cell := ""
 			if r < len(rendered[i]) {
@@ -796,10 +781,9 @@ func (m model) tableView() string {
 	if m.global {
 		projW = 12
 	}
-	taskW := w - (2 + 2 + catW + dueW + projW + 8) // marks + fixed cols + cell padding
-	if taskW < 10 {
-		taskW = 10
-	}
+	taskW := max(
+		// marks + fixed cols + cell padding
+		w-(2+2+catW+dueW+projW+8), 10)
 	cols := []table.Column{
 		{Title: "✓", Width: 1},
 		{Title: "!", Width: 1},
@@ -847,10 +831,7 @@ func (m model) tableView() string {
 	// derive table height from the actual header/footer sizes (+1 for the
 	// table's own column-header row) rather than a hard-coded constant.
 	overhead := lines(head) + lines(footer) + 1
-	h := m.innerHeight() - overhead
-	if h < 3 {
-		h = 3
-	}
+	h := max(m.innerHeight()-overhead, 3)
 	t := table.New(
 		table.WithColumns(cols),
 		table.WithRows(rows),
@@ -891,27 +872,18 @@ func (m model) laneView() string {
 	if len(lanes) == 0 { // config invariant, but test model{} literals often skip it
 		lanes = []string{""}
 	}
-	colW := (w - laneGap*(len(lanes)-1)) / len(lanes)
-	if colW < 8 {
-		colW = 8
-	}
-	active := m.lane
-	if active < 0 {
-		active = 0
-	}
+	colW := max((w-laneGap*(len(lanes)-1))/len(lanes), 8)
+	active := max(m.lane, 0)
 	if active >= len(lanes) {
 		active = len(lanes) - 1
 	}
-	cur := m.cursor
-	if cur < 0 {
-		cur = 0
-	}
+	cur := max(m.cursor, 0)
 
 	headers := make([]string, len(lanes))
 	cardLines := make([][]string, len(lanes))
 	for i, status := range lanes {
 		rows := m.laneRows(status)
-		headers[i] = spread(colW, catStyle.Render(status), countStyle.Render(fmt.Sprintf("%d", len(rows))))
+		headers[i] = spread(colW, catStyle.Render(status), countStyle.Render(strconv.Itoa(len(rows))))
 		lines := make([]string, len(rows))
 		for j, r := range rows {
 			line := m.laneCard(m.rowItem(r), colW)
@@ -936,14 +908,8 @@ func (m model) laneView() string {
 	cols := make([]string, len(lanes))
 	for i, visible := range cardLines {
 		if vh > 0 {
-			start := off
-			if start > len(visible) {
-				start = len(visible)
-			}
-			end := start + vh
-			if end > len(visible) {
-				end = len(visible)
-			}
+			start := min(off, len(visible))
+			end := min(start+vh, len(visible))
 			visible = visible[start:end]
 		}
 		if len(visible) == 0 {
@@ -970,7 +936,7 @@ func (m model) helpBody() []string {
 	var out []string
 	sec := func(s string) { out = append(out, catStyle.Render(s)) }
 	line := func(s string) {
-		for _, ln := range strings.Split(wrap.Render(s), "\n") {
+		for ln := range strings.SplitSeq(wrap.Render(s), "\n") {
 			out = append(out, "  "+ln)
 		}
 	}
@@ -1020,17 +986,16 @@ func (m model) helpViewport() int {
 	if ih == 0 {
 		return len(m.helpBody()) // unknown size: show everything
 	}
-	vh := ih - 5 // subtitle + rule + blank, footer rule + hint
-	if vh < 1 {
-		vh = 1
-	}
+	vh := max(
+		// subtitle + rule + blank, footer rule + hint
+		ih-5, 1)
 	return vh
 }
 
 // helpMaxScroll is the largest valid scroll offset.
 func (m model) helpMaxScroll() int {
-	if max := len(m.helpBody()) - m.helpViewport(); max > 0 {
-		return max
+	if n := len(m.helpBody()) - m.helpViewport(); n > 0 {
+		return n
 	}
 	return 0
 }
@@ -1044,10 +1009,7 @@ func (m model) helpView() string {
 	if off > m.helpMaxScroll() {
 		off = m.helpMaxScroll()
 	}
-	end := off + vh
-	if end > len(body) {
-		end = len(body)
-	}
+	end := min(off+vh, len(body))
 
 	done, total := m.count()
 	var b strings.Builder
@@ -1140,11 +1102,11 @@ func (m model) detailView() string {
 		b.WriteString(field("board", catStyle.Render(it.Source)))
 	}
 	if it.Defer != "" {
-		defer_ := todo.DisplayDate(it.Defer)
+		deferral := todo.DisplayDate(it.Defer)
 		if lbl := todo.DeferLabel(it.Defer); lbl != "" {
-			defer_ += "  " + dimStyle.Render(lbl)
+			deferral += "  " + dimStyle.Render(lbl)
 		}
-		b.WriteString(field("defer", defer_))
+		b.WriteString(field("defer", deferral))
 	}
 	due := dimStyle.Render("—")
 	if it.Due != "" {
@@ -1164,11 +1126,12 @@ func (m model) detailView() string {
 		b.WriteString(field("completed", it.Completed))
 	}
 	b.WriteString("\n" + dimStyle.Render("note") + "\n")
-	if m.mode == modeNote {
+	switch {
+	case m.mode == modeNote:
 		b.WriteString(m.note.View() + "\n")
-	} else if it.Note != "" {
+	case it.Note != "":
 		b.WriteString(lipgloss.NewStyle().Width(m.width()).Render(it.Note) + "\n")
-	} else {
+	default:
 		b.WriteString(dimStyle.Render("(none — press n to add)") + "\n")
 	}
 

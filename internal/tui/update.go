@@ -4,15 +4,14 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"shepherd/internal/store"
+	"shepherd/internal/todo"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
-
-	"shepherd/internal/store"
-	"shepherd/internal/todo"
 )
 
 // copyText puts s on the system clipboard. A package var so tests never touch
@@ -141,10 +140,7 @@ func (m model) currentLane() string {
 	if len(m.statuses) == 0 {
 		return ""
 	}
-	i := m.lane
-	if i < 0 {
-		i = 0
-	}
+	i := max(m.lane, 0)
 	if i >= len(m.statuses) {
 		i = len(m.statuses) - 1
 	}
@@ -324,7 +320,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tickMsg:
 		// only auto-reload external edits when we have no pending in-memory
 		// changes, so a dotfile sync can't clobber the user's work.
-		if m.global {
+		switch {
+		case m.global:
 			if mt := store.BoardsLatestMod(); mt.After(m.lastMod) {
 				m.items = store.LoadAll()
 				m.resort()
@@ -332,14 +329,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.lastMod = mt
 				m.markSaved()
 			}
-		} else if m.dirty {
+		case m.dirty:
 			// debounced autosave: flush once the user has paused editing.
 			if m.autosaveEvery > 0 && time.Since(m.lastEdit) >= m.autosaveEvery {
 				_ = store.Save(m.path, m.items)
 				m.lastMod = store.FileModTime(m.path)
 				m.markSaved()
 			}
-		} else {
+		default:
 			if mt := store.FileModTime(m.path); mt.After(m.lastMod) {
 				m.items = store.Load(m.path)
 				m.archived = store.Load(store.ArchivePath(m.path))
@@ -455,8 +452,9 @@ func (m model) updateGlobal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // openLink launches the OS browser on url (open on macOS, xdg-open elsewhere),
 // detached. A no-op when url is empty. The exec error is dropped: there's no
-// board-side recovery and the TUI must not block on a spawn.
-func openLink(url string) tea.Cmd {
+// board-side recovery and the TUI must not block on a spawn. It returns a
+// tea.Cmd so key handlers can return it, but has nothing to run afterwards.
+func openLink(url string) tea.Cmd { //nolint:unparam // matches the handlers' return
 	if url == "" {
 		return nil
 	}

@@ -2,11 +2,11 @@ package cli
 
 import (
 	"fmt"
+	"shepherd/internal/todo"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
-
-	"shepherd/internal/todo"
 
 	"github.com/NimbleMarkets/ntcharts/linechart/timeserieslinechart"
 	"github.com/NimbleMarkets/ntcharts/sparkline"
@@ -14,7 +14,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-// Priority colors mirror tui/view.go: H red, M yellow, L faint. Kept here (not
+// Priority colours mirror tui/view.go: H red, M yellow, L faint. Kept here (not
 // cross-imported) so the tui package stays UI-only.
 const (
 	colHigh = "1"
@@ -49,10 +49,7 @@ func renderStats(s todo.Stats, title string, width int) string {
 	var b strings.Builder
 	left := titleStyle.Render(title)
 	right := faintStyle.Render(fmt.Sprintf("%d/%d done · %d%%", s.Done, s.Total, pct(s.CompletionRate)))
-	gap := width - lipgloss.Width(left) - lipgloss.Width(right)
-	if gap < 1 {
-		gap = 1
-	}
+	gap := max(width-lipgloss.Width(left)-lipgloss.Width(right), 1)
 	b.WriteString(left + strings.Repeat(" ", gap) + right + "\n")
 	b.WriteString(faintStyle.Render(strings.Repeat("─", width)) + "\n\n")
 
@@ -152,10 +149,7 @@ func pct(r float64) int { return int(r*100 + 0.5) }
 
 // innerW is the content width inside a panel (border + padding eat 4 cols).
 func innerW(panelW int) int {
-	w := panelW - 4
-	if w < 8 {
-		w = 8
-	}
+	w := max(panelW-4, 8)
 	return w
 }
 
@@ -165,29 +159,26 @@ func panel(title, body string, width int) string {
 }
 
 // hbar renders labelled horizontal bars scaled to the row max: a fixed label
-// column, a colored block bar, then the count. Bars are hand-drawn — ntcharts'
-// horizontal barchart reversed row order and emitted mid-bar artifacts for this
+// column, a coloured block bar, then the count. Bars are hand-drawn — ntcharts'
+// horizontal barchart reversed row order and emitted mid-bar artefacts for this
 // single-value-per-row case.
 func hbar(rows []barRow, width int) string {
 	if len(rows) == 0 {
 		return faintStyle.Render("(none)")
 	}
-	valW, max := 1, 0
+	valW, most := 1, 0
 	for _, r := range rows {
-		if r.value > max {
-			max = r.value
+		if r.value > most {
+			most = r.value
 		}
-		if n := len(fmt.Sprint(r.value)); n > valW {
+		if n := len(strconv.Itoa(r.value)); n > valW {
 			valW = n
 		}
 	}
 	// Grow the label column to the longest label, but reserve a readable bar so
 	// one very long name can't starve every bar down to the floor.
 	const minBar = 10
-	maxLabel := width - minBar - valW - 2
-	if maxLabel < 8 {
-		maxLabel = 8
-	}
+	maxLabel := max(width-minBar-valW-2, 8)
 	labelW := 0
 	labels := make([]string, len(rows))
 	for i, r := range rows {
@@ -196,19 +187,13 @@ func hbar(rows []barRow, width int) string {
 			labelW = w
 		}
 	}
-	barW := width - labelW - valW - 2
-	if barW < 4 {
-		barW = 4
-	}
+	barW := max(width-labelW-valW-2, 4)
 
 	lines := make([]string, len(rows))
 	for i, r := range rows {
 		fill := 0
-		if max > 0 && r.value > 0 {
-			fill = int(float64(r.value)/float64(max)*float64(barW) + 0.5)
-			if fill < 1 {
-				fill = 1
-			}
+		if most > 0 && r.value > 0 {
+			fill = max(int(float64(r.value)/float64(most)*float64(barW)+0.5), 1)
 		}
 		bar := lipgloss.NewStyle().Foreground(lipgloss.Color(r.color)).Render(strings.Repeat("━", fill)) +
 			faintStyle.Render(strings.Repeat("┄", barW-fill))
@@ -249,7 +234,7 @@ func trend(created, done []int, width int) string {
 	tc.SetViewYRange(0, maxY)
 	tc.SetDataSetStyle("created", lipgloss.NewStyle().Foreground(lipgloss.Color(colInfo)))
 	tc.SetDataSetStyle("done", lipgloss.NewStyle().Foreground(lipgloss.Color(colOK)))
-	for i := 0; i < n; i++ {
+	for i := range n {
 		d := base.AddDate(0, 0, i)
 		tc.PushDataSet("created", timeserieslinechart.TimePoint{Time: d, Value: float64(created[i])})
 		tc.PushDataSet("done", timeserieslinechart.TimePoint{Time: d, Value: float64(done[i])})

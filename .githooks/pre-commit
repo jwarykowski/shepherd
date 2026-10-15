@@ -7,5 +7,10 @@ set -euo pipefail
 mapfile -t files < <(git diff --cached --name-only --diff-filter=ACM -- '*.go')
 [ ${#files[@]} -eq 0 ] && exit 0
 
-gofmt -w "${files[@]}"
-git add "${files[@]}"   # re-stage anything gofmt rewrote
+# golangci-lint fmt matches CI (gofumpt, goimports); plain gofmt without it
+if command -v golangci-lint >/dev/null; then
+	golangci-lint fmt "${files[@]}"
+else
+	gofmt -w "${files[@]}"
+fi
+git add "${files[@]}"   # re-stage anything the formatter rewrote

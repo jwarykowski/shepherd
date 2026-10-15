@@ -7,11 +7,10 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"strings"
-
 	"shepherd/internal/cli"
 	"shepherd/internal/store"
 	"shepherd/internal/tui"
+	"strings"
 
 	"github.com/charmbracelet/x/term"
 )

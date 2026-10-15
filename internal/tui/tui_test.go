@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"shepherd/internal/store"
+	"shepherd/internal/todo"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -13,9 +16,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
-
-	"shepherd/internal/store"
-	"shepherd/internal/todo"
 )
 
 func key(s string) tea.KeyMsg {
@@ -75,8 +75,10 @@ func TestBoardsPickerJump(t *testing.T) {
 	_ = os.WriteFile(filepath.Join(base, "todo.md"), []byte("- [ ] alpha\n"), 0o644)
 	_ = os.WriteFile(filepath.Join(base, "boards", "web.md"), []byte("- [ ] beta\n"), 0o644)
 
-	m := model{path: filepath.Join(base, "todo.md"), board: "", input: textinput.New(),
-		items: store.Load(filepath.Join(base, "todo.md"))}
+	m := model{
+		path: filepath.Join(base, "todo.md"), board: "", input: textinput.New(),
+		items: store.Load(filepath.Join(base, "todo.md")),
+	}
 
 	m = drive(m, "b") // open picker
 	if m.mode != modeBoards {
@@ -178,8 +180,10 @@ func TestBoardPickerActions(t *testing.T) {
 	_ = os.WriteFile(filepath.Join(base, "boards", "api.md"), []byte("- [ ] c\n"), 0o644)
 
 	// current board = default; picker rows: default, api, web
-	m := model{path: filepath.Join(base, "todo.md"), board: "", input: textinput.New(),
-		items: store.Load(filepath.Join(base, "todo.md"))}
+	m := model{
+		path: filepath.Join(base, "todo.md"), board: "", input: textinput.New(),
+		items: store.Load(filepath.Join(base, "todo.md")),
+	}
 
 	// archive: move cursor to api (row 1) and press A
 	m = drive(m, "b", "j", "A")
@@ -301,8 +305,10 @@ func TestModelActions(t *testing.T) {
 }
 
 func TestSubtasks(t *testing.T) {
-	m := model{input: textinput.New(), statuses: []string{"open", "in-progress", "done"},
-		items: []todo.Item{{Text: "parent"}}}
+	m := model{
+		input: textinput.New(), statuses: []string{"open", "in-progress", "done"},
+		items: []todo.Item{{Text: "parent"}},
+	}
 
 	// S adds a subtask to the selected parent
 	m = drive(m, "S")
@@ -492,8 +498,10 @@ func TestAddInheritsSelectedCategory(t *testing.T) {
 	}
 
 	// uncategorised row under a category filter: the filter rule still applies
-	m = model{input: textinput.New(), categories: []string{"personal"}, filter: "personal",
-		items: []todo.Item{{Text: "personal admin"}}} // matches by text, has no category
+	m = model{
+		input: textinput.New(), categories: []string{"personal"}, filter: "personal",
+		items: []todo.Item{{Text: "personal admin"}},
+	} // matches by text, has no category
 	m = drive(m, "a")
 	m.input.SetValue("book flights")
 	m = drive(m, "enter")
@@ -503,9 +511,9 @@ func TestAddInheritsSelectedCategory(t *testing.T) {
 }
 
 func lastByText(m model, text string) todo.Item {
-	for i := len(m.items) - 1; i >= 0; i-- {
-		if m.items[i].Text == text {
-			return m.items[i]
+	for _, v := range slices.Backward(m.items) {
+		if v.Text == text {
+			return v
 		}
 	}
 	return todo.Item{}
@@ -569,9 +577,11 @@ func TestQuitKeys(t *testing.T) {
 }
 
 func TestSubtaskDetail(t *testing.T) {
-	m := model{input: textinput.New(), note: textarea.New(), w: 50, height: 24,
+	m := model{
+		input: textinput.New(), note: textarea.New(), w: 50, height: 24,
 		mode: modeDetail, cursor: 1,
-		items: []todo.Item{{Text: "parent task", Subs: []todo.Item{{Text: "child step"}}}}}
+		items: []todo.Item{{Text: "parent task", Subs: []todo.Item{{Text: "child step"}}}},
+	}
 	out := m.detailView()
 	if !strings.Contains(out, "child step") {
 		t.Fatal("detail did not show the subtask text")
@@ -586,13 +596,17 @@ func TestSubtaskDetail(t *testing.T) {
 // the subtask progress when there is any, else the due label.
 func TestTagView(t *testing.T) {
 	pinToday(t, "2026-07-10")
-	m := model{input: textinput.New(), note: textarea.New(), w: 70, height: 30,
+	m := model{
+		input: textinput.New(), note: textarea.New(), w: 70, height: 30,
 		view: viewTag, items: []todo.Item{
 			{Text: "bare task"},
 			{Text: "renew passport", Tags: []string{"admin"}, Due: "2026-07-20"},
-			{Text: "wire the webhook", Tags: []string{"api", "docs"},
-				Subs: []todo.Item{{Text: "parse", Done: true}, {Text: "test"}}},
-		}}
+			{
+				Text: "wire the webhook", Tags: []string{"api", "docs"},
+				Subs: []todo.Item{{Text: "parse", Done: true}, {Text: "test"}},
+			},
+		},
+	}
 	m.resort()
 	if m.items[0].Text != "renew passport" || m.items[2].Text != "bare task" {
 		t.Fatalf("tag sort wrong (admin, api, untagged last): %+v", m.items)
@@ -643,8 +657,10 @@ func TestTagView(t *testing.T) {
 // TestRowComplement checks each view carries the axis its headers don't show:
 // the category view shows priority on the right, the priority view the category.
 func TestRowComplement(t *testing.T) {
-	m := model{input: textinput.New(), note: textarea.New(), w: 60, height: 20,
-		items: []todo.Item{{Text: "ship it", Prio: 'H', Category: "work"}}}
+	m := model{
+		input: textinput.New(), note: textarea.New(), w: 60, height: 20,
+		items: []todo.Item{{Text: "ship it", Prio: 'H', Category: "work"}},
+	}
 
 	m.view = viewCategory
 	out := ansi.Strip(m.listView())
@@ -673,8 +689,10 @@ func TestRowComplement(t *testing.T) {
 // whole set, accepts spaces or commas, clears on empty, and a field editor opened
 // from the detail view returns there rather than to the list.
 func TestTagEditor(t *testing.T) {
-	m := model{input: textinput.New(), note: textarea.New(), w: 60, height: 20,
-		items: []todo.Item{{Text: "wire the webhook"}}}
+	m := model{
+		input: textinput.New(), note: textarea.New(), w: 60, height: 20,
+		items: []todo.Item{{Text: "wire the webhook"}},
+	}
 
 	m = drive(m, "T")
 	if m.mode != modeTags {
@@ -758,8 +776,10 @@ func TestTagEditor(t *testing.T) {
 // read-only global view (copying is safe there too), and stays a no-op with
 // nothing selected.
 func TestCopyTitleFromList(t *testing.T) {
-	m := model{input: textinput.New(), w: 60, height: 20,
-		items: []todo.Item{{Text: "wire the webhook"}}}
+	m := model{
+		input: textinput.New(), w: 60, height: 20,
+		items: []todo.Item{{Text: "wire the webhook"}},
+	}
 	before := m.items[0]
 	copied = nil
 	m = drive(m, "y")
@@ -770,8 +790,10 @@ func TestCopyTitleFromList(t *testing.T) {
 		t.Fatalf("y should copy the selected title, copied %q", copied)
 	}
 
-	g := model{input: textinput.New(), global: true, view: viewBoard,
-		items: []todo.Item{{Text: "a", Source: "default"}}}
+	g := model{
+		input: textinput.New(), global: true, view: viewBoard,
+		items: []todo.Item{{Text: "a", Source: "default"}},
+	}
 	g.resort()
 	if got := drive(g, "y"); got.items[0].Text != "a" {
 		t.Fatalf("y should be a no-op copy in the global view: %+v", got.items[0])
@@ -779,8 +801,10 @@ func TestCopyTitleFromList(t *testing.T) {
 }
 
 func TestDetailShowsTags(t *testing.T) {
-	m := model{input: textinput.New(), note: textarea.New(), w: 60, height: 24,
-		mode: modeDetail, items: []todo.Item{{Text: "task", Tags: []string{"api", "docs"}}}}
+	m := model{
+		input: textinput.New(), note: textarea.New(), w: 60, height: 24,
+		mode: modeDetail, items: []todo.Item{{Text: "task", Tags: []string{"api", "docs"}}},
+	}
 	if !strings.Contains(ansi.Strip(m.detailView()), "#api #docs") {
 		t.Fatalf("detail view missing tags:\n%s", m.detailView())
 	}
@@ -792,8 +816,10 @@ func TestDetailShowsTags(t *testing.T) {
 
 func TestDetailNoteWraps(t *testing.T) {
 	long := "this is a long note that should wrap onto several lines in detail"
-	m := model{input: textinput.New(), w: 30, height: 24, mode: modeDetail,
-		items: []todo.Item{{Text: "task", Note: long}}}
+	m := model{
+		input: textinput.New(), w: 30, height: 24, mode: modeDetail,
+		items: []todo.Item{{Text: "task", Note: long}},
+	}
 	wrapped := lipgloss.NewStyle().Width(m.width()).Render(long)
 	if !strings.Contains(wrapped, "\n") {
 		t.Fatalf("test setup: note should wrap at width %d", m.width())
@@ -849,10 +875,12 @@ func TestListScroll(t *testing.T) {
 }
 
 func TestFilterFarRight(t *testing.T) {
-	m := model{input: textinput.New(), w: 80, height: 10, filter: "bank",
-		items: []todo.Item{{Text: "call bank"}}}
+	m := model{
+		input: textinput.New(), w: 80, height: 10, filter: "bank",
+		items: []todo.Item{{Text: "call bank"}},
+	}
 	head := m.header()
-	first := strings.SplitN(head, "\n", 2)[0]
+	first, _, _ := strings.Cut(head, "\n")
 	if !strings.Contains(first, appName) || !strings.Contains(first, "/bank") || !strings.Contains(first, "0/1") || !strings.HasSuffix(first, "● saved") {
 		t.Fatalf("header layout wrong: %q", first)
 	}
@@ -1047,10 +1075,12 @@ func TestArchiveSelectedSkipsSubtask(t *testing.T) {
 }
 
 func TestArchiveSearch(t *testing.T) {
-	m := model{input: textinput.New(),
+	m := model{
+		input:    textinput.New(),
 		items:    []todo.Item{{Text: "active task"}},
 		archived: []todo.Item{{Text: "old bank thing", Done: true}, {Text: "unrelated"}},
-		filter:   "bank"}
+		filter:   "bank",
+	}
 	got := m.archivedMatches()
 	if len(got) != 1 || got[0].Text != "old bank thing" {
 		t.Fatalf("archive search wrong: %+v", got)
@@ -1064,10 +1094,12 @@ func TestArchiveSearch(t *testing.T) {
 // TestArchiveBrowse checks e opens the read-only archive browser over the
 // board's archived items, j/k move the cursor, and esc returns to the board.
 func TestArchiveBrowse(t *testing.T) {
-	m := model{input: textinput.New(),
+	m := model{
+		input:    textinput.New(),
 		items:    []todo.Item{{Text: "active task"}},
 		archived: []todo.Item{{Text: "done one", Done: true}, {Text: "done two", Done: true}},
-		w:        80, height: 24}
+		w:        80, height: 24,
+	}
 
 	m = drive(m, "e")
 	if m.mode != modeArchive || len(m.arcRows) != 2 {
@@ -1109,8 +1141,10 @@ func TestLoadConfig(t *testing.T) {
 func TestTabCyclesStatus(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "todo.md")
 	_ = os.WriteFile(p, []byte("- [ ] alpha\n"), 0o644)
-	m := model{path: p, items: store.Load(p), input: textinput.New(),
-		statuses: []string{"open", "in-progress", "done"}}
+	m := model{
+		path: p, items: store.Load(p), input: textinput.New(),
+		statuses: []string{"open", "in-progress", "done"},
+	}
 
 	m = drive(m, "tab")
 	if m.items[0].Done || m.items[0].Status != "in-progress" {
@@ -1125,7 +1159,7 @@ func TestTabCyclesStatus(t *testing.T) {
 func TestLoadConfigStatuses(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "config.toml")
-	// "done" given out of order + duplicated: normalize dedups and forces it last.
+	// "done" given out of order + duplicated: normalizeStatuses dedups and forces it last.
 	_ = os.WriteFile(p, []byte("statuses = [\"open\", \"done\", \"in-progress\", \"open\"]\n"), 0o644)
 	c := loadConfig(p)
 	got := strings.Join(c.statuses, ",")
@@ -1157,25 +1191,25 @@ func TestNewModelLoads(t *testing.T) {
 
 func TestHelpScroll(t *testing.T) {
 	m := model{input: textinput.New(), w: 50, height: 12, mode: modeHelp}
-	max := m.helpMaxScroll()
-	if max <= 0 {
-		t.Fatalf("expected scrollable help at height 12, maxScroll=%d", max)
+	top := m.helpMaxScroll()
+	if top <= 0 {
+		t.Fatalf("expected scrollable help at height 12, maxScroll=%d", top)
 	}
 	send := func(s string) {
 		nm, _ := m.updateHelp(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)})
 		m = nm.(model)
 	}
 	send("G")
-	if m.helpScroll != max {
-		t.Errorf("after G scroll=%d, want max %d", m.helpScroll, max)
+	if m.helpScroll != top {
+		t.Errorf("after G scroll=%d, want top %d", m.helpScroll, top)
 	}
 	send("j")
-	if m.helpScroll != max {
-		t.Errorf("j past max scroll=%d, want %d", m.helpScroll, max)
+	if m.helpScroll != top {
+		t.Errorf("j past top scroll=%d, want %d", m.helpScroll, top)
 	}
 	send("k")
-	if m.helpScroll != max-1 {
-		t.Errorf("after k scroll=%d, want %d", m.helpScroll, max-1)
+	if m.helpScroll != top-1 {
+		t.Errorf("after k scroll=%d, want %d", m.helpScroll, top-1)
 	}
 	send("g")
 	if m.helpScroll != 0 {
@@ -1231,8 +1265,10 @@ func TestUpdateReload(t *testing.T) {
 		t.Fatalf("tick did not reload external edit: %+v", m.items)
 	}
 
-	dirtyM := model{path: path, input: textinput.New(), dirty: true,
-		items: []todo.Item{{Text: "unsaved"}}}
+	dirtyM := model{
+		path: path, input: textinput.New(), dirty: true,
+		items: []todo.Item{{Text: "unsaved"}},
+	}
 	nm, _ = dirtyM.Update(tickMsg{})
 	if got := nm.(model).items[0].Text; got != "unsaved" {
 		t.Fatalf("dirty model reloaded over unsaved work: %q", got)
@@ -1274,9 +1310,11 @@ func TestOverdueGroupLabel(t *testing.T) {
 
 func TestStatusCycleAndDoneToggle(t *testing.T) {
 	newModel := func() model {
-		return model{input: textinput.New(), note: textarea.New(), w: 50, height: 24,
+		return model{
+			input: textinput.New(), note: textarea.New(), w: 50, height: 24,
 			statuses: []string{"open", "in-progress", "done"}, cursor: 0,
-			items: []todo.Item{{Text: "deploy"}}}
+			items: []todo.Item{{Text: "deploy"}},
+		}
 	}
 	// space toggles done on any item
 	nm, _ := newModel().updateList(key(" "))
@@ -1298,11 +1336,13 @@ func TestStatusCycleAndDoneToggle(t *testing.T) {
 // whatever the flat cursor would have pointed at.
 func TestLaneView(t *testing.T) {
 	newModel := func() model {
-		return model{input: textinput.New(), note: textarea.New(), w: 60, height: 24,
+		return model{
+			input: textinput.New(), note: textarea.New(), w: 60, height: 24,
 			statuses: []string{"open", "in-progress", "done"},
 			items: []todo.Item{
 				{Text: "a"}, {Text: "b"}, {Text: "c", Status: "in-progress"},
-			}}
+			},
+		}
 	}
 
 	// v cycles category -> priority -> tag -> table -> lane
@@ -1351,9 +1391,11 @@ func TestLaneView(t *testing.T) {
 // view moves the cursor into the done lane along with the card, instead of
 // leaving it stranded pointing at whatever now sits in the old lane slot.
 func TestLaneViewSpaceFollowsCard(t *testing.T) {
-	m := model{input: textinput.New(), note: textarea.New(), w: 60, height: 24,
+	m := model{
+		input: textinput.New(), note: textarea.New(), w: 60, height: 24,
 		view: viewLane, statuses: []string{"open", "done"},
-		items: []todo.Item{{Text: "a"}, {Text: "b"}}}
+		items: []todo.Item{{Text: "a"}, {Text: "b"}},
+	}
 
 	m = drive(m, " ")
 	if m.lane != 1 {
@@ -1364,9 +1406,11 @@ func TestLaneViewSpaceFollowsCard(t *testing.T) {
 	}
 
 	// subtask: cycling its status in lane view follows the subtask's own row.
-	m2 := model{input: textinput.New(), note: textarea.New(), w: 60, height: 24,
+	m2 := model{
+		input: textinput.New(), note: textarea.New(), w: 60, height: 24,
 		view: viewLane, statuses: []string{"open", "in-progress", "done"},
-		items: []todo.Item{{Text: "parent", Subs: []todo.Item{{Text: "sub"}}}}}
+		items: []todo.Item{{Text: "parent", Subs: []todo.Item{{Text: "sub"}}}},
+	}
 	m2.cursor = 1 // the subtask row
 	m2 = drive(m2, "tab")
 	if m2.lane != 1 {
@@ -1384,8 +1428,10 @@ func TestLaneViewScrolls(t *testing.T) {
 	for i := range items {
 		items[i] = todo.Item{Text: fmt.Sprintf("task %d", i)}
 	}
-	m := model{input: textinput.New(), w: 60, height: 20, view: viewLane,
-		statuses: []string{"open", "done"}, items: items}
+	m := model{
+		input: textinput.New(), w: 60, height: 20, view: viewLane,
+		statuses: []string{"open", "done"}, items: items,
+	}
 
 	first := ansi.Strip(m.View())
 	if !strings.Contains(first, "task 0") {

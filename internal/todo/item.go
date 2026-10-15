@@ -5,6 +5,7 @@ package todo
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -40,10 +41,8 @@ func AddTag(it *Item, tag string) {
 	if tag == "" {
 		return
 	}
-	for _, t := range it.Tags {
-		if t == tag {
-			return
-		}
+	if slices.Contains(it.Tags, tag) {
+		return
 	}
 	it.Tags = append(it.Tags, tag)
 }
@@ -52,7 +51,7 @@ func AddTag(it *Item, tag string) {
 // deduplicated tags — the value form of the tags: token and the tags: meta line.
 func ParseTags(s string) []string {
 	var acc Item
-	for _, part := range strings.Split(s, ",") {
+	for part := range strings.SplitSeq(s, ",") {
 		AddTag(&acc, part)
 	}
 	return acc.Tags
@@ -81,7 +80,7 @@ func ApplyEdit(it *Item, s string) {
 		s = strings.TrimSpace(s[:i])
 	}
 	var words []string
-	for _, tok := range strings.Fields(s) {
+	for tok := range strings.FieldsSeq(s) {
 		switch {
 		case tok == "@":
 			it.Category = ""
@@ -142,7 +141,7 @@ func CheckDates(s string) error {
 	if i := noteIndex(s); i >= 0 {
 		s = s[:i]
 	}
-	for _, tok := range strings.Fields(s) {
+	for tok := range strings.FieldsSeq(s) {
 		for _, key := range []string{"due:", "defer:"} {
 			if v, ok := strings.CutPrefix(tok, key); ok && !ValidDate(v) {
 				return fmt.Errorf("unrecognised date in %s: use today, tomorrow, a weekday, 3d, 2w, 5m, 1y or DD-MM-YYYY", tok)

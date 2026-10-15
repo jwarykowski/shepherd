@@ -2,9 +2,8 @@ package store
 
 import (
 	"os"
-	"time"
-
 	"shepherd/internal/todo"
+	"time"
 )
 
 // AppendArchive appends done items to a sibling archive.md (created if absent).

@@ -12,9 +12,9 @@ import (
 // the DTO without describing it and this fails.
 func TestSchemaMatchesItemJSON(t *testing.T) {
 	want := map[string]bool{}
-	rt := reflect.TypeOf(itemJSON{})
-	for i := 0; i < rt.NumField(); i++ {
-		tag := rt.Field(i).Tag.Get("json")
+	rt := reflect.TypeFor[itemJSON]()
+	for field := range rt.Fields() {
+		tag := field.Tag.Get("json")
 		name, _, _ := strings.Cut(tag, ",")
 		if name == "" || name == "-" {
 			continue
