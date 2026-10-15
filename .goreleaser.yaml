@@ -1,0 +1,103 @@
+# Release builds for shepherd, run by .github/workflows/release.yml once
+# .github/scripts/release.sh has tagged a version bump. Binaries and checksums
+# go on the GitHub release here; the Homebrew formula goes to
+# jwarykowski/homebrew-tap as a pull request (GH_RELEASE_TOKEN needs write
+# access to the tap). Stable versions update Formula/shepherd.rb,
+# pre-releases Formula/shepherd-alpha.rb.
+version: 2
+
+project_name: shepherd
+
+before:
+  hooks:
+    - go test ./...
+
+# The version comes from herdr-plugin.toml, embedded at build; no ldflags.
+builds:
+  - id: shepherd
+    main: .
+    binary: shepherd
+    env:
+      - CGO_ENABLED=0
+    goos: [darwin, linux]
+    goarch: [amd64, arm64]
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+
+archives:
+  - id: shepherd
+    ids: [shepherd]
+    formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - README.md
+      - LICENSE
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^chore:"
+
+# named, since origin is Forgejo: releases stay on GitHub's copy
+release:
+  github:
+    owner: jwarykowski
+    name: shepherd
+  name_template: "shepherd {{ .Version }}"
+  prerelease: auto
+
+brews:
+  - name: shepherd
+    ids: [shepherd]
+    skip_upload: "{{ if .Prerelease }}true{{ else }}false{{ end }}"
+    repository: &tap
+      owner: jwarykowski
+      name: homebrew-tap
+      token: "{{ .Env.GH_RELEASE_TOKEN }}"
+      # the tap only takes changes through pull requests: push the formula to
+      # a branch and open one against main
+      branch: "shepherd-{{ .Version }}"
+      pull_request:
+        enabled: true
+        base:
+          branch: main
+    directory: Formula
+    homepage: https://shepherdcli.dev
+    description: Interactive todo board backed by a markdown file
+    license: MIT
+    commit_author: &author
+      name: Jonathan Warykowski
+      email: jonathan.chrisp@gmail.com
+    commit_msg_template: "feat: shepherd {{ .Version }}"
+    install: |
+      bin.install "shepherd"
+    test: |
+      assert_match "{{ .Version }}", shell_output("#{bin}/shepherd --version")
+
+  - name: shepherd-alpha
+    ids: [shepherd]
+    skip_upload: "{{ if .Prerelease }}false{{ else }}true{{ end }}"
+    repository:
+      <<: *tap
+      branch: "shepherd-alpha-{{ .Version }}"
+    directory: Formula
+    homepage: https://shepherdcli.dev
+    description: "Shepherd alpha: the todo board, plus sending tasks to your coding agent"
+    license: MIT
+    dependencies:
+      - name: jwarykowski/tap/drover
+    conflicts:
+      - shepherd
+    commit_author: *author
+    commit_msg_template: "feat: shepherd-alpha {{ .Version }}"
+    install: |
+      bin.install "shepherd"
+    test: |
+      assert_match "{{ .Version }}", shell_output("#{bin}/shepherd --version")

@@ -77,10 +77,12 @@ flows. Every non-trivial change ships a test.
 Version lives once in `herdr-plugin.toml` (`version = "x.y.z"`), embedded into
 the binary at build. Bump it with a `chore: bump version to x.y.z` commit in a
 PR. Never tag by hand and never make a GitHub Release: when the bump lands, the
-release workflow (`.github/workflows/release.yml`,
-`.github/scripts/release.sh`) tags the commit `vX.Y.Z` and opens and merges a
-`jwarykowski/homebrew-tap` PR pointing the formula at it (needs the
-`GH_RELEASE_TOKEN` secret).
+release workflow (`.github/workflows/release.yml`) has
+`.github/scripts/release.sh` tag the commit `vX.Y.Z` and wait for the push
+mirror to carry it to GitHub, then GoReleaser (`.goreleaser.yaml`) publishes
+the binaries as a GitHub release and opens a `jwarykowski/homebrew-tap` PR with
+the formula, which the workflow merges (needs the `GH_RELEASE_TOKEN` secret on
+Forgejo: a GitHub token with write access to shepherd and the tap).
 
 - `master`: stable versions (`0.21.0`) → `Formula/shepherd.rb`
 - `pro`: pre-releases (`0.21.0-alpha.2`) → `Formula/shepherd-alpha.rb`

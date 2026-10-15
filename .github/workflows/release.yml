@@ -1,5 +1,6 @@
-# Releases on a version bump in herdr-plugin.toml: tags the commit and updates
-# the Homebrew formula (see .github/scripts/release.sh). Stable versions
+# Releases on a version bump in herdr-plugin.toml: release.sh tags the commit,
+# then GoReleaser builds the binaries, publishes the GitHub release and opens
+# the Homebrew formula pull request, which is merged here. Stable versions
 # release from master, pre-releases (-alpha, -beta) from pro.
 name: release
 
@@ -17,7 +18,27 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: .github/scripts/release.sh "${GITHUB_REF_NAME}"
+        with:
+          fetch-depth: 0
+      - id: tag
+        run: .github/scripts/release.sh "${GITHUB_REF_NAME}"
+      - if: steps.tag.outputs.tag != ''
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - if: steps.tag.outputs.tag != ''
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAP_TOKEN: ${{ secrets.GH_RELEASE_TOKEN }} # a token that can write to jwarykowski/homebrew-tap
+          # the release goes on GitHub's copy; the formula pull request goes to the tap
+          GITHUB_TOKEN: ${{ secrets.GH_RELEASE_TOKEN }}
+          GH_RELEASE_TOKEN: ${{ secrets.GH_RELEASE_TOKEN }}
+      - if: steps.tag.outputs.tag != ''
+        run: |
+          GH_TOKEN="$GH_RELEASE_TOKEN" gh pr merge -R jwarykowski/homebrew-tap \
+            --squash --delete-branch "${{ steps.tag.outputs.formula }}-${{ steps.tag.outputs.version }}"
+        env:
+          GH_RELEASE_TOKEN: ${{ secrets.GH_RELEASE_TOKEN }}
