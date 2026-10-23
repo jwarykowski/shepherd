@@ -95,5 +95,6 @@ Conventional Commits; PR-merge commits carry the trailing `(#NN)`. Branch
 `feat/…`, `fix/…`, `refactor/…`, `chore/…`, `docs/…` off `master` (or off `pro`
 for agents/Pro work). (Global
 rules already apply: `--no-gpg-sign`, no `Co-Authored-By`, never commit on the
-default branch, commit only when asked.) Remote pushes to both GitHub
-(primary, CI) and Codeberg (mirror).
+default branch, commit only when asked.) `origin` is the Forgejo repo
+(`code.warykowski.io/jwarykowski/shepherd`) and runs CI and releases; GitHub
+(release host) and Codeberg mirror it.
