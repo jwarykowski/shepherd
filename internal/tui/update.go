@@ -44,8 +44,8 @@ func tick() tea.Cmd {
 
 // openEditor saves the list, then hands the terminal to $EDITOR (fallback vi)
 // on the markdown file. sh -c so EDITOR may carry flags (e.g. "code -w").
-func (m model) openEditor() tea.Cmd {
-	_ = store.Save(m.path, m.items)
+func (m *model) openEditor() tea.Cmd {
+	m.save()
 	editor := os.Getenv("EDITOR")
 	if editor == "" {
 		editor = "vi"
@@ -201,10 +201,13 @@ func (m *model) prompt(md mode, value, placeholder string) {
 	m.input.Focus()
 }
 
-// sameItem matches two items by their (near-unique) identity fields, ignoring
+// sameItem matches two items by ID, else by their (near-unique) identity fields, ignoring
 // Subs/order, so the cursor can be re-placed after a resort. Item has a slice
 // field and is not comparable, so == can't be used.
 func sameItem(a, b todo.Item) bool {
+	if a.ID != "" && b.ID != "" {
+		return a.ID == b.ID
+	}
 	return a.Text == b.Text && a.Created == b.Created && a.Category == b.Category &&
 		a.Prio == b.Prio && a.Due == b.Due && a.Done == b.Done
 }
@@ -310,12 +313,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case editorDoneMsg:
 		// Reload from disk — the file may have changed under us.
-		m.items = store.Load(m.path)
-		m.archived = store.Load(store.ArchivePath(m.path))
-		m.resort()
-		m.clamp()
-		m.lastMod = store.FileModTime(m.path)
-		m.markSaved()
+		m.reload()
 		return m, nil
 	case tickMsg:
 		// only auto-reload external edits when we have no pending in-memory
@@ -329,21 +327,25 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.lastMod = mt
 				m.markSaved()
 			}
+		case m.mode != modeList:
+			// leave the rows alone under an open editor or detail page, which
+			// address the item by its row; catch up once back on the list.
 		case m.dirty:
 			// debounced autosave: flush once the user has paused editing.
 			if m.autosaveEvery > 0 && time.Since(m.lastEdit) >= m.autosaveEvery {
-				_ = store.Save(m.path, m.items)
-				m.lastMod = store.FileModTime(m.path)
-				m.markSaved()
+				m.save()
 			}
 		default:
 			if mt := store.FileModTime(m.path); mt.After(m.lastMod) {
-				m.items = store.Load(m.path)
-				m.archived = store.Load(store.ArchivePath(m.path))
-				m.resort()
-				m.clamp()
-				m.lastMod = mt
-				m.markSaved()
+				var sel *todo.Item
+				if r := m.selRef(); r.item >= 0 {
+					it := m.items[r.item]
+					sel = &it
+				}
+				m.reload()
+				if sel != nil {
+					m.place(*sel) // keep the cursor on the same item, not the same row
+				}
 			}
 		}
 		return m, tick()
@@ -462,7 +464,9 @@ func openLink(url string) tea.Cmd { //nolint:unparam // matches the handlers' re
 	if runtime.GOOS == "darwin" {
 		opener = "open"
 	}
-	_ = exec.Command(opener, url).Start()
+	if cmd := exec.Command(opener, url); cmd.Start() == nil {
+		go func() { _ = cmd.Wait() }() // reap it, so no zombie per opened link
+	}
 	return nil
 }
 
@@ -471,7 +475,7 @@ func openLink(url string) tea.Cmd { //nolint:unparam // matches the handlers' re
 // written back.
 func (m model) quit() (tea.Model, tea.Cmd) {
 	if !m.global && m.dirty {
-		_ = store.Save(m.path, m.items)
+		m.save()
 	}
 	return m, tea.Quit
 }
@@ -484,9 +488,7 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "q":
 		return m.quit()
 	case "w":
-		_ = store.Save(m.path, m.items)
-		m.markSaved()
-		m.lastMod = store.FileModTime(m.path)
+		m.save()
 		return m, nil
 	case "j", "down":
 		if m.cursor < len(rows)-1 {
@@ -550,9 +552,7 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			} else {
 				p := &m.items[idx]
 				p.Subs = append(p.Subs[:ref.sub], p.Subs[ref.sub+1:]...)
-				if len(p.Subs) > 0 {
-					todo.SetDone(p, todo.AllSubsDone(p))
-				}
+				todo.ReconcileParent(p)
 			}
 			m.clamp()
 		}
@@ -566,23 +566,21 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 		if len(done) > 0 {
-			m.beforeMutate()
 			_ = store.AppendArchive(m.path, done)
 			m.archived = append(m.archived, done...)
 			m.items = kept
-			m.clamp()
+			m.commitArchive()
 		}
 	case "C":
 		// Archive just the selected item. Whole items only — subtasks live inside
 		// their parent, so a subtask row is a no-op (and dimmed in the legend),
 		// matching the CLI's `archive <ref>` which rejects subtask refs.
 		if idx >= 0 && ref.sub == -1 {
-			m.beforeMutate()
 			it := m.items[idx]
 			_ = store.AppendArchive(m.path, []todo.Item{it}) // to disk before the board rewrite, so an interrupt re-archives rather than loses
 			m.archived = append(m.archived, it)
 			m.items = append(m.items[:idx], m.items[idx+1:]...)
-			m.clamp()
+			m.commitArchive()
 		}
 	case "U":
 		if n := len(m.past); n > 0 {
@@ -590,6 +588,7 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.items = m.past[n-1]
 			m.past = m.past[:n-1]
 			m.lastEdit = time.Now()
+			m.resort() // the snapshot keeps the order of the view it was taken in
 			m.clamp()
 		}
 	case "ctrl+r":
@@ -598,6 +597,7 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.items = m.future[n-1]
 			m.future = m.future[:n-1]
 			m.lastEdit = time.Now()
+			m.resort()
 			m.clamp()
 		}
 	case "h", "m", "l":
@@ -702,7 +702,7 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // enterBoards opens the board picker, listing every board with the current
 // one (default when unnamed) under the cursor.
 func (m *model) enterBoards() {
-	m.projRows = store.Boards()
+	m.setBoards(store.Boards())
 	m.projCur = 0
 	m.projArchived = false
 	m.projNotice = ""
@@ -750,9 +750,9 @@ func (m model) updateBoards(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.projNotice = ""
 		m.projCur = 0
 		if m.projArchived {
-			m.projRows = store.ArchivedBoards()
+			m.setBoards(store.ArchivedBoards())
 		} else {
-			m.projRows = store.Boards()
+			m.setBoards(store.Boards())
 		}
 	case "u": // unarchive the selected board (archived view only)
 		if !m.projArchived {
@@ -763,7 +763,7 @@ func (m model) updateBoards(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.projNotice = err.Error()
 			} else {
 				m.projArchived = false
-				m.projRows = store.Boards()
+				m.setBoards(store.Boards())
 				for i, x := range m.projRows { // land on the restored board
 					if x.Name == b.Name {
 						m.projCur = i
@@ -783,7 +783,7 @@ func (m model) updateBoards(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			proj = ""
 		}
 		if !m.global && m.dirty {
-			_ = store.Save(m.path, m.items)
+			m.save()
 		}
 		nm := newModel(proj) // jump: rebuild the board fresh, like toggleGlobal
 		nm.w, nm.height, nm.density, nm.hideFooter = m.w, m.height, m.density, m.hideFooter
@@ -808,6 +808,7 @@ func (m model) updateBoards(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "A": // archive the selected board into boards/archived/
 		if b := m.selectedBoard(); b != nil && b.Name != "default" {
+			m.saveBeforeMove(b.Name)
 			if err := store.ArchiveBoard(b.Name); err != nil {
 				m.projNotice = err.Error()
 			} else {
@@ -853,6 +854,23 @@ func (m model) currentBoardName() string {
 	return m.board
 }
 
+// saveBeforeMove flushes unsaved edits when the open board is about to be
+// renamed or archived, since afterBoardChange reopens it from the moved file.
+func (m *model) saveBeforeMove(name string) {
+	if !m.global && m.dirty && name == m.currentBoardName() {
+		m.save()
+	}
+}
+
+// commitArchive finishes a sweep: AppendArchive already wrote the archive, so the
+// board is saved to match and undo history is dropped — undoing would restore
+// items that also stay in archive.md.
+func (m *model) commitArchive() {
+	m.save()
+	m.past, m.future = nil, nil
+	m.clamp()
+}
+
 // afterBoardChange refreshes the picker after a rename/delete/archive. If the
 // board that changed is the one currently open, it re-opens that board under its
 // new name (newName), or the default board when it was removed/archived
@@ -868,7 +886,7 @@ func (m model) afterBoardChange(oldName, newName string) model {
 		nm.enterBoards()
 		return nm
 	}
-	m.projRows = store.Boards()
+	m.setBoards(store.Boards())
 	if m.projCur >= len(m.projRows) {
 		m.projCur = len(m.projRows) - 1
 	}
@@ -1087,7 +1105,7 @@ func (m *model) afterFieldEdit() mode {
 // esc, q) never reach here; x/delete is deliberately list-only.
 var detailFieldKeys = map[string]bool{
 	"u": true, "g": true, "T": true, "t": true, "s": true, "L": true,
-	"h": true, "m": true, "l": true, "tab": true,
+	"h": true, "m": true, "l": true, "tab": true, " ": true,
 }
 
 func (m model) updateDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -1110,20 +1128,12 @@ func (m model) updateDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "n":
 		if !m.global {
 			m.mode = modeNote
+			m.noteRef = ref
 			m.noteEditing = false
 			m.note.SetWidth(m.width())
 			m.note.SetHeight(noteHeight)
 			m.note.SetValue(p.Note)
 			m.note.Focus()
-		}
-	case " ":
-		if !m.global {
-			m.beforeMutate()
-			if ref.sub == -1 {
-				todo.SetParentDone(&m.items[ref.item], !m.items[ref.item].Done)
-			} else {
-				todo.SetSubDone(&m.items[ref.item], ref.sub, !m.items[ref.item].Subs[ref.sub].Done)
-			}
 		}
 	case "o":
 		return m, openLink(p.Link)
@@ -1156,7 +1166,7 @@ func (m model) updateNote(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	var cmd tea.Cmd
 	m.note, cmd = m.note.Update(msg)
-	if ref := m.selRef(); ref.item >= 0 {
+	if ref := m.noteRef; ref.item >= 0 && ref.item < len(m.items) {
 		p := m.rowPtr(ref)
 		if v := m.note.Value(); v != p.Note { // empty clears
 			if !m.noteEditing {
@@ -1218,7 +1228,7 @@ func (m model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.beforeMutate()
 				p := &m.items[idx]
 				p.Subs = append(p.Subs, it)
-				todo.SetDone(p, todo.AllSubsDone(p)) // an open sub reopens the parent
+				todo.ReconcileParent(p)
 				m.clamp()
 			}
 			m.mode = modeList
@@ -1289,6 +1299,7 @@ func (m model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			m.input.Blur()
 			if v != "" && v != old {
+				m.saveBeforeMove(old)
 				if err := store.RenameBoard(old, v); err != nil {
 					m.projNotice = err.Error()
 				} else {
@@ -1321,7 +1332,7 @@ func (m model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					m.projNotice = err.Error()
 				}
 			}
-			m.projRows = store.Boards()
+			m.setBoards(store.Boards())
 			for i, b := range m.projRows { // land on the board
 				if b.Name == m.projPending {
 					m.projCur = i

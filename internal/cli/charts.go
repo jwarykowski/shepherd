@@ -220,7 +220,12 @@ func trend(created, done []int, width int) string {
 		return ""
 	}
 	// real recent dates so the x-axis labels are meaningful (display only).
-	base := time.Now().Truncate(24*time.Hour).AddDate(0, 0, -(n - 1))
+	// local "today" (todo.Today), not Truncate's UTC midnight, so labels match Compute's days.
+	base, err := time.Parse("2006-01-02", todo.Today())
+	if err != nil {
+		base = time.Now()
+	}
+	base = base.AddDate(0, 0, -(n - 1))
 	maxY := 1.0
 	for _, v := range append(append([]int{}, created...), done...) {
 		if float64(v) > maxY {

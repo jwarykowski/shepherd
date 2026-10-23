@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -25,7 +26,11 @@ func boardDirsPath() string {
 func loadBoardDirs() map[string]string {
 	dirs := ScanKVFile(boardDirsPath())
 	for name, dir := range dirs {
-		dirs[name] = strings.Trim(dir, `"`)
+		if u, err := strconv.Unquote(dir); err == nil {
+			dirs[name] = u
+		} else {
+			dirs[name] = strings.Trim(dir, `"`)
+		}
 	}
 	return dirs
 }

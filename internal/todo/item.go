@@ -38,6 +38,7 @@ type Item struct {
 // lowercase with any leading "#" stripped. A blank tag is a no-op.
 func AddTag(it *Item, tag string) {
 	tag = strings.ToLower(strings.TrimPrefix(strings.TrimSpace(tag), "#"))
+	tag = strings.ReplaceAll(tag, ",", "-") // the tags: line is comma-separated
 	if tag == "" {
 		return
 	}

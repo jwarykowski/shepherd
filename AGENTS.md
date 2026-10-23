@@ -8,7 +8,7 @@ format.
 - `shepherd list --all --json` — read across every board; adds a `board` field per item
 - `shepherd watch [--interval <dur>]` — stream this board's changes as NDJSON until killed: a `snapshot` line, then `added`/`updated`/`removed`/`archived` events keyed by item id (item shape = `list --json`). `archived` is a vanished item that landed in the archive (terminal, distinct from `removed`). React without polling
 - `shepherd boards [--json] [--archived]` — list boards with done/total counts (`--archived` lists archived boards instead); JSON per board is `name`/`open`/`total`/`current`/`dir`, and marks the active board with `"current": true`
-- `shepherd board rename <old> <new>` / `archive <name>` / `unarchive <name>` / `delete <name> --force [--dry-run]` / `dir <name> [<path>]` — whole-board actions (default board is not renamable/deletable/archivable; archive stashes under `boards/archived/`; `dir` shows or sets a board's working directory)
+- `shepherd board rename <old> <new>` / `archive <name>` / `unarchive <name>` / `delete <name> --force [--dry-run]` / `dir <name> [<path>]` — whole-board actions (default board is not renamable/deletable/archivable; `default`, `todo`, `archive` and `*-archive` are reserved names; archive stashes under `boards/archived/`; `dir` shows or sets a board's working directory). With `$SHEPHERD_TODO_FILE` set, `--board` is a usage error (exit 2) and every `board` action fails (exit 1)
 - `shepherd stats [--json] [--all] [--legend]` — board metrics (charts, or `--json` numbers; `--legend` explains each chart)
 - `shepherd add "buy milk @home !h due:tomorrow" [--json]` — add an item
 - `shepherd sub <ref> "<text>" [--json]` — add a subtask to an item (same quick-add tokens)

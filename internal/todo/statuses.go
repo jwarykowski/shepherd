@@ -1,9 +1,12 @@
 package todo
 
+import "slices"
+
 // SetStatus sets an item to a named status, applying the same terminal rules as
 // the cycle: "done" marks it done (stamping completion), "open" or "" clears to
 // the implicit default, and any other name is stored as the intermediate status.
 func SetStatus(it *Item, name string) {
+	defer cascadeDone(it, it.Done)
 	switch name {
 	case "done":
 		SetDone(it, true)
@@ -19,7 +22,8 @@ func SetStatus(it *Item, name string) {
 
 // StatusOf is an item's effective status name against the configured order:
 // "done" (last after normalisation) when Done, the first status when Status is
-// left implicit (empty), else Status itself.
+// left implicit (empty) or isn't configured (e.g. removed in settings), else
+// Status itself.
 func StatusOf(it Item, statuses []string) string {
 	if len(statuses) == 0 {
 		return ""
@@ -27,7 +31,7 @@ func StatusOf(it Item, statuses []string) string {
 	if it.Done {
 		return statuses[len(statuses)-1]
 	}
-	if it.Status == "" {
+	if it.Status == "" || !slices.Contains(statuses, it.Status) {
 		return statuses[0]
 	}
 	return it.Status
@@ -51,6 +55,7 @@ func CycleStatus(it *Item, statuses []string) {
 	}
 	next := (cur + 1) % len(statuses)
 	target := statuses[next]
+	defer cascadeDone(it, it.Done)
 	switch {
 	case target == "done":
 		SetDone(it, true)

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"flag"
+	"fmt"
 	"io"
 	"os"
 	"shepherd/internal/store"
@@ -23,6 +24,9 @@ func cmdStats(args []string, board string, w io.Writer) int {
 	noColor := fs.Bool("no-color", false, "disable ANSI color in the charts")
 	if err := fs.Parse(args); err != nil {
 		return parseExit(err)
+	}
+	if fs.NArg() > 0 {
+		return usageErr(w, *asJSON, fmt.Sprintf("unexpected argument %q", fs.Arg(0)))
 	}
 	if colorDisabled(*noColor) {
 		lipgloss.SetColorProfile(termenv.Ascii)

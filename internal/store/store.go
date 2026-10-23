@@ -62,8 +62,15 @@ func ResolveBoard(flag string) (string, error) {
 	if name != "" && !boardRE.MatchString(name) {
 		return "", fmt.Errorf("invalid board name %q (use letters, digits, . _ -)", name)
 	}
+	if name != "" && todoFileOverride() != "" {
+		return "", errOverride
+	}
 	return name, nil
 }
+
+// errOverride refuses board operations while $SHEPHERD_TODO_FILE pins every
+// board to one file, which would otherwise be the file they act on.
+var errOverride = errors.New("boards are unavailable while $SHEPHERD_TODO_FILE is set")
 
 // TodoPathFor resolves the todo file for a (validated) board. The override
 // wins; else an empty board is the default todo.md and a named board is
@@ -208,6 +215,30 @@ func ValidBoard(name string) error {
 	return nil
 }
 
+// validNewBoard is ValidBoard plus the names that would share a file with the
+// default board or an archive sibling (todo.md, archive.md, <name>-archive.md).
+func validNewBoard(name string) error {
+	if err := ValidBoard(name); err != nil {
+		return err
+	}
+	if name == "default" || name == "todo" || name == "archive" || strings.HasSuffix(name, "-archive") {
+		return fmt.Errorf("board name %q is reserved", name)
+	}
+	return nil
+}
+
+// namedBoard checks the board a rename/delete/archive acts on: a valid slug,
+// not the default board, and no $SHEPHERD_TODO_FILE override in force.
+func namedBoard(name, verb string) error {
+	if name == "" || name == "default" {
+		return fmt.Errorf("cannot %s the default board", verb)
+	}
+	if todoFileOverride() != "" {
+		return errOverride
+	}
+	return ValidBoard(name)
+}
+
 func fileExists(p string) bool { _, err := os.Stat(p); return err == nil }
 
 // archivedDir holds whole boards stashed by ArchiveBoard. Boards() never lists
@@ -217,11 +248,11 @@ func archivedDir() string { return filepath.Join(BaseDir(), "boards", "archived"
 // CreateBoard creates a new, empty named board board. It refuses an invalid
 // name or one that already exists (live or archived).
 func CreateBoard(name string) error {
-	if err := ValidBoard(name); err != nil {
+	if err := validNewBoard(name); err != nil {
 		return err
 	}
-	if name == "default" {
-		return fmt.Errorf("board %q is reserved for the default board", name)
+	if todoFileOverride() != "" {
+		return errOverride
 	}
 	p := TodoPathFor(name)
 	if fileExists(p) {
@@ -239,12 +270,17 @@ func CreateBoard(name string) error {
 // RenameBoard renames a named board board and its archive sibling. It refuses
 // the default board, an invalid target, a missing source, or an existing target.
 func RenameBoard(oldName, newName string) error {
-	if oldName == "" || oldName == "default" {
-		return errors.New("cannot rename the default board")
-	}
-	if err := ValidBoard(newName); err != nil {
+	if err := namedBoard(oldName, "rename"); err != nil {
 		return err
 	}
+	if err := validNewBoard(newName); err != nil {
+		return err
+	}
+	src := TodoPathFor(oldName)
+	return WithLock(src, func() error { return renameBoard(oldName, newName) })
+}
+
+func renameBoard(oldName, newName string) error {
 	src, dst := TodoPathFor(oldName), TodoPathFor(newName)
 	if !fileExists(src) {
 		return fmt.Errorf("no board %q", oldName)
@@ -267,28 +303,34 @@ func RenameBoard(oldName, newName string) error {
 // DeleteBoard removes a named board board and its archive sibling. It refuses
 // the default board.
 func DeleteBoard(name string) error {
-	if name == "" || name == "default" {
-		return errors.New("cannot delete the default board")
-	}
-	p := TodoPathFor(name)
-	if !fileExists(p) {
-		return fmt.Errorf("no board %q", name)
-	}
-	if err := os.Remove(p); err != nil {
+	if err := namedBoard(name, "delete"); err != nil {
 		return err
 	}
-	if a := ArchivePath(p); fileExists(a) {
-		_ = os.Remove(a)
-	}
-	return nil
+	p := TodoPathFor(name)
+	return WithLock(p, func() error {
+		if !fileExists(p) {
+			return fmt.Errorf("no board %q", name)
+		}
+		if err := os.Remove(p); err != nil {
+			return err
+		}
+		if a := ArchivePath(p); fileExists(a) {
+			_ = os.Remove(a)
+		}
+		return nil
+	})
 }
 
 // ArchiveBoard moves a whole board (and its archive sibling) into
 // boards/archived/, hiding it from Boards(). Reversible via UnarchiveBoard.
 func ArchiveBoard(name string) error {
-	if name == "" || name == "default" {
-		return errors.New("cannot archive the default board")
+	if err := namedBoard(name, "archive"); err != nil {
+		return err
 	}
+	return WithLock(TodoPathFor(name), func() error { return archiveBoard(name) })
+}
+
+func archiveBoard(name string) error {
 	src := TodoPathFor(name)
 	if !fileExists(src) {
 		return fmt.Errorf("no board %q", name)
@@ -314,6 +356,9 @@ func ArchiveBoard(name string) error {
 func UnarchiveBoard(name string) error {
 	if err := ValidBoard(name); err != nil {
 		return err
+	}
+	if todoFileOverride() != "" {
+		return errOverride
 	}
 	src := filepath.Join(archivedDir(), name+".md")
 	if !fileExists(src) {
@@ -410,8 +455,15 @@ func parseCheck(m []string) todo.Item {
 	if m[2] != "" {
 		it.Prio = strings.ToUpper(m[2])[0]
 	}
+	if prioLikeRE.MatchString(strings.TrimPrefix(it.Text, `\`)) {
+		it.Text = strings.TrimPrefix(it.Text, `\`)
+	}
 	return it
 }
+
+// prioLikeRE matches text that would read back as a priority marker; writeItem
+// escapes it with a leading backslash and parseCheck strips that again.
+var prioLikeRE = regexp.MustCompile(`^\\?\([HMLhml]\) `)
 
 // applyMeta sets one metadata field on an item from a meta-line key/value.
 func applyMeta(it *todo.Item, key, val string) {
@@ -455,7 +507,9 @@ func Load(path string) []todo.Item {
 	}
 	var items []todo.Item
 	curSub := -1 // index into the last parent's Subs, or -1 for the parent itself
-	for ln := range strings.SplitSeq(string(data), "\n") {
+	text := strings.TrimPrefix(string(data), "\uFEFF")
+	for ln := range strings.SplitSeq(text, "\n") {
+		ln = strings.TrimSuffix(ln, "\r")
 		if m := lineRE.FindStringSubmatch(ln); m != nil {
 			items = append(items, parseCheck(m))
 			curSub = -1
@@ -491,6 +545,9 @@ func writeItem(b *strings.Builder, it todo.Item, indent string) {
 	tag := ""
 	if it.Prio != 0 {
 		tag = fmt.Sprintf("(%c) ", it.Prio)
+	}
+	if prioLikeRE.MatchString(it.Text) {
+		tag += `\`
 	}
 	fmt.Fprintf(b, "%s- [%s] %s%s\n", indent, box, tag, it.Text)
 	meta := indent + "  "
@@ -589,18 +646,22 @@ func WithLock(path string, fn func() error) error {
 }
 
 // Save writes items to path, creating the directory if needed. It backfills any
-// missing ids first (see AssignMissingIDs), then writes atomically: to a temp
-// file in the same directory, fsync-free, renamed over path — so a crash or a
-// concurrent reader never observes a half-written board.
-//
-// atomic single-writer replace, not an flock'd read-modify-write. It
-// stops torn writes and corruption; it does NOT stop a lost update when two
-// processes load-then-save concurrently (last writer wins). Add a lock around
-// the whole load→mutate→save if parallel agents start clobbering each other.
+// missing ids first (see AssignMissingIDs), then writes atomically: to a synced
+// temp file in the same directory, renamed over path, so a crash or a
+// concurrent reader never observes a half-written board. A symlinked board is
+// written through to its target and keeps its permissions. Save alone is
+// last-writer-wins; wrap load→mutate→save in WithLock.
 func Save(path string, items []todo.Item) error {
 	AssignMissingIDs(items)
+	if target, err := filepath.EvalSymlinks(path); err == nil {
+		path = target
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
+	}
+	mode := os.FileMode(0o644)
+	if fi, err := os.Stat(path); err == nil {
+		mode = fi.Mode().Perm()
 	}
 	tmp, err := os.CreateTemp(filepath.Dir(path), ".shepherd-*.tmp")
 	if err != nil {
@@ -609,6 +670,14 @@ func Save(path string, items []todo.Item) error {
 	tmpName := tmp.Name()
 	defer func() { _ = os.Remove(tmpName) }() // no-op once the rename succeeds
 	if _, err := tmp.Write([]byte(Serialize(items))); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Chmod(mode); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
 		_ = tmp.Close()
 		return err
 	}

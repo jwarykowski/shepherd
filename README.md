@@ -87,7 +87,7 @@ herdr plugin install jwarykowski/shepherd
 | `b` | open the board picker — every board with done/total counts; `enter` jumps, `a` creates a board, `r` renames, `A` archives, `x` deletes (confirmed), `d` shows detail (name, dir, paths, counts) for the selected board (rename/archive/delete don't apply to the default board); `e` toggles the archived-boards view where `u` unarchives the selected board |
 | `e` | browse the archive (read-only; all boards in the global view; `esc` to leave) |
 | `/` | filter (text/note/category/tags/due/defer/link — also greps `archive.md`) |
-| `U` / `ctrl+r` | undo / redo (multi-level) |
+| `U` / `ctrl+r` | undo / redo (multi-level; an archive sweep saves the board and clears history) |
 | `w` | save now (the header shows `● unsaved` / `● saved`) |
 | `ctrl+e` | open the markdown file in `$EDITOR` |
 | `,` | open settings — edit view, density, autosave, categories, statuses, footer; changes save to `config.toml` |
@@ -430,7 +430,9 @@ herdr pane placement (`placement` / `direction`) lives in the same file — see
 Layout is the table at the top: the default `todo.md`, a shared `config.toml`,
 and one `boards/<name>.md` per named board (selected with
 `--board`/`$SHEPHERD_BOARD`). Override the exact board file with
-`$SHEPHERD_TODO_FILE`.
+`$SHEPHERD_TODO_FILE`; while it's set, `--board` and the board actions refuse
+to run. Board names are letters, digits, `.`, `_` and `-`; `default`, `todo`,
+`archive` and names ending in `-archive` are reserved.
 
 Dates are stored ISO (`YYYY-MM-DD`) so they sort correctly, but shown and
 entered day-month-year / DMY (`DD-MM-YYYY`). Metadata rides as indented

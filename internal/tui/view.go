@@ -286,7 +286,7 @@ func (m model) listView() string {
 			cursorLine = len(out)
 			// full-width subtle highlight on the selected row; strip inner styles
 			// first so their ANSI resets don't punch holes in the background.
-			row = cursorStyle.Width(w).Render(ansi.Strip(row))
+			row = cursorStyle.Width(w).Render(ansi.Truncate(ansi.Strip(row), w, "…"))
 		}
 		out = append(out, row)
 		if m.density == comfort {
@@ -320,8 +320,8 @@ func (m model) windowRows(rows []string, cursorLine, footLines int) []string {
 	if ih == 0 {
 		return rows // unknown size: let the terminal handle it
 	}
-	vh := ih - footLines - 2 // header line + frame's minimum pad line
-	if vh < 1 || len(rows) <= vh {
+	vh := max(ih-footLines-2, 1) // header line + frame's minimum pad line; at least the cursor row
+	if len(rows) <= vh {
 		return rows
 	}
 	off := scrollOffset(len(rows), cursorLine, vh)
@@ -345,7 +345,7 @@ func (m model) archiveView() string {
 		}
 		if i == m.arcCur {
 			cursorLine = len(out)
-			row = cursorStyle.Width(w).Render(ansi.Strip(row))
+			row = cursorStyle.Width(w).Render(ansi.Truncate(ansi.Strip(row), w, "…"))
 		}
 		out = append(out, row)
 	}
@@ -374,7 +374,7 @@ func (m model) boardsView() string {
 		}
 	}
 	for i, b := range m.projRows {
-		open, total := store.BoardCounts(b.Path)
+		open, total := m.boardCount(i)
 		left := "  " + b.Name
 		if !m.projArchived && b.Name == cur {
 			left = boxStyle.Render("▸ ") + b.Name
@@ -383,7 +383,7 @@ func (m model) boardsView() string {
 		row := spread(w, left, cnt)
 		if i == m.projCur {
 			cursorLine = len(out)
-			row = cursorStyle.Width(w).Render(ansi.Strip(row))
+			row = cursorStyle.Width(w).Render(ansi.Truncate(ansi.Strip(row), w, "…"))
 		}
 		out = append(out, row)
 	}
@@ -503,7 +503,7 @@ func (m model) settingsView() string {
 		}
 		line := "  " + fmt.Sprintf("%-12s", r.k) + val
 		if i == m.settingsCur {
-			line = cursorStyle.Width(w).Render(ansi.Strip(line))
+			line = cursorStyle.Width(w).Render(ansi.Truncate(ansi.Strip(line), w, "…"))
 		}
 		out = append(out, line)
 	}
@@ -898,7 +898,7 @@ func (m model) laneView() string {
 	footer := m.listFooter()
 	vh := 0
 	if ih := m.innerHeight(); ih > 0 {
-		vh = ih - lines(footer) - 3 // m.header (2 lines) + this column's own header line
+		vh = max(ih-lines(footer)-3, 1) // m.header (2 lines) + this column's own header line
 	}
 	off := 0
 	if vh > 0 && len(cardLines[active]) > vh {
@@ -1148,4 +1148,13 @@ func (m model) detailView() string {
 		help = rule + "\n" + m.detailGrid()
 	}
 	return m.frame(b.String(), help)
+}
+
+// boardCount is the open/total count for picker row i, read from disk only if
+// the rows were set without setBoards.
+func (m model) boardCount(i int) (open, total int) {
+	if i < len(m.projCounts) {
+		return m.projCounts[i][0], m.projCounts[i][1]
+	}
+	return store.BoardCounts(m.projRows[i].Path)
 }

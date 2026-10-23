@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"shepherd/internal/store"
 	"shepherd/internal/todo"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -235,6 +236,7 @@ type model struct {
 	input         textinput.Model
 	note          textarea.Model // multi-line editor for the note field (modeNote)
 	noteEditing   bool           // a change was captured this note session (one undo snapshot)
+	noteRef       rowRef         // the row the note editor opened on; a filter can hide it mid-edit
 	w             int
 	height        int
 	past          [][]todo.Item // undo stack (snapshots before each mutation)
@@ -244,6 +246,7 @@ type model struct {
 	lastEdit      time.Time     // when the last mutation happened (debounce autosave)
 	autosaveEvery time.Duration // idle gap before autosaving; 0 disables
 	lastMod       time.Time     // todo file mtime we last saw
+	base          []todo.Item   // the board as last read from or written to disk (merge base)
 	helpScroll    int           // scroll offset in the help page
 	categories    []string      // configured categories (tab-cycle in category mode)
 	catIdx        int           // cursor into categories while cycling
@@ -252,6 +255,7 @@ type model struct {
 	global        bool          // read-only aggregate across all boards
 	board         string        // the board to return to when leaving global
 	projRows      []store.Board // board list for the picker (modeBoards)
+	projCounts    [][2]int      // open/total per projRows entry, counted once per listing
 	projCur       int           // cursor into projRows
 	projArchived  bool          // picker is showing archived boards (unarchive-only)
 	projNotice    string        // transient picker error (e.g. invalid/duplicate board name)
@@ -323,11 +327,8 @@ func newModel(board string) model {
 	m := model{
 		path:          p,
 		board:         board,
-		items:         store.Load(p),
-		archived:      store.Load(store.ArchivePath(p)),
 		input:         ti,
 		note:          na,
-		lastMod:       store.FileModTime(p),
 		view:          cfg.view,
 		density:       cfg.density,
 		categories:    cfg.categories,
@@ -335,9 +336,56 @@ func newModel(board string) model {
 		autosaveEvery: time.Duration(cfg.autosave) * time.Second,
 		hideFooter:    cfg.hideFooter,
 	}
-	m.resort()
-	m.markSaved()
+	m.reload()
+	if slices.ContainsFunc(m.items, func(it todo.Item) bool { return it.ID == "" }) {
+		m.save() // backfill ids now: merging another writer's edits matches items by id
+	}
 	return m
+}
+
+// reload replaces the board with what's on disk and makes that the merge base.
+func (m *model) reload() {
+	m.lastMod = store.FileModTime(m.path)
+	m.items = store.Load(m.path)
+	m.archived = store.Load(store.ArchivePath(m.path))
+	m.base = append([]todo.Item{}, todo.Clone(m.items)...) // non-nil: an empty board is a base too
+	m.resort()
+	m.clamp()
+	m.markSaved()
+}
+
+// save writes the board under the board lock. If another process (the CLI, an
+// agent) wrote the file since we last read it, its edits are merged in by item
+// id first rather than overwritten. Errors are dropped: there's no mid-render
+// recovery, and the board stays dirty in memory.
+func (m *model) save() {
+	err := store.WithLock(m.path, func() error {
+		if m.base != nil && store.FileModTime(m.path).After(m.lastMod) {
+			m.items = todo.Merge(m.base, m.items, store.Load(m.path))
+			m.resort()
+			m.clamp()
+		}
+		if err := store.Save(m.path, m.items); err != nil {
+			return err
+		}
+		m.lastMod = store.FileModTime(m.path) // still under the lock: no other write in between
+		m.base = append([]todo.Item{}, todo.Clone(m.items)...)
+		return nil
+	})
+	if err == nil {
+		m.markSaved()
+	}
+}
+
+// setBoards fills the picker rows and counts each board's items once, rather
+// than re-reading every board file on every render.
+func (m *model) setBoards(rows []store.Board) {
+	m.projRows = rows
+	m.projCounts = make([][2]int, len(rows))
+	for i, b := range rows {
+		open, total := store.BoardCounts(b.Path)
+		m.projCounts[i] = [2]int{open, total}
+	}
 }
 
 // loadGlobal replaces the model's items with the read-only aggregate across
@@ -367,7 +415,7 @@ func (m *model) toggleGlobal() {
 		return
 	}
 	if m.dirty {
-		_ = store.Save(m.path, m.items)
+		m.save()
 	}
 	m.loadGlobal()
 }

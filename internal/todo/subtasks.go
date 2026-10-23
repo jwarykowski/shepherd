@@ -22,7 +22,7 @@ func SetSubDone(p *Item, i int, done bool) {
 		return
 	}
 	SetDone(&p.Subs[i], done)
-	SetDone(p, AllSubsDone(p))
+	ReconcileParent(p)
 }
 
 // CycleSubStatus advances a subtask through the configured statuses, then
@@ -32,7 +32,23 @@ func CycleSubStatus(p *Item, i int, statuses []string) {
 		return
 	}
 	CycleStatus(&p.Subs[i], statuses)
-	SetDone(p, AllSubsDone(p))
+	ReconcileParent(p)
+}
+
+// ReconcileParent sets a parent done exactly when all its subs are done, after
+// a sub was added, removed or edited. A parent with no subs is left alone.
+func ReconcileParent(p *Item) {
+	if len(p.Subs) > 0 {
+		SetDone(p, AllSubsDone(p))
+	}
+}
+
+// cascadeDone pushes a parent's done state onto its subs when a status change
+// flipped it, so status:done completes the subs just as done does.
+func cascadeDone(p *Item, was bool) {
+	if p.Done != was {
+		SetParentDone(p, p.Done)
+	}
 }
 
 // AllSubsDone reports whether an item has subtasks and every one is done. False

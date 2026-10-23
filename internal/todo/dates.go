@@ -70,7 +70,7 @@ func ParseDue(s string) string {
 	case "week", "next week":
 		return base.AddDate(0, 0, 7).Format(dateFormat)
 	case "month", "next month":
-		return base.AddDate(0, 1, 0).Format(dateFormat)
+		return addMonths(base, 1).Format(dateFormat)
 	}
 	if wd, ok := weekdays[s]; ok {
 		days := (int(wd)-int(base.Weekday())+6)%7 + 1 // 1..7: never today
@@ -78,16 +78,16 @@ func ParseDue(s string) string {
 	}
 	// relative: <n><unit>, unit d/w/m/y, optional leading + (e.g. 3d, 2w, 5m, 1y)
 	if r := strings.TrimPrefix(s, "+"); len(r) >= 2 {
-		if n, err := strconv.Atoi(r[:len(r)-1]); err == nil {
+		if n, err := strconv.Atoi(r[:len(r)-1]); err == nil && n >= -maxRelative && n <= maxRelative {
 			switch r[len(r)-1] {
 			case 'd':
 				return base.AddDate(0, 0, n).Format(dateFormat)
 			case 'w':
 				return base.AddDate(0, 0, 7*n).Format(dateFormat)
 			case 'm':
-				return base.AddDate(0, n, 0).Format(dateFormat)
+				return addMonths(base, n).Format(dateFormat)
 			case 'y':
-				return base.AddDate(n, 0, 0).Format(dateFormat)
+				return addMonths(base, 12*n).Format(dateFormat)
 			}
 		}
 	}
@@ -193,4 +193,16 @@ func Pinned(it Item) bool {
 		return false
 	}
 	return d.Before(t)
+}
+
+// maxRelative bounds a relative date's count, so 999999999y is rejected rather
+// than overflowing into a garbage year.
+const maxRelative = 1000
+
+// addMonths moves t by n months, clamping to the target month's last day so
+// Jan 31 + 1 month is Feb 28/29, not Mar 3.
+func addMonths(t time.Time, n int) time.Time {
+	first := time.Date(t.Year(), t.Month()+time.Month(n), 1, 0, 0, 0, 0, t.Location())
+	last := first.AddDate(0, 1, -1).Day()
+	return first.AddDate(0, 0, min(t.Day(), last)-1)
 }

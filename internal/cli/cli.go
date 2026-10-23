@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 )
 
 const cliUsage = `shepherd — todo board
@@ -91,15 +92,14 @@ func Run(verb string, args []string) int {
 		return 0
 	}
 	args = extractGlobals(args)
+	asJSON := slices.Contains(args, "--json")
 	flagVal, rest, err := extractBoard(args)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "shepherd:", err)
-		return 2
+		return usageErr(os.Stdout, asJSON, err.Error())
 	}
 	board, err := store.ResolveBoard(flagVal)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "shepherd:", err)
-		return 2
+		return usageErr(os.Stdout, asJSON, err.Error())
 	}
 	switch verb {
 	case "list":
@@ -351,6 +351,9 @@ func cmdList(args []string, board string, w io.Writer) int {
 	if err := fs.Parse(args); err != nil {
 		return parseExit(err)
 	}
+	if fs.NArg() > 0 {
+		return usageErr(w, *asJSON, fmt.Sprintf("unexpected argument %q (flags go before it?)", fs.Arg(0)))
+	}
 	var items []todo.Item
 	if *all {
 		items = store.LoadAll()
@@ -452,17 +455,20 @@ func cmdWatch(args []string, board string, w io.Writer) int {
 	if err := fs.Parse(args); err != nil {
 		return parseExit(err)
 	}
+	if fs.NArg() > 0 {
+		return usageErr(w, false, fmt.Sprintf("unexpected argument %q", fs.Arg(0)))
+	}
 	if *interval <= 0 {
 		*interval = time.Second
 	}
 	path := store.TodoPathFor(board)
+	lastMod := store.FileModTime(path) // before Load, so a write in between is seen next poll
 	prev := store.Load(path)
 	snap := make([]itemJSON, 0, len(prev))
 	for i, it := range prev {
 		snap = append(snap, toJSON(it, i+1))
 	}
 	emitLine(w, map[string]any{"type": "snapshot", "items": snap})
-	lastMod := store.FileModTime(path)
 	for {
 		time.Sleep(*interval)
 		mod := store.FileModTime(path)
@@ -518,6 +524,9 @@ func cmdBoards(args []string, board string, w io.Writer) int {
 	archived := fs.Bool("archived", false, "list archived boards instead")
 	if err := fs.Parse(args); err != nil {
 		return parseExit(err)
+	}
+	if fs.NArg() > 0 {
+		return usageErr(w, *asJSON, fmt.Sprintf("unexpected argument %q", fs.Arg(0)))
 	}
 	cur := board
 	if cur == "" {
@@ -579,7 +588,7 @@ func cmdBoard(args []string, w io.Writer) int {
 		}
 		if len(rest) == 1 { // show
 			if d := store.BoardDir(rest[0]); d != "" {
-				emit(w, d)
+				emit(w, clean(d))
 			} else {
 				emit(w, "(no dir set)")
 			}
@@ -731,7 +740,7 @@ func cmdSub(args []string, board string, w io.Writer) int {
 		}
 		parent := &items[p-1]
 		parent.Subs = append(parent.Subs, sub)
-		todo.SetDone(parent, todo.AllSubsDone(parent))
+		todo.ReconcileParent(parent)
 		if err := store.Save(path, items); err != nil {
 			return 0, err
 		}
@@ -768,9 +777,7 @@ func cmdEdit(args []string, board string, w io.Writer) int {
 			todo.ApplyEdit(&items[p-1], text)
 		} else {
 			todo.ApplyEdit(&items[p-1].Subs[s-1], text)
-			// editing a sub's status/done can complete or reopen the parent, same
-			// as done/undone — ApplyEdit works on one Item, so reconcile here.
-			todo.SetDone(&items[p-1], todo.AllSubsDone(&items[p-1]))
+			todo.ReconcileParent(&items[p-1])
 		}
 		if err := store.Save(path, items); err != nil {
 			return 0, err
@@ -871,10 +878,7 @@ func cmdRemove(args []string, board string, w io.Writer) int {
 					}
 				}
 				items[i].Subs = nsub
-				// dropping a sub can complete the parent (all remaining subs done).
-				if len(items[i].Subs) > 0 {
-					todo.SetDone(&items[i], todo.AllSubsDone(&items[i]))
-				}
+				todo.ReconcileParent(&items[i])
 			}
 			kept = append(kept, items[i])
 		}
@@ -997,6 +1001,9 @@ func affectedJSON(items []todo.Item, refs [][2]int) []itemJSON {
 // resolveID looks an item or subtask up by its stable id, returning (parent,
 // sub, ok) with sub==0 for a top-level item — the same shape as resolveRef.
 func resolveID(items []todo.Item, id string) (int, int, bool) {
+	if id == "" {
+		return 0, 0, false
+	}
 	for i := range items {
 		if items[i].ID == id {
 			return i + 1, 0, true
@@ -1040,7 +1047,18 @@ func formatLine(idx int, it todo.Item) string {
 	if d, total := todo.SubCount(it); total > 0 {
 		fmt.Fprintf(&b, "  %d/%d", d, total)
 	}
-	return b.String()
+	return clean(b.String())
+}
+
+// clean drops control characters (bar the tab separator) from text output, so
+// an item written by one agent can't drive the reader's terminal with escapes.
+func clean(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r != '\t' && unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, s)
 }
 
 // tagList renders tags the way they're typed back in: "#api #docs".
@@ -1067,5 +1085,5 @@ func formatSub(parent, sub int, it todo.Item) string {
 	if it.Due != "" {
 		fmt.Fprintf(&b, "  due %s", it.Due)
 	}
-	return b.String()
+	return clean(b.String())
 }
