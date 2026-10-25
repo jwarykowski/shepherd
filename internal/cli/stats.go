@@ -9,9 +9,8 @@ import (
 	"shepherd/internal/todo"
 	"sort"
 
-	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/term"
-	"github.com/muesli/termenv"
 )
 
 // cmdStats summarises a board (or all boards with --all) as charts, or the raw
@@ -28,11 +27,15 @@ func cmdStats(args []string, board string, w io.Writer) int {
 	if fs.NArg() > 0 {
 		return usageErr(w, *asJSON, fmt.Sprintf("unexpected argument %q", fs.Arg(0)))
 	}
-	if colorDisabled(*noColor) {
-		lipgloss.SetColorProfile(termenv.Ascii)
+	plain := colorDisabled(*noColor)
+	draw := func(s string) {
+		if plain {
+			s = ansi.Strip(s)
+		}
+		emit(w, s)
 	}
 	if *legend {
-		emit(w, statsLegend())
+		draw(statsLegend())
 		return 0
 	}
 
@@ -56,7 +59,7 @@ func cmdStats(args []string, board string, w io.Writer) int {
 		return emitJSON(w, s)
 	}
 
-	emit(w, renderStats(s, title, termWidth()))
+	draw(renderStats(s, title, termWidth()))
 	return 0
 }
 
@@ -70,8 +73,8 @@ func termWidth() int {
 
 // colorDisabled decides whether to strip ANSI colour from the charts, honouring
 // (clig): an explicit --no-colour flag, $NO_COLOUR (any value), $TERM=dumb, or a
-// non-tty stdout. lipgloss/termenv already auto-detect the last three, but we
-// gate them explicitly so shepherd owns the behaviour rather than inheriting it.
+// non-tty stdout. lipgloss v2 renders full colour and leaves downsampling to the
+// writer, so shepherd strips the ANSI itself when any of these hold.
 func colorDisabled(flagSet bool) bool {
 	if flagSet {
 		return true

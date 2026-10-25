@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/charmbracelet/bubbles/textarea"
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/textarea"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
 )
 
 // tempHome isolates BaseDir and config under a temp HOME and returns BaseDir.
@@ -73,7 +73,7 @@ func TestNoteEditorKeepsItsItem(t *testing.T) {
 	}}
 	m = drive(m, "d", "n")
 	for range 3 {
-		nm, _ := m.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+		nm, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyBackspace})
 		m = nm.(model)
 	}
 	m = drive(m, "Q")

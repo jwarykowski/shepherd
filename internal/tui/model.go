@@ -5,7 +5,6 @@ package tui
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"shepherd/internal/store"
 	"shepherd/internal/todo"
 	"slices"
@@ -14,9 +13,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/textarea"
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/textarea"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
 )
 
 const (
@@ -34,6 +33,7 @@ type config struct {
 	statuses   []string // ordered, normalised so "done" is present and last
 	autosave   int      // seconds of idle before autosaving; 0 disables
 	hideFooter bool     // start with the list footer (help grid + version) hidden
+	mouse      bool     // wheel scrolling and click-to-select (off: the terminal keeps text selection)
 }
 
 // loadConfig reads a tiny key=value config (leniently TOML-ish):
@@ -67,6 +67,7 @@ func loadConfig(path string) config {
 		c.autosave = n
 	}
 	c.hideFooter = val("hidefooter") == "true"
+	c.mouse = val("mouse") == "true"
 	c.statuses = normalizeStatuses(c.statuses)
 	return c
 }
@@ -74,7 +75,7 @@ func loadConfig(path string) config {
 // managedConfigKeys are the config.toml keys the settings UI owns and rewrites.
 var managedConfigKeys = map[string]bool{
 	"view": true, "density": true, "autosave": true,
-	"categories": true, "statuses": true, "hidefooter": true,
+	"categories": true, "statuses": true, "hidefooter": true, "mouse": true,
 }
 
 // saveConfig writes the managed config keys to config.toml and keeps every
@@ -99,13 +100,11 @@ func saveConfig(path string, c config) error {
 	fmt.Fprintf(&b, "categories = %s\n", list(c.categories))
 	fmt.Fprintf(&b, "statuses = %s\n", list(c.statuses))
 	fmt.Fprintf(&b, "hidefooter = %v\n", c.hideFooter)
+	fmt.Fprintf(&b, "mouse = %v\n", c.mouse)
 	if old, err := os.ReadFile(path); err == nil {
 		keepUnmanaged(&b, string(old))
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	return os.WriteFile(path, []byte(b.String()), 0o644)
+	return store.WriteFile(path, []byte(b.String()))
 }
 
 // keepUnmanaged copies old's lines into b, minus blank lines and the managed
@@ -264,6 +263,10 @@ type model struct {
 	fieldEdit     bool          // a field editor was opened from the item detail view, so save/cancel returns there instead of the list
 	settingsCur   int           // cursor into the settings rows (modeSettings)
 	hideFooter    bool          // hide the list footer (help grid + version line)
+	light         bool          // the terminal reported a light background
+	kbdEnhanced   bool          // the terminal tells shift+enter from enter (Kitty keyboard protocol)
+	mouse         bool          // mouse reporting on (config: mouse = true)
+	lastClick     rowClickMsg   // the previous row click, for double-click
 }
 
 // currentConfig snapshots the live, editable settings for the settings screen
@@ -276,6 +279,7 @@ func (m model) currentConfig() config {
 		statuses:   m.statuses,
 		autosave:   int(m.autosaveEvery / time.Second),
 		hideFooter: m.hideFooter,
+		mouse:      m.mouse,
 	}
 }
 
@@ -318,7 +322,9 @@ const histCap = 100
 func newModel(board string) model {
 	ti := textinput.New()
 	ti.Prompt = "› "
+	ti.SetVirtualCursor(false) // View places the real cursor (IME, screen readers)
 	na := textarea.New()
+	na.SetVirtualCursor(false)
 	na.ShowLineNumbers = false
 	na.Prompt = ""
 	na.CharLimit = 0 // notes can be long
@@ -335,6 +341,7 @@ func newModel(board string) model {
 		statuses:      cfg.statuses,
 		autosaveEvery: time.Duration(cfg.autosave) * time.Second,
 		hideFooter:    cfg.hideFooter,
+		mouse:         cfg.mouse,
 	}
 	m.reload()
 	if slices.ContainsFunc(m.items, func(it todo.Item) bool { return it.ID == "" }) {
@@ -345,9 +352,14 @@ func newModel(board string) model {
 
 // reload replaces the board with what's on disk and makes that the merge base.
 func (m *model) reload() {
-	m.lastMod = store.FileModTime(m.path)
-	m.items = store.Load(m.path)
-	m.archived = store.Load(store.ArchivePath(m.path))
+	m.load(store.FileModTime(m.path), store.Load(m.path), store.Load(store.ArchivePath(m.path)))
+}
+
+// load installs a board read from disk at mod as the new clean baseline.
+func (m *model) load(mod time.Time, items, archived []todo.Item) {
+	m.lastMod = mod
+	m.items = items
+	m.archived = archived
 	m.base = append([]todo.Item{}, todo.Clone(m.items)...) // non-nil: an empty board is a base too
 	m.resort()
 	m.clamp()
@@ -429,7 +441,7 @@ func Run(filter, board string, global bool) error {
 	}
 	m.filter = filter
 	m.clamp()
-	p := tea.NewProgram(m, tea.WithAltScreen())
+	p := tea.NewProgram(m)
 	_, err := p.Run()
 	return err
 }

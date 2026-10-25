@@ -49,3 +49,26 @@ func TestSaveConfigKeepsUnmanagedKeys(t *testing.T) {
 		t.Errorf("save not idempotent:\n%s\nvs\n%s", got, again)
 	}
 }
+
+// TestSaveConfigThroughSymlink pins that a stow-managed (symlinked) config is
+// written through to its target, not replaced by a plain file.
+func TestSaveConfigThroughSymlink(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "dotfiles-config.toml")
+	link := filepath.Join(dir, "config.toml")
+	if err := os.WriteFile(target, []byte("placement = \"tab\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveConfig(link, loadConfig(link)); err != nil {
+		t.Fatal(err)
+	}
+	if fi, err := os.Lstat(link); err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("config symlink replaced: %v", err)
+	}
+	if data, _ := os.ReadFile(target); !strings.Contains(string(data), `placement = "tab"`) {
+		t.Fatalf("target not updated:\n%s", data)
+	}
+}

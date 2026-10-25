@@ -86,6 +86,9 @@ func Clone(items []Item) []Item {
 		if it.Tags != nil {
 			it.Tags = append([]string(nil), it.Tags...)
 		}
+		if it.Extra != nil {
+			it.Extra = append([]string(nil), it.Extra...)
+		}
 		return it
 	}
 	out := make([]Item, len(items))

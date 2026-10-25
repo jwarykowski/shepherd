@@ -28,9 +28,12 @@ Run format + vet + test + lint before proposing changes done — CI
 dependency direction; keep that true.
 
 TUI is split by file: `model.go` (the `model` struct + all state, config
-load/save), `update.go` (`Update` and per-mode `updateXxx` handlers),
-`view.go` (`View` and `xxxView` renderers). `Update` type-switches the msg,
-then switches on `m.mode`; text-entry modes share `updateInput`.
+load/save), `update.go` (`Update`, the list/global/input handlers),
+`update_boards.go` / `update_settings.go` / `update_detail.go` (those modes'
+handlers), `keymap.go` (the `keys` bindings), `view.go` (`View` and `xxxView`
+renderers). Bubble Tea v2: `View` wraps `render() string`, which tests assert
+on. `Update` type-switches the msg, then switches on `m.mode`; text-entry modes
+share `updateInput`. Disk polling runs in a `Cmd` (`checkDisk` -> `diskMsg`).
 
 Receivers on `model`: **value** for read-only helpers and Bubble Tea methods,
 **pointer** for in-place mutators (`clamp`, `beforeMutate`, `resort`, …).
@@ -40,8 +43,9 @@ Receivers on `model`: **value** for read-only helpers and Bubble Tea methods,
 A new mode touches ~6 spots: the `modeXxx` iota (`model.go`), a dispatch case
 in `Update` (`update.go`), `updateXxx` + `enterXxx`, a `View` case + `xxxView`
 (`view.go`), the footer/hint (`listFooter`), the help grid/body
-(`helpGrid`/`helpBody`), and a `drive()` test. A new key = a case in the right
-`updateXxx` + a `helpGrid` entry + a test. Keep bindings consistent: `esc`
+(`helpGrid`/`helpBody`), and a `drive()` test. A new key on the list, global
+or detail view = a binding in `keys` + a `binding.Matches` case in the right
+`updateXxx` + an entry in its grid (`helpGrid`/`detailGrid`) + a test. Keep bindings consistent: `esc`
 backs out, `q`/`ctrl+c` quit, `space` toggles, `enter` activates — one key per
 action.
 

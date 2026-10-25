@@ -9,25 +9,25 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/table"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/table"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 )
 
 // ---- styles ----
 var (
-	dimStyle    = lipgloss.NewStyle().Faint(true)
-	brandStyle  = lipgloss.NewStyle().Bold(true)
-	doneStyle   = lipgloss.NewStyle().Faint(true).Strikethrough(true)
-	cursorStyle = lipgloss.NewStyle().Background(lipgloss.AdaptiveColor{Light: "254", Dark: "236"})
-	boxStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
-	progStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("4"))
-	matchStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("4"))
-	catStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("6"))
-	countStyle  = lipgloss.NewStyle().Faint(true)
-	warnStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
-	ruleStyle   = lipgloss.NewStyle().Faint(true).Foreground(lipgloss.Color("240"))
-	prioStyles  = map[byte]lipgloss.Style{
+	dimStyle   = lipgloss.NewStyle().Faint(true)
+	brandStyle = lipgloss.NewStyle().Bold(true)
+	doneStyle  = lipgloss.NewStyle().Faint(true).Strikethrough(true)
+	boxStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
+	progStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("4"))
+	matchStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("4"))
+	catStyle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("6"))
+	countStyle = lipgloss.NewStyle().Faint(true)
+	warnStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
+	ruleStyle  = lipgloss.NewStyle().Faint(true).Foreground(lipgloss.Color("240"))
+	prioStyles = map[byte]lipgloss.Style{
 		'H': lipgloss.NewStyle().Foreground(lipgloss.Color("1")),
 		'M': lipgloss.NewStyle().Foreground(lipgloss.Color("3")),
 		'L': lipgloss.NewStyle().Faint(true),
@@ -43,7 +43,111 @@ func spread(w int, left, right string) string {
 	return left + strings.Repeat(" ", gap) + right
 }
 
-func (m model) View() string {
+// cursorStyle highlights the cursor row, light or dark to suit the terminal.
+func (m model) cursorStyle() lipgloss.Style {
+	return lipgloss.NewStyle().Background(lipgloss.LightDark(!m.light)(lipgloss.Color("254"), lipgloss.Color("236")))
+}
+
+func (m model) View() tea.View {
+	content, hits := cutRowMarks(m.screen())
+	content, at, found := cutCursorMark(content)
+	v := tea.NewView(content)
+	if found {
+		v.Cursor = m.editorCursor(at)
+	}
+	if m.mouse {
+		v.MouseMode = tea.MouseModeCellMotion
+		v.OnMouse = onMouse(hits)
+	}
+	v.AltScreen = true
+	v.ReportFocus = true
+	v.WindowTitle = m.windowTitle()
+	v.ProgressBar = m.progressBar()
+	return v
+}
+
+// windowTitle names the board in the terminal/herdr tab: board, done/total,
+// and a dot while there are unsaved edits.
+func (m model) windowTitle() string {
+	board := m.currentBoardName()
+	if m.global {
+		board = "all boards"
+	}
+	done, total := m.count()
+	t := fmt.Sprintf("%s · %s · %d/%d", appName, board, done, total)
+	if m.dirty {
+		t += " ●"
+	}
+	return t
+}
+
+// noteHint is the note editor's footer; shift+enter only works where the
+// terminal reports it apart from enter (Kitty keyboard protocol).
+func (m model) noteHint() string {
+	if m.kbdEnhanced {
+		return "note: enter newline · shift+enter/esc done (saves as you type)"
+	}
+	return "note: enter newline · esc done (saves as you type)"
+}
+
+// progressBar mirrors done/total in the terminal's tab progress indicator
+// (OSC 9;4); an empty board clears it.
+func (m model) progressBar() *tea.ProgressBar {
+	done, total := m.count()
+	if total == 0 {
+		return tea.NewProgressBar(tea.ProgressBarNone, 0)
+	}
+	return tea.NewProgressBar(tea.ProgressBarDefault, done*100/total)
+}
+
+// cursorMark is a zero-width OSC string the text editors render in front of
+// themselves, so View can find where they landed on screen and put the real
+// terminal cursor there. Layout and truncation treat it like any escape code.
+const cursorMark = "\x1b]1337;shepherd-cursor\x07"
+
+// inputView is the shared text input, marked for the real cursor.
+func (m model) inputView() string { return cursorMark + m.input.View() }
+
+// noteView is the note editor, marked for the real cursor.
+func (m model) noteView() string { return cursorMark + m.note.View() }
+
+// cutCursorMark removes the cursor mark from s and reports the screen cell it
+// was at.
+func cutCursorMark(s string) (string, tea.Position, bool) {
+	before, after, found := strings.Cut(s, cursorMark)
+	if !found {
+		return s, tea.Position{}, false
+	}
+	y := strings.Count(before, "\n")
+	x := ansi.StringWidth(before[strings.LastIndex(before, "\n")+1:])
+	return before + after, tea.Position{X: x, Y: y}, true
+}
+
+// editorCursor is the focused editor's own cursor, offset to where the editor
+// sits on screen. Nil when the editor draws a virtual cursor or isn't focused.
+func (m model) editorCursor(at tea.Position) *tea.Cursor {
+	c := m.input.Cursor()
+	if m.mode == modeNote {
+		c = m.note.Cursor()
+	}
+	if c == nil {
+		return nil
+	}
+	c.X += at.X
+	c.Y += at.Y
+	return c
+}
+
+// render is the whole screen as a string, the content behind View, without
+// the cursor mark.
+func (m model) render() string {
+	s, _ := cutRowMarks(m.screen())
+	s, _, _ = cutCursorMark(s)
+	return s
+}
+
+// screen is render with the cursor mark still in place.
+func (m model) screen() string {
 	var content string
 	switch {
 	case m.mode == modeHelp:
@@ -286,9 +390,9 @@ func (m model) listView() string {
 			cursorLine = len(out)
 			// full-width subtle highlight on the selected row; strip inner styles
 			// first so their ANSI resets don't punch holes in the background.
-			row = cursorStyle.Width(w).Render(ansi.Truncate(ansi.Strip(row), w, "…"))
+			row = m.cursorStyle().Width(w).Render(ansi.Truncate(ansi.Strip(row), w, "…"))
 		}
-		out = append(out, row)
+		out = append(out, rowMark(0, pos)+row)
 		if m.density == comfort {
 			out = append(out, "") // roomier rows
 		}
@@ -345,7 +449,7 @@ func (m model) archiveView() string {
 		}
 		if i == m.arcCur {
 			cursorLine = len(out)
-			row = cursorStyle.Width(w).Render(ansi.Truncate(ansi.Strip(row), w, "…"))
+			row = m.cursorStyle().Width(w).Render(ansi.Truncate(ansi.Strip(row), w, "…"))
 		}
 		out = append(out, row)
 	}
@@ -383,7 +487,7 @@ func (m model) boardsView() string {
 		row := spread(w, left, cnt)
 		if i == m.projCur {
 			cursorLine = len(out)
-			row = cursorStyle.Width(w).Render(ansi.Truncate(ansi.Strip(row), w, "…"))
+			row = m.cursorStyle().Width(w).Render(ansi.Truncate(ansi.Strip(row), w, "…"))
 		}
 		out = append(out, row)
 	}
@@ -391,11 +495,11 @@ func (m model) boardsView() string {
 	var footer string
 	switch m.mode {
 	case modeBoardNew:
-		footer = rule + "\n" + m.input.View() + "  " + dimStyle.Render("(new board: enter=create esc=cancel)")
+		footer = rule + "\n" + m.inputView() + "  " + dimStyle.Render("(new board: enter=create esc=cancel)")
 	case modeBoardDir:
-		footer = rule + "\n" + m.input.View() + "  " + dimStyle.Render(fmt.Sprintf("(dir for %q: enter=save esc=skip)", m.projPending))
+		footer = rule + "\n" + m.inputView() + "  " + dimStyle.Render(fmt.Sprintf("(dir for %q: enter=save esc=skip)", m.projPending))
 	case modeBoardRename:
-		footer = rule + "\n" + m.input.View() + "  " + dimStyle.Render("(rename: enter=save esc=cancel)")
+		footer = rule + "\n" + m.inputView() + "  " + dimStyle.Render("(rename: enter=save esc=cancel)")
 	case modeConfirmDelete:
 		name := ""
 		if b := m.selectedBoard(); b != nil {
@@ -456,7 +560,7 @@ func (m model) boardDetailView() string {
 	rule := ruleStyle.Render(strings.Repeat("┈", w))
 	var footer string
 	if m.mode == modeBoardDir { // editing this board's dir
-		footer = rule + "\n" + m.input.View() + "  " + dimStyle.Render("(dir: enter=save esc=cancel)")
+		footer = rule + "\n" + m.inputView() + "  " + dimStyle.Render("(dir: enter=save esc=cancel)")
 	} else {
 		footer = rule + "\n" + dimStyle.Render("e edit dir · esc back · q quit")
 	}
@@ -494,6 +598,7 @@ func (m model) settingsView() string {
 		{"categories", strings.Join(cfg.categories, ", ")},
 		{"statuses", strings.Join(cfg.statuses, ", ")},
 		{"footer", foot},
+		{"mouse", map[bool]string{false: "off", true: "on"}[cfg.mouse]},
 	}
 	var out []string
 	for i, r := range rows {
@@ -503,7 +608,7 @@ func (m model) settingsView() string {
 		}
 		line := "  " + fmt.Sprintf("%-12s", r.k) + val
 		if i == m.settingsCur {
-			line = cursorStyle.Width(w).Render(ansi.Truncate(ansi.Strip(line), w, "…"))
+			line = m.cursorStyle().Width(w).Render(ansi.Truncate(ansi.Strip(line), w, "…"))
 		}
 		out = append(out, line)
 	}
@@ -516,7 +621,7 @@ func (m model) settingsView() string {
 	rule := ruleStyle.Render(strings.Repeat("┈", w))
 	footer := rule + "\n"
 	if m.mode == modeSettingEdit {
-		footer += m.input.View() + "  " + dimStyle.Render("(enter=save esc=cancel)")
+		footer += m.inputView() + "  " + dimStyle.Render("(enter=save esc=cancel)")
 	} else {
 		footer += dimStyle.Render("settings · j/k move · enter change · esc back · q quit")
 	}
@@ -637,7 +742,7 @@ func (m model) listFooter() string {
 	rule := ruleStyle.Render(strings.Repeat("┈", m.width()))
 	switch m.mode {
 	case modeFilter:
-		return rule + "\n" + m.input.View() + "  " + dimStyle.Render("(filter: enter=apply esc=clear)")
+		return rule + "\n" + m.inputView() + "  " + dimStyle.Render("(filter: enter=apply esc=clear)")
 	case modeAdd, modeAddSub, modeEdit, modeCategory, modeTags, modeDue, modeDefer, modeLink:
 		return rule + "\n" + m.inputPrompt()
 	default:
@@ -653,67 +758,61 @@ func (m model) listFooter() string {
 // from either place reads the same.
 func (m model) inputPrompt() string {
 	verb := map[mode]string{modeAdd: "add", modeAddSub: "subtask", modeEdit: "edit", modeCategory: "category", modeTags: "tags", modeDue: "due", modeDefer: "defer", modeLink: "link"}[m.mode]
-	return m.input.View() + "  " + dimStyle.Render("("+verb+": enter=save esc=cancel)")
+	return m.inputView() + "  " + dimStyle.Render("("+verb+": enter=save esc=cancel)")
 }
 
 // keyCol is one labelled column of a footer key grid: a header over its
 // {key, label} hints.
 type keyCol struct {
 	head    string
-	entries [][2]string
+	entries []keyEntry
 }
 
 // helpGrid is the list footer's key hints.
 func (m model) helpGrid() string {
 	cols := []keyCol{
-		{"move", [][2]string{{"j/k", "move"}, {"←/→", "lane"}, {"space", "toggle"}, {"d", "detail"}, {"v", "view"}, {"A", "global"}, {"e", "archive"}, {"b", "boards"}, {"F", "footer"}}},
-		{"edit", [][2]string{{"a", "add"}, {"S", "sub"}, {"u", "edit"}, {"tab", "status"}, {"x", "del"}, {"c", "sweep"}, {"C", "arch"}}},
-		{"fields", [][2]string{{"h/m/l", "prio"}, {"g", "cat"}, {"T", "tags"}, {"t", "due"}, {"s", "defer"}, {"L", "link"}, {"o", "open"}, {"y", "copy"}}},
-		{"board", [][2]string{{"w", "save"}, {"^e", "editor"}, {"U", "undo"}, {"^r", "redo"}, {"/", "filter"}, {",", "settings"}, {"?", "help"}, {"q", "quit"}}},
+		{"move", entries(keys.Up, keys.LaneLeft, keys.Toggle, keys.Detail, keys.View, keys.Global, keys.ArchiveView, keys.Boards, keys.Footer)},
+		{"edit", entries(keys.Add, keys.AddSub, keys.Edit, keys.Status, keys.Delete, keys.Sweep, keys.Archive)},
+		{"fields", entries(keys.Prio, keys.Category, keys.Tags, keys.Due, keys.Defer, keys.Link, keys.Open, keys.Copy)},
+		{"board", entries(keys.Save, keys.Editor, keys.Undo, keys.Redo, keys.Filter, keys.Settings, keys.Help, keys.Quit)},
 	}
 
 	// In the read-only global view most actions are inert; dim them so only the
 	// keys that do something (navigate / inspect / leave) read as live.
-	globalActive := map[string]bool{"j/k": true, "d": true, "v": true, "/": true, "A": true, "e": true, "o": true, "y": true, "b": true, "F": true, "?": true, "q": true}
+	globalActive := keySet(keys.Up, keys.Detail, keys.View, keys.Filter, keys.Global, keys.ArchiveView, keys.Open, keys.Copy, keys.Boards, keys.Footer, keys.Help, keys.Quit)
 
 	// On a subtask row category is parent-only (subs share the parent's board);
 	// dim it. Archive (C) takes whole items only, so it's inert on a subtask too.
 	// Due / defer / link / status all work on subtasks. `o` opens the link, so dim
 	// it too when this subtask has none.
 	onSub := !m.global && m.selRef().sub >= 0
-	subInert := map[string]bool{"g": true, "T": true, "C": true}
+	subInert := keySet(keys.Category, keys.Tags, keys.Archive)
 	if onSub && m.rowItem(m.selRef()).Link == "" {
-		subInert["o"] = true
+		subInert[keys.Open.Help().Key] = true
 	}
 	return m.keyGrid(cols, func(key string) bool {
 		return (m.global && !globalActive[key]) || (onSub && subInert[key])
 	})
 }
 
-// detailGrid is the detail view's footer, laid out like the list's: the keys
-// that act on the one item on screen, grouped under the same kind of headers.
 func (m model) detailGrid() string {
 	cols := []keyCol{
-		{"fields", [][2]string{{"u", "text"}, {"h/m/l", "prio"}, {"g", "cat"}, {"T", "tags"}}},
-		{"dates", [][2]string{{"t", "due"}, {"s", "defer"}}},
-		{"item", [][2]string{{"n", "note"}, {"L", "link"}, {"tab", "status"}, {"space", "toggle"}}},
-		{"go", [][2]string{{"o", "open link"}, {"y", "copy title"}, {"esc", "back"}, {"q", "quit"}}},
+		{"fields", []keyEntry{{keys.Edit, "text"}, {b: keys.Prio}, {b: keys.Category}, {b: keys.Tags}}},
+		{"dates", entries(keys.Due, keys.Defer)},
+		{"item", entries(keys.Note, keys.Link, keys.Status, keys.Toggle)},
+		{"go", []keyEntry{{keys.Open, "open link"}, {keys.Copy, "copy title"}, {b: keys.Back}, {b: keys.Quit}}},
 	}
 
 	// Same inert rules as the list footer: the global aggregate is read-only, and
 	// category/tags are parent-only on a subtask.
-	globalActive := map[string]bool{"o": true, "y": true, "esc": true, "q": true}
+	globalActive := keySet(keys.Open, keys.Copy, keys.Back, keys.Quit)
 	onSub := !m.global && m.selRef().sub >= 0
-	subInert := map[string]bool{"g": true, "T": true}
+	subInert := keySet(keys.Category, keys.Tags)
 	return m.keyGrid(cols, func(key string) bool {
 		return (m.global && !globalActive[key]) || (onSub && subInert[key])
 	})
 }
 
-// keyGrid renders labelled columns of key hints spread across the full width:
-// one column per section, each a header over "key label" rows, with the leftover
-// width shared as gaps so the block spans the whole pane. dim reports the keys
-// that do nothing in the current context, which render faint.
 func (m model) keyGrid(cols []keyCol, dim func(key string) bool) string {
 	rows := 0
 	rendered := make([][]string, len(cols))
@@ -721,18 +820,18 @@ func (m model) keyGrid(cols []keyCol, dim func(key string) bool) string {
 	for i, c := range cols {
 		keyW := 0
 		for _, e := range c.entries {
-			if kw := lipgloss.Width(e[0]); kw > keyW {
+			if kw := lipgloss.Width(e.label()); kw > keyW {
 				keyW = kw
 			}
 		}
 		lines := []string{catStyle.Render(c.head)}
 		w := lipgloss.Width(lines[0])
 		for _, e := range c.entries {
-			key := e[0] + strings.Repeat(" ", keyW-lipgloss.Width(e[0]))
-			if dim(e[0]) {
+			key := e.label() + strings.Repeat(" ", keyW-lipgloss.Width(e.label()))
+			if dim(e.label()) {
 				key = dimStyle.Render(key)
 			}
-			line := key + " " + dimStyle.Render(e[1])
+			line := key + " " + dimStyle.Render(e.text())
 			if lw := lipgloss.Width(line); lw > w {
 				w = lw
 			}
@@ -797,7 +896,7 @@ func (m model) tableView() string {
 		table.Column{Title: "due", Width: dueW},
 	)
 	rows := make([]table.Row, 0, len(vis))
-	for _, r := range m.rows() {
+	for pos, r := range m.rows() {
 		it := m.rowItem(r)
 		box := "○"
 		if it.Done {
@@ -820,7 +919,7 @@ func (m model) tableView() string {
 		} else if d, t := todo.SubCount(it); t > 0 {
 			task = fmt.Sprintf("%s (%d/%d)", task, d, t)
 		}
-		row := table.Row{box, p, task}
+		row := table.Row{rowMark(0, pos) + box, p, task}
 		if m.global {
 			row = append(row, it.Source)
 		}
@@ -828,16 +927,21 @@ func (m model) tableView() string {
 		rows = append(rows, row)
 	}
 	head, footer := m.header(), m.listFooter()
-	// derive table height from the actual header/footer sizes (+1 for the
-	// table's own column-header row) rather than a hard-coded constant.
-	overhead := lines(head) + lines(footer) + 1
-	h := max(m.innerHeight()-overhead, 3)
+	// derive table height from the actual header/footer sizes rather than a
+	// hard-coded constant; the height includes the table's column-header row.
+	overhead := lines(head) + lines(footer)
+	h := max(m.innerHeight()-overhead, 4)
+	// the table is rebuilt every frame, so its viewport never scrolls: window
+	// the rows here, keeping the cursor row on screen.
+	off := max(scrollOffset(len(rows), m.cursor, h-1), 0)
+	rows = rows[off:min(off+h-1, len(rows))]
 	t := table.New(
 		table.WithColumns(cols),
 		table.WithRows(rows),
 		table.WithHeight(h),
+		table.WithWidth(w),
 	)
-	t.SetCursor(m.cursor)
+	t.SetCursor(m.cursor - off)
 	st := table.DefaultStyles()
 	// plain reverse-video highlight (matches the list cursor); drop the
 	// bubbles default pink foreground.
@@ -888,9 +992,9 @@ func (m model) laneView() string {
 		for j, r := range rows {
 			line := m.laneCard(m.rowItem(r), colW)
 			if i == active && j == cur {
-				line = cursorStyle.Width(colW).Render(ansi.Strip(line))
+				line = m.cursorStyle().Width(colW).Render(ansi.Strip(line))
 			}
-			lines[j] = line
+			lines[j] = rowMark(i, j) + line
 		}
 		cardLines[i] = lines
 	}
@@ -954,7 +1058,7 @@ func (m model) helpBody() []string {
 	line("h/m/l — set priority high/medium/low (same key again clears; works on subtasks too)")
 	line("g — set category · T — set tags (space- or comma-separated; empty clears) · t — set due date · s — set defer/start date")
 	line("L — set link · o — open the link in the browser")
-	line("y — copy the selected item's title to the clipboard")
+	line("y — copy the selected item's title to the clipboard (through the terminal, OSC 52)")
 	line("space — toggle done · tab — cycle status · x — delete")
 	line("rows carry two flush-right values: subtask progress (else the due/defer label), then whichever grouping axis the headers don't already name — priority in the category and tag views, category in the priority view. The box shape is the status (○ open, ◐ named status, ✓ done)")
 	line("c — archive all done items · C — archive the selected item (whole items only, not subtasks)")
@@ -971,6 +1075,7 @@ func (m model) helpBody() []string {
 	line("e — browse the archive (read-only; all boards in the global view; esc to leave)")
 	line("d — detail view; the same field keys work there (u, h/m/l, g, T, t, s, L, tab) and return to it · ? — this help")
 	line("F — hide/show the footer help grid (the repo/version line stays; config: hidefooter = true starts hidden)")
+	line("mouse (config: mouse = true, or , settings): wheel scrolls, click selects a row or card, double-click opens its detail")
 	blank()
 	sec("history & files")
 	line("U — undo · ^r — redo (multi-level)")
@@ -1128,7 +1233,7 @@ func (m model) detailView() string {
 	b.WriteString("\n" + dimStyle.Render("note") + "\n")
 	switch {
 	case m.mode == modeNote:
-		b.WriteString(m.note.View() + "\n")
+		b.WriteString(m.noteView() + "\n")
 	case it.Note != "":
 		b.WriteString(lipgloss.NewStyle().Width(m.width()).Render(it.Note) + "\n")
 	default:
@@ -1139,7 +1244,7 @@ func (m model) detailView() string {
 	var help string
 	switch {
 	case m.mode == modeNote:
-		help = rule + "\n" + dimStyle.Render("note: enter newline · esc done (saves as you type)")
+		help = rule + "\n" + dimStyle.Render(m.noteHint())
 	case m.fieldEdit: // editing a field from here: the prompt replaces the grid
 		help = rule + "\n" + m.inputPrompt()
 	default:

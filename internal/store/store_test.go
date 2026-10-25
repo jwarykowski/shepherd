@@ -177,6 +177,30 @@ func TestNoteMultilineRoundTrip(t *testing.T) {
 	}
 }
 
+// TestUnknownLinesRoundTrip keeps lines shepherd doesn't parse (an unknown meta
+// key, free text, a misplaced four-space meta) attached to their item on save.
+func TestUnknownLinesRoundTrip(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "todo.md")
+	src := "- [ ] task\n  id: a\n  owner: sam\n    due: 2026-01-01\n## free text\n" +
+		"  - [ ] sub\n    id: b\n    estimate: 2h\n- [ ] next\n  id: c\n"
+	if err := os.WriteFile(p, []byte(src), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	items := Load(p)
+	if got := len(items[0].Extra); got != 3 {
+		t.Fatalf("parent extra = %q", items[0].Extra)
+	}
+	if got := items[0].Subs[0].Extra; len(got) != 1 || got[0] != "    estimate: 2h" {
+		t.Fatalf("sub extra = %q", got)
+	}
+	if err := Save(p, items); err != nil {
+		t.Fatal(err)
+	}
+	if got := string(mustRead(t, p)); got != src {
+		t.Fatalf("unknown lines round-trip mismatch:\n%s", got)
+	}
+}
+
 // TestRoundTripMetadata covers the added fields (completed, defer, link) parse
 // back and re-serialise in the fixed field order.
 func TestRoundTripMetadata(t *testing.T) {

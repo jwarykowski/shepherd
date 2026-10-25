@@ -6,20 +6,18 @@ import (
 	"runtime"
 	"shepherd/internal/store"
 	"shepherd/internal/todo"
-	"strconv"
 	"strings"
 	"time"
 
-	"github.com/atotto/clipboard"
-	tea "github.com/charmbracelet/bubbletea"
+	binding "charm.land/bubbles/v2/key"
+	tea "charm.land/bubbletea/v2"
 )
 
-// copyText puts s on the system clipboard. A package var so tests never touch
-// the real clipboard: on Wayland wl-copy keeps running to serve the selection,
-// so clipboard.WriteAll's wait never returns there.
-var copyText = clipboard.WriteAll
+// copyText puts s on the system clipboard through the terminal (OSC 52), so it
+// works over SSH and inside tmux/herdr panes. A package var so tests can record.
+var copyText = tea.SetClipboard
 
-func (m model) Init() tea.Cmd { return tick() }
+func (m model) Init() tea.Cmd { return tea.Batch(tick(), tea.RequestBackgroundColor) }
 
 // beforeMutate pushes the current state onto the undo stack, clears the redo
 // stack (a fresh edit invalidates the redo future), and marks the model dirty.
@@ -30,6 +28,63 @@ func (m *model) beforeMutate() {
 	}
 	m.future = nil
 	m.lastEdit = time.Now()
+}
+
+// diskMsg is a board (or the global aggregate) that changed on disk, read by
+// checkDisk off the Update loop.
+type diskMsg struct {
+	path            string
+	global          bool
+	mod             time.Time
+	items, archived []todo.Item
+}
+
+// checkDisk stats the board (every board when global) and, if it's newer than
+// the last read, loads it in the background as a diskMsg.
+func (m model) checkDisk() tea.Cmd {
+	path, global, last := m.path, m.global, m.lastMod
+	return func() tea.Msg {
+		if global {
+			if mt := store.BoardsLatestMod(); mt.After(last) {
+				return diskMsg{global: true, mod: mt, items: store.LoadAll()}
+			}
+			return nil
+		}
+		if mt := store.FileModTime(path); mt.After(last) {
+			return diskMsg{path: path, mod: mt, items: store.Load(path), archived: store.Load(store.ArchivePath(path))}
+		}
+		return nil
+	}
+}
+
+// applyDisk takes a background read unless it's gone stale: another board or
+// view, an older file than the last read, or edits made meanwhile, which a
+// reload would clobber (the next save merges them instead).
+func (m model) applyDisk(msg diskMsg) model {
+	if msg.global != m.global || (!msg.global && msg.path != m.path) || !msg.mod.After(m.lastMod) {
+		return m
+	}
+	if msg.global {
+		m.items = msg.items
+		m.lastMod = msg.mod
+		m.resort()
+		m.clamp()
+		m.markSaved()
+		return m
+	}
+	if m.dirty || m.mode != modeList {
+		return m
+	}
+	var sel *todo.Item
+	if r := m.selRef(); r.item >= 0 {
+		it := m.items[r.item]
+		sel = &it
+	}
+	m.load(msg.mod, msg.items, msg.archived)
+	if sel != nil {
+		m.place(*sel) // keep the cursor on the same item, not the same row
+	}
+	return m
 }
 
 // editorDoneMsg is sent when the external editor exits.
@@ -305,6 +360,21 @@ func (m *model) placeSub(idx, sub int) {
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.BackgroundColorMsg:
+		m.light = !msg.IsDark()
+		return m, nil
+	case tea.KeyboardEnhancementsMsg:
+		m.kbdEnhanced = msg.SupportsKeyDisambiguation()
+		return m, nil
+	case tea.FocusMsg:
+		// back in the pane: pick up agent/CLI edits now, not on the next tick
+		return m, m.checkDisk()
+	case tea.BlurMsg:
+		// leaving the pane flushes edits, unless autosave is off
+		if !m.global && m.dirty && m.autosaveEvery > 0 {
+			m.save()
+		}
+		return m, nil
 	case tea.WindowSizeMsg:
 		m.w, m.height = msg.Width, msg.Height
 		if m.mode == modeNote {
@@ -320,13 +390,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// changes, so a dotfile sync can't clobber the user's work.
 		switch {
 		case m.global:
-			if mt := store.BoardsLatestMod(); mt.After(m.lastMod) {
-				m.items = store.LoadAll()
-				m.resort()
-				m.clamp()
-				m.lastMod = mt
-				m.markSaved()
-			}
+			return m, tea.Batch(tick(), m.checkDisk())
 		case m.mode != modeList:
 			// leave the rows alone under an open editor or detail page, which
 			// address the item by its row; catch up once back on the list.
@@ -336,58 +400,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.save()
 			}
 		default:
-			if mt := store.FileModTime(m.path); mt.After(m.lastMod) {
-				var sel *todo.Item
-				if r := m.selRef(); r.item >= 0 {
-					it := m.items[r.item]
-					sel = &it
-				}
-				m.reload()
-				if sel != nil {
-					m.place(*sel) // keep the cursor on the same item, not the same row
-				}
-			}
+			return m, tea.Batch(tick(), m.checkDisk())
 		}
 		return m, tick()
-	case tea.KeyMsg:
-		if msg.String() == "ctrl+c" { // universal abort, reaches text/detail/help/confirm too
-			return m.quit()
-		}
-		var res tea.Model
-		var cmd tea.Cmd
-		switch m.mode {
-		case modeAdd, modeAddSub, modeEdit, modeCategory, modeTags, modeDue, modeDefer, modeLink, modeFilter, modeBoardRename, modeBoardNew, modeBoardDir:
-			res, cmd = m.updateInput(msg)
-		case modeConfirmDelete:
-			res, cmd = m.updateConfirmDelete(msg)
-		case modeNote:
-			res, cmd = m.updateNote(msg)
-		case modeDetail:
-			res, cmd = m.updateDetail(msg)
-		case modeHelp:
-			res, cmd = m.updateHelp(msg)
-		case modeArchive:
-			res, cmd = m.updateArchive(msg)
-		case modeBoards:
-			res, cmd = m.updateBoards(msg)
-		case modeBoardDetail:
-			res, cmd = m.updateBoardDetail(msg)
-		case modeSettings:
-			res, cmd = m.updateSettings(msg)
-		case modeSettingEdit:
-			res, cmd = m.updateSettingEdit(msg)
-		default:
-			if m.global {
-				res, cmd = m.updateGlobal(msg)
-			} else {
-				res, cmd = m.updateList(msg)
-			}
-		}
-		if nm, ok := res.(model); ok {
-			nm.refreshDirty() // one compare per event, not per render
-			return nm, cmd
-		}
-		return res, cmd
+	case diskMsg:
+		return m.applyDisk(msg), nil
+	case tea.PasteMsg:
+		return m.paste(msg)
+	case tea.MouseWheelMsg:
+		return m.wheel(msg)
+	case rowClickMsg:
+		return m.clickRow(msg)
+	case tea.KeyPressMsg:
+		return m.dispatchKey(msg)
 	}
 	return m, nil
 }
@@ -395,24 +420,24 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // updateGlobal handles keys in the read-only global view. It deliberately has
 // no mutation cases — read-only is structural here, not a per-case guard — and
 // never saves the aggregate to disk.
-func (m model) updateGlobal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m model) updateGlobal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	rows := m.rows()
-	switch msg.String() {
-	case "q":
+	switch {
+	case binding.Matches(msg, keys.Quit):
 		return m.quit()
-	case "esc", "A": // A toggles both ways, like it does on a board
+	case binding.Matches(msg, keys.Back, keys.Global): // A toggles both ways, like it does on a board
 		m.toggleGlobal()
-	case "F":
+	case binding.Matches(msg, keys.Footer):
 		m.hideFooter = !m.hideFooter
-	case "j", "down":
+	case binding.Matches(msg, keys.Down):
 		if m.cursor < len(rows)-1 {
 			m.cursor++
 		}
-	case "k", "up":
+	case binding.Matches(msg, keys.Up):
 		if m.cursor > 0 {
 			m.cursor--
 		}
-	case "v":
+	case binding.Matches(msg, keys.View):
 		var cur todo.Item
 		has := m.sel() >= 0
 		if has {
@@ -428,25 +453,25 @@ func (m model) updateGlobal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.place(cur)
 		}
 		m.clamp()
-	case "d":
+	case binding.Matches(msg, keys.Detail):
 		if m.sel() >= 0 {
 			m.mode = modeDetail
 		}
-	case "o":
+	case binding.Matches(msg, keys.Open):
 		if m.sel() >= 0 {
 			return m, openLink(m.items[m.sel()].Link)
 		}
-	case "y":
+	case binding.Matches(msg, keys.Copy):
 		if m.sel() >= 0 {
-			_ = copyText(m.items[m.sel()].Text)
+			return m, copyText(m.items[m.sel()].Text)
 		}
-	case "e":
+	case binding.Matches(msg, keys.ArchiveView):
 		m.enterArchive()
-	case "b":
+	case binding.Matches(msg, keys.Boards):
 		m.enterBoards()
-	case "?":
+	case binding.Matches(msg, keys.Help):
 		m.mode = modeHelp
-	case "/":
+	case binding.Matches(msg, keys.Filter):
 		m.prompt(modeFilter, m.filter, "filter")
 	}
 	return m, nil
@@ -480,35 +505,35 @@ func (m model) quit() (tea.Model, tea.Cmd) {
 	return m, tea.Quit
 }
 
-func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m model) updateList(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	rows := m.cursorRows()
 	ref := m.selRef()
 	idx := ref.item
-	switch msg.String() {
-	case "q":
+	switch {
+	case binding.Matches(msg, keys.Quit):
 		return m.quit()
-	case "w":
+	case binding.Matches(msg, keys.Save):
 		m.save()
 		return m, nil
-	case "j", "down":
+	case binding.Matches(msg, keys.Down):
 		if m.cursor < len(rows)-1 {
 			m.cursor++
 		}
-	case "k", "up":
+	case binding.Matches(msg, keys.Up):
 		if m.cursor > 0 {
 			m.cursor--
 		}
-	case "left":
+	case binding.Matches(msg, keys.LaneLeft):
 		if m.view == viewLane && m.lane > 0 {
 			m.lane--
 			m.clamp()
 		}
-	case "right":
+	case binding.Matches(msg, keys.LaneRight):
 		if m.view == viewLane && m.lane < len(m.statuses)-1 {
 			m.lane++
 			m.clamp()
 		}
-	case " ":
+	case binding.Matches(msg, keys.Toggle):
 		if idx >= 0 {
 			m.beforeMutate()
 			if ref.sub == -1 {
@@ -522,7 +547,7 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			m.clamp()
 		}
-	case "tab":
+	case binding.Matches(msg, keys.Status):
 		if idx >= 0 {
 			m.beforeMutate()
 			if ref.sub == -1 {
@@ -536,15 +561,15 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			m.clamp()
 		}
-	case "d":
+	case binding.Matches(msg, keys.Detail):
 		if idx >= 0 {
 			m.mode = modeDetail
 		}
-	case "S":
+	case binding.Matches(msg, keys.AddSub):
 		if idx >= 0 {
 			m.prompt(modeAddSub, "", "subtask text  !h|!m|!l  due:tomorrow")
 		}
-	case "x":
+	case binding.Matches(msg, keys.Delete):
 		if idx >= 0 {
 			m.beforeMutate()
 			if ref.sub == -1 {
@@ -556,7 +581,7 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			m.clamp()
 		}
-	case "c":
+	case binding.Matches(msg, keys.Sweep):
 		var done, kept []todo.Item
 		for _, it := range m.items {
 			if it.Done {
@@ -571,7 +596,7 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.items = kept
 			m.commitArchive()
 		}
-	case "C":
+	case binding.Matches(msg, keys.Archive):
 		// Archive just the selected item. Whole items only — subtasks live inside
 		// their parent, so a subtask row is a no-op (and dimmed in the legend),
 		// matching the CLI's `archive <ref>` which rejects subtask refs.
@@ -582,7 +607,7 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.items = append(m.items[:idx], m.items[idx+1:]...)
 			m.commitArchive()
 		}
-	case "U":
+	case binding.Matches(msg, keys.Undo):
 		if n := len(m.past); n > 0 {
 			m.future = append(m.future, todo.Clone(m.items))
 			m.items = m.past[n-1]
@@ -591,7 +616,7 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.resort() // the snapshot keeps the order of the view it was taken in
 			m.clamp()
 		}
-	case "ctrl+r":
+	case binding.Matches(msg, keys.Redo):
 		if n := len(m.future); n > 0 {
 			m.past = append(m.past, todo.Clone(m.items))
 			m.items = m.future[n-1]
@@ -600,7 +625,7 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.resort()
 			m.clamp()
 		}
-	case "h", "m", "l":
+	case binding.Matches(msg, keys.Prio):
 		if idx >= 0 {
 			p := strings.ToUpper(msg.String())[0]
 			if ref.sub >= 0 { // subtask priority: set in place, no resort
@@ -624,7 +649,7 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.resort()
 			m.place(cur)
 		}
-	case "v":
+	case binding.Matches(msg, keys.View):
 		var cur todo.Item
 		has := idx >= 0
 		if has {
@@ -636,24 +661,24 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.place(cur)
 		}
 		m.clamp()
-	case "A":
+	case binding.Matches(msg, keys.Global):
 		m.toggleGlobal()
-	case "F":
+	case binding.Matches(msg, keys.Footer):
 		m.hideFooter = !m.hideFooter
-	case "?":
+	case binding.Matches(msg, keys.Help):
 		m.mode = modeHelp
-	case "/":
+	case binding.Matches(msg, keys.Filter):
 		m.prompt(modeFilter, m.filter, "filter")
-	case "esc":
+	case binding.Matches(msg, keys.Back):
 		m.filter = ""
 		m.clamp()
-	case "a":
+	case binding.Matches(msg, keys.Add):
 		m.prompt(modeAdd, "", "todo text  @category  !h|!m|!l  due:tomorrow")
-	case "u":
+	case binding.Matches(msg, keys.Edit):
 		if idx >= 0 {
 			m.prompt(modeEdit, m.rowText(ref), "")
 		}
-	case "g":
+	case binding.Matches(msg, keys.Category):
 		if idx >= 0 && ref.sub == -1 { // field editors are parent-level
 			ph := "category"
 			if len(m.categories) > 0 {
@@ -662,204 +687,41 @@ func (m model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.catIdx = 0
 			m.prompt(modeCategory, m.items[idx].Category, ph)
 		}
-	case "T":
+	case binding.Matches(msg, keys.Tags):
 		if idx >= 0 && ref.sub == -1 { // field editors are parent-level
 			m.prompt(modeTags, strings.Join(m.items[idx].Tags, " "), "tags, space- or comma-separated")
 		}
-	case "t":
+	case binding.Matches(msg, keys.Due):
 		if idx >= 0 {
 			m.prompt(modeDue, m.rowItem(ref).Due, "today · tomorrow · fri · 3d · 2w · 5m · 1y · DD-MM-YYYY")
 		}
-	case "s":
+	case binding.Matches(msg, keys.Defer):
 		if idx >= 0 {
 			m.prompt(modeDefer, m.rowItem(ref).Defer, "start/defer: today · tomorrow · fri · 3d · 2w · DD-MM-YYYY")
 		}
-	case "L":
+	case binding.Matches(msg, keys.Link):
 		if idx >= 0 {
 			m.prompt(modeLink, m.rowItem(ref).Link, "link (url)")
 		}
-	case "o":
+	case binding.Matches(msg, keys.Open):
 		if idx >= 0 {
 			return m, openLink(m.rowItem(ref).Link)
 		}
-	case "y":
+	case binding.Matches(msg, keys.Copy):
 		if idx >= 0 {
-			_ = copyText(m.rowText(ref))
+			return m, copyText(m.rowText(ref))
 		}
-	case "e":
+	case binding.Matches(msg, keys.ArchiveView):
 		m.enterArchive()
-	case "b":
+	case binding.Matches(msg, keys.Boards):
 		m.enterBoards()
-	case ",":
+	case binding.Matches(msg, keys.Settings):
 		m.mode = modeSettings
 		m.settingsCur = 0
-	case "ctrl+e":
+	case binding.Matches(msg, keys.Editor):
 		return m, m.openEditor()
 	}
 	return m, nil
-}
-
-// enterBoards opens the board picker, listing every board with the current
-// one (default when unnamed) under the cursor.
-func (m *model) enterBoards() {
-	m.setBoards(store.Boards())
-	m.projCur = 0
-	m.projArchived = false
-	m.projNotice = ""
-	cur := m.board
-	if cur == "" {
-		cur = "default"
-	}
-	for i, b := range m.projRows {
-		if b.Name == cur {
-			m.projCur = i
-			break
-		}
-	}
-	m.mode = modeBoards
-}
-
-// liveOnlyKeys are the picker actions that need a board sitting in its normal
-// place — inert in the archived view.
-var liveOnlyKeys = map[string]bool{"enter": true, "d": true, "a": true, "r": true, "x": true, "A": true}
-
-// updateBoards handles keys in the board picker: navigate, enter to jump to
-// the selected board (flushing any unsaved edits first), esc to return.
-func (m model) updateBoards(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	key := msg.String()
-	// A stashed board has no file in place, so the archived view is unarchive-only:
-	// nothing to open, inspect, rename, archive or delete.
-	if m.projArchived && liveOnlyKeys[key] {
-		return m, nil
-	}
-	switch key {
-	case "q":
-		return m.quit()
-	case "esc":
-		m.mode = modeList
-	case "j", "down":
-		if m.projCur < len(m.projRows)-1 {
-			m.projCur++
-		}
-	case "k", "up":
-		if m.projCur > 0 {
-			m.projCur--
-		}
-	case "e": // toggle between live and archived boards
-		m.projArchived = !m.projArchived
-		m.projNotice = ""
-		m.projCur = 0
-		if m.projArchived {
-			m.setBoards(store.ArchivedBoards())
-		} else {
-			m.setBoards(store.Boards())
-		}
-	case "u": // unarchive the selected board (archived view only)
-		if !m.projArchived {
-			break
-		}
-		if b := m.selectedBoard(); b != nil {
-			if err := store.UnarchiveBoard(b.Name); err != nil {
-				m.projNotice = err.Error()
-			} else {
-				m.projArchived = false
-				m.setBoards(store.Boards())
-				for i, x := range m.projRows { // land on the restored board
-					if x.Name == b.Name {
-						m.projCur = i
-						break
-					}
-				}
-			}
-		}
-	case "enter":
-		if len(m.projRows) == 0 {
-			m.mode = modeList
-			return m, nil
-		}
-		name := m.projRows[m.projCur].Name
-		proj := name
-		if name == "default" {
-			proj = ""
-		}
-		if !m.global && m.dirty {
-			m.save()
-		}
-		nm := newModel(proj) // jump: rebuild the board fresh, like toggleGlobal
-		nm.w, nm.height, nm.density, nm.hideFooter = m.w, m.height, m.density, m.hideFooter
-		nm.clamp()
-		return nm, nil
-	case "d": // detail view for the selected board (name, dir, paths, counts)
-		if m.selectedBoard() != nil {
-			m.projNotice = ""
-			m.mode = modeBoardDetail
-		}
-	case "a": // create a new board
-		m.projNotice = ""
-		m.prompt(modeBoardNew, "", "new board name")
-	case "r": // rename the selected board (not the default)
-		if b := m.selectedBoard(); b != nil && b.Name != "default" {
-			m.projNotice = ""
-			m.prompt(modeBoardRename, b.Name, "new board name")
-		}
-	case "x": // delete the selected board (confirmed)
-		if b := m.selectedBoard(); b != nil && b.Name != "default" {
-			m.mode = modeConfirmDelete
-		}
-	case "A": // archive the selected board into boards/archived/
-		if b := m.selectedBoard(); b != nil && b.Name != "default" {
-			m.saveBeforeMove(b.Name)
-			if err := store.ArchiveBoard(b.Name); err != nil {
-				m.projNotice = err.Error()
-			} else {
-				return m.afterBoardChange(b.Name, ""), nil
-			}
-		}
-	}
-	return m, nil
-}
-
-// updateBoardDetail handles the board detail screen: e opens the dir editor
-// for this board (reusing modeBoardDir), esc returns to the picker.
-func (m model) updateBoardDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "q":
-		return m.quit()
-	case "esc":
-		m.mode = modeBoards
-	case "e": // edit this board's working dir
-		if b := m.selectedBoard(); b != nil {
-			m.projPending = b.Name
-			m.projDirEdit = true
-			m.prompt(modeBoardDir, store.BoardDir(b.Name), "working dir (empty to clear)")
-		}
-	}
-	return m, nil
-}
-
-// selectedBoard is the board row under the picker cursor, or nil when empty.
-func (m model) selectedBoard() *store.Board {
-	if m.projCur < 0 || m.projCur >= len(m.projRows) {
-		return nil
-	}
-	return &m.projRows[m.projCur]
-}
-
-// currentBoardName is the name of the board currently open ("default" when the
-// unnamed board).
-func (m model) currentBoardName() string {
-	if m.board == "" {
-		return "default"
-	}
-	return m.board
-}
-
-// saveBeforeMove flushes unsaved edits when the open board is about to be
-// renamed or archived, since afterBoardChange reopens it from the moved file.
-func (m *model) saveBeforeMove(name string) {
-	if !m.global && m.dirty && name == m.currentBoardName() {
-		m.save()
-	}
 }
 
 // commitArchive finishes a sweep: AppendArchive already wrote the archive, so the
@@ -869,167 +731,6 @@ func (m *model) commitArchive() {
 	m.save()
 	m.past, m.future = nil, nil
 	m.clamp()
-}
-
-// afterBoardChange refreshes the picker after a rename/delete/archive. If the
-// board that changed is the one currently open, it re-opens that board under its
-// new name (newName), or the default board when it was removed/archived
-// (newName == ""), so the live model never points at a moved file.
-func (m model) afterBoardChange(oldName, newName string) model {
-	if oldName == m.currentBoardName() {
-		proj := newName
-		if proj == "default" {
-			proj = ""
-		}
-		nm := newModel(proj)
-		nm.w, nm.height, nm.density, nm.hideFooter = m.w, m.height, m.density, m.hideFooter
-		nm.enterBoards()
-		return nm
-	}
-	m.setBoards(store.Boards())
-	if m.projCur >= len(m.projRows) {
-		m.projCur = len(m.projRows) - 1
-	}
-	if m.projCur < 0 {
-		m.projCur = 0
-	}
-	m.mode = modeBoards
-	return m
-}
-
-// updateConfirmDelete handles the delete-board confirmation: y deletes the
-// selected board, anything else cancels back to the picker.
-func (m model) updateConfirmDelete(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "q":
-		return m.quit()
-	case "y", "Y":
-		if b := m.selectedBoard(); b != nil && b.Name != "default" {
-			if err := store.DeleteBoard(b.Name); err == nil {
-				return m.afterBoardChange(b.Name, ""), nil
-			}
-		}
-		m.mode = modeBoards
-	default:
-		m.mode = modeBoards
-	}
-	return m, nil
-}
-
-// numSettings is the count of editable rows in the settings screen, in the
-// order settingsView renders them: view, density, autosave, categories,
-// statuses, footer.
-const numSettings = 6
-
-func (m *model) saveSettings() { _ = saveConfig(store.ConfigPath(), m.currentConfig()) }
-
-// updateSettings handles the settings screen: navigate rows, cycle the enum
-// rows (view/density) in place, or open the editor on a text row. Every change
-// applies to the live model and is written straight to config.toml.
-func (m model) updateSettings(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "q":
-		return m.quit()
-	case "esc":
-		m.mode = modeList
-	case "j", "down":
-		if m.settingsCur < numSettings-1 {
-			m.settingsCur++
-		}
-	case "k", "up":
-		if m.settingsCur > 0 {
-			m.settingsCur--
-		}
-	case "enter":
-		switch m.settingsCur {
-		case 0, 1, 5:
-			m.cycleSetting() // enum/bool rows cycle in place
-		default:
-			m.prompt(modeSettingEdit, m.settingValue(m.settingsCur), m.settingPlaceholder(m.settingsCur))
-		}
-	}
-	return m, nil
-}
-
-// cycleSetting advances an enum row (view or density) and persists.
-func (m *model) cycleSetting() {
-	switch m.settingsCur {
-	case 0: // view: category -> priority -> tag -> table
-		m.view = (m.view + 1) % viewMode(viewCount)
-		m.resort()
-		m.clamp()
-		m.saveSettings()
-	case 1: // density: compact <-> comfort
-		if m.density == comfort {
-			m.density = compact
-		} else {
-			m.density = comfort
-		}
-		m.saveSettings()
-	case 5: // footer: shown <-> hidden
-		m.hideFooter = !m.hideFooter
-		m.saveSettings()
-	}
-}
-
-// settingValue is the editor seed for a text setting row.
-func (m model) settingValue(idx int) string {
-	switch idx {
-	case 2:
-		return strconv.Itoa(int(m.autosaveEvery / time.Second))
-	case 3:
-		return strings.Join(m.categories, ", ")
-	case 4:
-		return strings.Join(m.statuses, ", ")
-	}
-	return ""
-}
-
-func (m model) settingPlaceholder(idx int) string {
-	switch idx {
-	case 2:
-		return "autosave seconds (0 disables)"
-	case 3:
-		return "categories, comma-separated"
-	case 4:
-		return "statuses, comma-separated (done always kept last)"
-	}
-	return ""
-}
-
-// updateSettingEdit runs the shared text input for a text setting row, applying
-// and saving on enter.
-func (m model) updateSettingEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "esc":
-		m.input.Blur()
-		m.mode = modeSettings
-		return m, nil
-	case "enter":
-		v := strings.TrimSpace(m.input.Value())
-		m.applySettingText(m.settingsCur, v)
-		m.saveSettings()
-		m.input.Blur()
-		m.mode = modeSettings
-		return m, nil
-	}
-	var cmd tea.Cmd
-	m.input, cmd = m.input.Update(msg)
-	return m, cmd
-}
-
-// applySettingText writes an edited text setting back onto the live model.
-func (m *model) applySettingText(idx int, v string) {
-	switch idx {
-	case 2:
-		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
-			m.autosaveEvery = time.Duration(n) * time.Second
-		}
-	case 3:
-		m.categories = store.ParseList(v, false)
-	case 4:
-		m.statuses = normalizeStatuses(store.ParseList(v, true))
-	}
 }
 
 // enterArchive opens the read-only archive browser. On a board board it shows
@@ -1046,7 +747,7 @@ func (m *model) enterArchive() {
 
 // updateArchive handles keys in the read-only archive browser: navigate, esc to
 // return to the board, q to quit. No mutations.
-func (m model) updateArchive(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m model) updateArchive(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "q":
 		return m.quit()
@@ -1064,7 +765,7 @@ func (m model) updateArchive(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m model) updateHelp(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m model) updateHelp(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "q":
 		return m.quit()
@@ -1087,99 +788,35 @@ func (m model) updateHelp(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// afterFieldEdit is the mode to land in once a field editor closes: the item
-// detail view when the editor was opened from there (mirroring projDirEdit for
-// board dirs), else the list. It consumes the flag.
-func (m *model) afterFieldEdit() mode {
-	if m.fieldEdit {
-		m.fieldEdit = false
-		return modeDetail
+// textEntry reports whether the mode types into the shared single-line input.
+func (m model) textEntry() bool {
+	switch m.mode {
+	case modeAdd, modeAddSub, modeEdit, modeCategory, modeTags, modeDue, modeDefer, modeLink, modeFilter, modeBoardRename, modeBoardNew, modeBoardDir, modeSettingEdit:
+		return true
 	}
-	return modeList
+	return false
 }
 
-// detailFieldKeys are the list's field editors reused from the detail view, so
-// the item can be changed while you're looking at it. They're delegated to
-// updateList rather than reimplemented — it already guards parent-only fields and
-// resorts/re-places the cursor. Keys the detail view handles itself (n, space, o,
-// esc, q) never reach here; x/delete is deliberately list-only.
-var detailFieldKeys = map[string]bool{
-	"u": true, "g": true, "T": true, "t": true, "s": true, "L": true,
-	"h": true, "m": true, "l": true, "tab": true, " ": true,
-}
-
-func (m model) updateDetail(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	ref := m.selRef()
-	if ref.item < 0 {
-		switch msg.String() {
-		case "q":
-			return m.quit()
-		case "esc":
-			m.mode = modeList
-		}
-		return m, nil
-	}
-	p := m.rowPtr(ref)
-	switch msg.String() {
-	case "q":
-		return m.quit()
-	case "esc":
-		m.mode = modeList
-	case "n":
-		if !m.global {
-			m.mode = modeNote
-			m.noteRef = ref
-			m.noteEditing = false
-			m.note.SetWidth(m.width())
-			m.note.SetHeight(noteHeight)
-			m.note.SetValue(p.Note)
-			m.note.Focus()
-		}
-	case "o":
-		return m, openLink(p.Link)
-	case "y":
-		_ = copyText(p.Text)
-	default:
-		if detailFieldKeys[msg.String()] && !m.global {
-			m.fieldEdit = true // save/cancel comes back here, not to the list
-			res, cmd := m.updateList(msg)
-			nm := res.(model)
-			if !nm.input.Focused() { // an immediate mutation (prio, status): stay put
-				nm.mode = modeDetail
-				nm.fieldEdit = false
-			}
-			return nm, cmd
-		}
-	}
-	return m, nil
-}
-
-// updateNote drives the multi-line note editor. enter inserts a newline (the
-// textarea owns it); edits save live to the item, so esc just closes. One undo
-// snapshot is taken on the first change, giving a single entry per edit session.
-func (m model) updateNote(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if msg.String() == "esc" {
-		m.note.Blur()
-		m.noteEditing = false
-		m.mode = modeDetail
-		return m, nil
-	}
+// paste feeds bracketed-paste text to whichever editor is open; elsewhere a
+// paste is ignored rather than read as key presses.
+func (m model) paste(msg tea.PasteMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
-	m.note, cmd = m.note.Update(msg)
-	if ref := m.noteRef; ref.item >= 0 && ref.item < len(m.items) {
-		p := m.rowPtr(ref)
-		if v := m.note.Value(); v != p.Note { // empty clears
-			if !m.noteEditing {
-				m.beforeMutate()
-				m.noteEditing = true
-			}
-			p.Note = v
+	switch {
+	case m.mode == modeNote:
+		m.note, cmd = m.note.Update(msg)
+		m.syncNote()
+	case m.textEntry():
+		m.input, cmd = m.input.Update(msg)
+		if m.mode == modeFilter {
+			m.filter = m.input.Value()
+			m.clamp()
 		}
 	}
+	m.refreshDirty()
 	return m, cmd
 }
 
-func (m model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m model) updateInput(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	ref := m.selRef()
 	idx := ref.item
 	if msg.String() == "tab" && m.mode == modeCategory && len(m.categories) > 0 {
@@ -1361,4 +998,46 @@ func (m model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.clamp()
 	}
 	return m, cmd
+}
+
+// dispatchKey routes a key press to the open mode's handler.
+func (m model) dispatchKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	if msg.String() == "ctrl+c" { // universal abort, reaches text/detail/help/confirm too
+		return m.quit()
+	}
+	var res tea.Model
+	var cmd tea.Cmd
+	switch m.mode {
+	case modeAdd, modeAddSub, modeEdit, modeCategory, modeTags, modeDue, modeDefer, modeLink, modeFilter, modeBoardRename, modeBoardNew, modeBoardDir:
+		res, cmd = m.updateInput(msg)
+	case modeConfirmDelete:
+		res, cmd = m.updateConfirmDelete(msg)
+	case modeNote:
+		res, cmd = m.updateNote(msg)
+	case modeDetail:
+		res, cmd = m.updateDetail(msg)
+	case modeHelp:
+		res, cmd = m.updateHelp(msg)
+	case modeArchive:
+		res, cmd = m.updateArchive(msg)
+	case modeBoards:
+		res, cmd = m.updateBoards(msg)
+	case modeBoardDetail:
+		res, cmd = m.updateBoardDetail(msg)
+	case modeSettings:
+		res, cmd = m.updateSettings(msg)
+	case modeSettingEdit:
+		res, cmd = m.updateSettingEdit(msg)
+	default:
+		if m.global {
+			res, cmd = m.updateGlobal(msg)
+		} else {
+			res, cmd = m.updateList(msg)
+		}
+	}
+	if nm, ok := res.(model); ok {
+		nm.refreshDirty() // one compare per event, not per render
+		return nm, cmd
+	}
+	return res, cmd
 }

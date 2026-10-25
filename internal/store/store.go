@@ -521,15 +521,20 @@ func Load(path string) []todo.Item {
 			curSub = len(parent.Subs) - 1
 			continue
 		}
-		if m := subMetaRE.FindStringSubmatch(ln); m != nil && len(items) > 0 {
-			parent := &items[len(items)-1]
-			if curSub >= 0 && curSub < len(parent.Subs) {
-				applyMeta(&parent.Subs[curSub], m[1], m[2])
-			}
+		if m := subMetaRE.FindStringSubmatch(ln); m != nil && len(items) > 0 && curSub >= 0 {
+			applyMeta(&items[len(items)-1].Subs[curSub], m[1], m[2])
 			continue
 		}
 		if m := metaRE.FindStringSubmatch(ln); m != nil && len(items) > 0 {
 			applyMeta(&items[len(items)-1], m[1], m[2])
+			continue
+		}
+		if strings.TrimSpace(ln) != "" && len(items) > 0 {
+			it := &items[len(items)-1]
+			if curSub >= 0 && curSub < len(it.Subs) {
+				it = &it.Subs[curSub]
+			}
+			it.Extra = append(it.Extra, ln)
 		}
 	}
 	return items
@@ -582,6 +587,9 @@ func writeItem(b *strings.Builder, it todo.Item, indent string) {
 		for ln := range strings.SplitSeq(it.Note, "\n") {
 			fmt.Fprintf(b, "%snote: %s\n", meta, ln)
 		}
+	}
+	for _, ln := range it.Extra {
+		b.WriteString(ln + "\n")
 	}
 }
 
@@ -653,6 +661,12 @@ func WithLock(path string, fn func() error) error {
 // last-writer-wins; wrap load→mutate→save in WithLock.
 func Save(path string, items []todo.Item) error {
 	AssignMissingIDs(items)
+	return WriteFile(path, []byte(Serialize(items)))
+}
+
+// WriteFile replaces path with data atomically (synced temp file + rename),
+// writing through a symlink to its target and keeping the file's permissions.
+func WriteFile(path string, data []byte) error {
 	if target, err := filepath.EvalSymlinks(path); err == nil {
 		path = target
 	}
@@ -669,7 +683,7 @@ func Save(path string, items []todo.Item) error {
 	}
 	tmpName := tmp.Name()
 	defer func() { _ = os.Remove(tmpName) }() // no-op once the rename succeeds
-	if _, err := tmp.Write([]byte(Serialize(items))); err != nil {
+	if _, err := tmp.Write(data); err != nil {
 		_ = tmp.Close()
 		return err
 	}

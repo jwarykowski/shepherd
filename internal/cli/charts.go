@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/NimbleMarkets/ntcharts/linechart/timeserieslinechart"
-	"github.com/NimbleMarkets/ntcharts/sparkline"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
+	"github.com/NimbleMarkets/ntcharts/v2/linechart/timeserieslinechart"
+	"github.com/NimbleMarkets/ntcharts/v2/sparkline"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -155,7 +155,7 @@ func innerW(panelW int) int {
 
 func panel(title, body string, width int) string {
 	inner := titleStyle.Render(title) + "\n" + body
-	return panelStyle.Width(width - 2).Render(inner)
+	return panelStyle.Width(width).Render(inner) // lipgloss v2: Width includes the border
 }
 
 // hbar renders labelled horizontal bars scaled to the row max: a fixed label

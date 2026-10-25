@@ -11,37 +11,36 @@ import (
 	"testing"
 	"time"
 
-	"github.com/charmbracelet/bubbles/textarea"
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/textarea"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 )
 
-func key(s string) tea.KeyMsg {
-	switch s {
-	case " ":
-		return tea.KeyMsg{Type: tea.KeySpace}
-	case "enter":
-		return tea.KeyMsg{Type: tea.KeyEnter}
-	case "esc":
-		return tea.KeyMsg{Type: tea.KeyEsc}
-	case "tab":
-		return tea.KeyMsg{Type: tea.KeyTab}
-	case "ctrl+s":
-		return tea.KeyMsg{Type: tea.KeyCtrlS}
-	case "ctrl+c":
-		return tea.KeyMsg{Type: tea.KeyCtrlC}
-	case "up":
-		return tea.KeyMsg{Type: tea.KeyUp}
-	case "down":
-		return tea.KeyMsg{Type: tea.KeyDown}
-	case "left":
-		return tea.KeyMsg{Type: tea.KeyLeft}
-	case "right":
-		return tea.KeyMsg{Type: tea.KeyRight}
+func key(s string) tea.KeyPressMsg {
+	codes := map[string]rune{
+		" ": tea.KeySpace, "enter": tea.KeyEnter, "esc": tea.KeyEscape, "tab": tea.KeyTab,
+		"up": tea.KeyUp, "down": tea.KeyDown, "left": tea.KeyLeft, "right": tea.KeyRight,
 	}
-	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}
+	if c, ok := codes[s]; ok {
+		return tea.KeyPressMsg{Code: c}
+	}
+	if k, ok := strings.CutPrefix(s, "ctrl+"); ok {
+		return tea.KeyPressMsg{Code: rune(k[0]), Mod: tea.ModCtrl}
+	}
+	return tea.KeyPressMsg{Code: []rune(s)[0], Text: s}
+}
+
+// poll runs one tick and, synchronously, the background disk check it starts.
+func poll(m model) model {
+	nm, _ := m.Update(tickMsg{})
+	m = nm.(model)
+	if msg := m.checkDisk()(); msg != nil {
+		nm, _ = m.Update(msg)
+		m = nm.(model)
+	}
+	return m
 }
 
 // drive feeds keys through Update and returns the resulting model.
@@ -111,7 +110,7 @@ func TestSettingsEditor(t *testing.T) {
 	if m.mode != modeSettings {
 		t.Fatalf(", did not open settings, mode=%d", m.mode)
 	}
-	if v := m.View(); !strings.Contains(v, "autosave") || !strings.Contains(v, "settings") {
+	if v := m.render(); !strings.Contains(v, "autosave") || !strings.Contains(v, "settings") {
 		t.Fatalf("settings screen did not render fields:\n%s", v)
 	}
 	m = drive(m, "enter") // row 0 view: category -> priority
@@ -726,7 +725,7 @@ func TestTagEditor(t *testing.T) {
 	// the list's
 	m = drive(m, "T")
 	m.input.SetValue("ops")
-	if out := ansi.Strip(m.View()); !strings.Contains(out, "(tags: enter=save esc=cancel)") ||
+	if out := ansi.Strip(m.render()); !strings.Contains(out, "(tags: enter=save esc=cancel)") ||
 		!strings.Contains(out, "task") || strings.Contains(out, "j/k") {
 		t.Fatalf("field editor should render over the detail view:\n%s", out)
 	}
@@ -837,9 +836,9 @@ func TestView(t *testing.T) {
 		{Text: "ship release", Prio: 'H', Category: "work"},
 		{Text: "buy milk"},
 	}}
-	nm, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("k")})
+	nm, _ := m.Update(key("k"))
 	m = nm.(model)
-	v := m.View()
+	v := ansi.Strip(m.render())
 	if !strings.Contains(v, appName) {
 		t.Fatal("brand missing")
 	}
@@ -862,7 +861,7 @@ func TestListScroll(t *testing.T) {
 		items[i] = todo.Item{Text: fmt.Sprintf("item-%02d", i), Category: "work"}
 	}
 	m := model{input: textinput.New(), w: 50, height: 20, items: items, cursor: 30}
-	v := m.View()
+	v := m.render()
 	if !strings.Contains(v, "item-30") {
 		t.Fatal("cursor row scrolled out of view")
 	}
@@ -879,7 +878,7 @@ func TestFilterFarRight(t *testing.T) {
 		input: textinput.New(), w: 80, height: 10, filter: "bank",
 		items: []todo.Item{{Text: "call bank"}},
 	}
-	head := m.header()
+	head := ansi.Strip(m.header())
 	first, _, _ := strings.Cut(head, "\n")
 	if !strings.Contains(first, appName) || !strings.Contains(first, "/bank") || !strings.Contains(first, "0/1") || !strings.HasSuffix(first, "● saved") {
 		t.Fatalf("header layout wrong: %q", first)
@@ -1196,7 +1195,7 @@ func TestHelpScroll(t *testing.T) {
 		t.Fatalf("expected scrollable help at height 12, maxScroll=%d", top)
 	}
 	send := func(s string) {
-		nm, _ := m.updateHelp(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)})
+		nm, _ := m.updateHelp(key(s))
 		m = nm.(model)
 	}
 	send("G")
@@ -1215,7 +1214,7 @@ func TestHelpScroll(t *testing.T) {
 	if m.helpScroll != 0 {
 		t.Errorf("after g scroll=%d, want 0", m.helpScroll)
 	}
-	nm, _ := m.updateHelp(tea.KeyMsg{Type: tea.KeyEsc})
+	nm, _ := m.updateHelp(key("esc"))
 	if nm.(model).mode != modeList {
 		t.Error("esc did not close help")
 	}
@@ -1230,18 +1229,18 @@ func TestRenderAllViews(t *testing.T) {
 		m := base
 		m.view = v
 		m.statuses = []string{"open", "in-progress", "done"}
-		if !strings.Contains(m.View(), appName) {
+		if !strings.Contains(m.render(), appName) {
 			t.Errorf("view %d missing brand", v)
 		}
 	}
 	dm := base
 	dm.mode = modeDetail
-	if !strings.Contains(dm.View(), "task") {
+	if !strings.Contains(dm.render(), "task") {
 		t.Error("detail view missing task field")
 	}
 	hm := base
 	hm.mode = modeHelp
-	if !strings.Contains(hm.View(), "adding") {
+	if !strings.Contains(hm.render(), "adding") {
 		t.Error("help view missing sections")
 	}
 }
@@ -1259,8 +1258,7 @@ func TestUpdateReload(t *testing.T) {
 		t.Fatalf("resize not applied: w=%d h=%d", m.w, m.height)
 	}
 
-	nm, _ = m.Update(tickMsg{})
-	m = nm.(model)
+	m = poll(m)
 	if len(m.items) != 1 || m.items[0].Text != "fresh" {
 		t.Fatalf("tick did not reload external edit: %+v", m.items)
 	}
@@ -1269,8 +1267,7 @@ func TestUpdateReload(t *testing.T) {
 		path: path, input: textinput.New(), dirty: true,
 		items: []todo.Item{{Text: "unsaved"}},
 	}
-	nm, _ = dirtyM.Update(tickMsg{})
-	if got := nm.(model).items[0].Text; got != "unsaved" {
+	if got := poll(dirtyM).items[0].Text; got != "unsaved" {
 		t.Fatalf("dirty model reloaded over unsaved work: %q", got)
 	}
 
@@ -1350,8 +1347,8 @@ func TestLaneView(t *testing.T) {
 	if m.view != viewLane {
 		t.Fatalf("v did not cycle into lane view: %v", m.view)
 	}
-	if !strings.Contains(m.View(), "in-progress") {
-		t.Fatalf("lane view missing a configured status column:\n%s", m.View())
+	if !strings.Contains(m.render(), "in-progress") {
+		t.Fatalf("lane view missing a configured status column:\n%s", m.render())
 	}
 
 	// left is a no-op at the first lane
@@ -1433,7 +1430,7 @@ func TestLaneViewScrolls(t *testing.T) {
 		statuses: []string{"open", "done"}, items: items,
 	}
 
-	first := ansi.Strip(m.View())
+	first := ansi.Strip(m.render())
 	if !strings.Contains(first, "task 0") {
 		t.Fatalf("first render should show the top of the lane:\n%s", first)
 	}
@@ -1444,7 +1441,7 @@ func TestLaneViewScrolls(t *testing.T) {
 		downs[i] = "j"
 	}
 	m = drive(m, downs...)
-	last := ansi.Strip(m.View())
+	last := ansi.Strip(m.render())
 	if !strings.Contains(last, "task 7") {
 		t.Fatalf("scrolled view should reach the last card:\n%s", last)
 	}
@@ -1533,5 +1530,60 @@ func TestFooterToggle(t *testing.T) {
 	m = drive(m, "F")
 	if m.hideFooter || !strings.Contains(m.listFooter(), "toggle") {
 		t.Fatal("F should toggle the help grid back on")
+	}
+}
+
+// TestPasteIntoEditors pins that a bracketed paste lands in the open text input
+// (live-filtering in filter mode) and the note editor, and is ignored in the list.
+func TestPasteIntoEditors(t *testing.T) {
+	m := model{input: textinput.New(), note: textarea.New(), items: []todo.Item{{Text: "call bank"}, {Text: "buy milk"}}}
+	paste := func(s string) {
+		nm, _ := m.Update(tea.PasteMsg{Content: s})
+		m = nm.(model)
+	}
+	paste("bank")
+	if m.filter != "" || m.mode != modeList {
+		t.Fatalf("list paste acted: filter %q mode %v", m.filter, m.mode)
+	}
+	m = drive(m, "/")
+	paste("bank")
+	if m.filter != "bank" || len(m.rows()) != 1 {
+		t.Fatalf("filter paste = %q, rows %d", m.filter, len(m.rows()))
+	}
+	m = drive(m, "enter", "d", "n")
+	paste("from the clipboard")
+	if m.items[0].Note != "from the clipboard" {
+		t.Fatalf("note paste = %q", m.items[0].Note)
+	}
+}
+
+// TestStaleDiskReadDropped pins that a background read landing after the user
+// started editing is dropped, so it can't overwrite the unsaved edit.
+func TestStaleDiskReadDropped(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "todo.md")
+	_ = os.WriteFile(p, []byte("- [ ] alpha\n"), 0o644)
+	m := model{path: p, input: textinput.New()}
+	check := m.checkDisk() // started before the edit
+	m = drive(m, "a", "beta", "enter")
+	nm, _ := m.Update(check())
+	if got := texts(nm.(model).items); !got["beta"] {
+		t.Fatalf("stale read clobbered the edit: %v", got)
+	}
+}
+
+// TestTableKeepsCursorOnScreen pins that the table view scrolls with the cursor
+// past the first screenful (the table is rebuilt each frame, so it can't scroll itself).
+func TestTableKeepsCursorOnScreen(t *testing.T) {
+	items := make([]todo.Item, 40)
+	for i := range items {
+		items[i] = todo.Item{Text: fmt.Sprintf("item %02d", i+1)}
+	}
+	m := model{input: textinput.New(), w: 90, height: 30, items: items, view: viewTable, cursor: 35}
+	v := ansi.Strip(m.render())
+	if !strings.Contains(v, "item 36") || strings.Contains(v, "item 01") {
+		t.Fatalf("cursor row not in view:\n%s", v)
+	}
+	if got := strings.Count(v, "\n") + 1; got != 30 {
+		t.Fatalf("table not pinned to height: %d rows", got)
 	}
 }

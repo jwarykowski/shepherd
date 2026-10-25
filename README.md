@@ -75,7 +75,7 @@ herdr plugin install jwarykowski/shepherd
 | `s` | set defer/start date (same formats as due; item shows dimmed with `starts Nd` until then) |
 | `L` | set a reference link (url) |
 | `o` | open the selected item's link in the browser |
-| `y` | copy the selected item's title to the clipboard |
+| `y` | copy the selected item's title to the clipboard (OSC 52, so it works over SSH and in tmux with `set-clipboard on`) |
 | `a` | add item (inline syntax below); inherits the selected item's category unless the text names one |
 | `S` | add a subtask to the selected item |
 | `u` | edit item (or subtask) text |
@@ -100,7 +100,7 @@ herdr plugin install jwarykowski/shepherd
 The detail view is also an editor: the same field keys work there — `u` text,
 `h`/`m`/`l` priority, `g` category, `T` tags, `t` due, `s` defer, `L` link, `tab`
 status — and saving returns you to the detail view rather than the list. Plus
-`n` edit note · `space` toggle · `o` open link · `y` copy title · `esc` back ·
+`n` edit note (`esc`, or `shift+enter` in terminals with the Kitty keyboard protocol, finishes) · `space` toggle · `o` open link · `y` copy title · `esc` back ·
 `q` save + quit. Its footer is the same labelled key grid as the board's,
 narrowed to the keys that act on the one item (`fields` · `dates` · `item` ·
 `go`).
@@ -411,6 +411,7 @@ autosave = 60                              # seconds idle before writing; 0 disa
 categories = ["work", "home", "personal"]  # tab-cycles in the category prompt
 statuses = ["open", "in-progress", "done"] # tab cycles item status in the list
 hidefooter = false                         # true starts with the footer help grid hidden (F toggles at runtime)
+mouse = false                              # true: wheel scrolls, click selects, double-click opens
 ```
 
 - `view` — default grouping/layout on launch (`v` still cycles at runtime).
@@ -419,8 +420,9 @@ hidefooter = false                         # true starts with the footer help gr
 - `categories` — press `tab` in the category prompt (`g`) to cycle through them.
 - `statuses` — ordered list `tab` cycles through in the list; `done` is always kept and forced last. Defaults to `["open", "done"]`. Intermediate statuses persist as a `status:` line and show a `◐` glyph; [`shepherd stats`](#stats) breaks items down by status in this order.
 - `hidefooter` — start with the footer help grid hidden for a cleaner board (the `jwarykowski/shepherd` · version line stays); `F` toggles it at runtime.
+- `mouse` — wheel scrolling, click to select a row or card, double-click for its detail. Off by default because it takes over the terminal's own text selection (hold `shift` to select while it's on).
 
-Edit these in the running board with `,` (settings): `enter` cycles `view`/`density`/`footer` and edits `autosave`/`categories`/`statuses`, and each change is written straight back to `config.toml`. shepherd owns the file — a settings save rewrites the managed keys.
+Edit these in the running board with `,` (settings): `enter` cycles `view`/`density`/`footer`/`mouse` and edits `autosave`/`categories`/`statuses`, and each change is written straight back to `config.toml`. shepherd owns the file — a settings save rewrites the managed keys.
 
 herdr pane placement (`placement` / `direction`) lives in the same file — see
 [herdr integration](#herdr-integration).
