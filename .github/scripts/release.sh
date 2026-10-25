@@ -2,13 +2,9 @@
 # Release on a version bump: when herdr-plugin.toml's version has no tag yet,
 # tag the pushed commit v<version> and hand over to GoReleaser (in
 # .github/workflows/release.yml), which builds the release and its formula.
-#
-#   master  stable versions (1.2.3)        → Formula/shepherd.rb
-#   pro     pre-releases (1.2.3-alpha.1)   → Formula/shepherd-alpha.rb
-#
-# Anything else (a stable version on pro, a pre-release on master) is left
-# alone. Writes tag, version and formula to $GITHUB_OUTPUT when it tags, and
-# nothing when there's nothing to release. DRY_RUN=1 prints what it would do.
+# Only stable versions (1.2.3) on master release. Writes tag and version to
+# $GITHUB_OUTPUT when it tags, and nothing when there's nothing to release.
+# DRY_RUN=1 prints what it would do.
 set -euo pipefail
 
 branch=${1:?usage: release.sh <branch>}
@@ -20,9 +16,7 @@ tag="v$version"
 
 case "$branch:$version" in
 master:*-*) echo "master carries a pre-release version ($version); not releasing"; exit 0 ;;
-master:*) formula=shepherd ;;
-pro:*-*) formula=shepherd-alpha ;;
-pro:*) echo "pro carries a stable version ($version); release it from master"; exit 0 ;;
+master:*) ;;
 *) echo "no releases from $branch"; exit 0 ;;
 esac
 
@@ -31,7 +25,7 @@ if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; the
 	exit 0
 fi
 
-echo "releasing $tag from $branch as $formula"
+echo "releasing $tag from $branch"
 if [ -n "${DRY_RUN:-}" ]; then
 	echo "would tag $tag, push it and wait for it on GitHub"
 	exit 0
@@ -53,5 +47,4 @@ done
 {
 	echo "tag=$tag"
 	echo "version=$version"
-	echo "formula=$formula"
 } >>"${GITHUB_OUTPUT:-/dev/stdout}"

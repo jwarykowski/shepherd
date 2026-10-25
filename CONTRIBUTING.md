@@ -53,7 +53,6 @@ Bump `version` in `herdr-plugin.toml` in a pull request. When it lands, the
 release workflow (Forgejo Actions) tags the commit `v<version>`, waits for the
 push mirror to carry the tag to GitHub, then GoReleaser publishes the binaries
 as a GitHub release and opens a Homebrew formula pull request, which the
-workflow merges: stable versions (`0.21.0`) from `master` update `shepherd`, and
-pre-releases (`0.21.0-alpha.2`) from `pro` update `shepherd-alpha`. The workflow
-needs the `GH_RELEASE_TOKEN` secret on Forgejo, a GitHub token with write access
-to `jwarykowski/shepherd` and `jwarykowski/homebrew-tap`.
+workflow merges. Only stable versions (`0.21.0`) release. The workflow needs
+the `GH_RELEASE_TOKEN` secret on Forgejo, a GitHub token with write access to
+`jwarykowski/shepherd` and `jwarykowski/homebrew-tap`.

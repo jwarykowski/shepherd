@@ -101,17 +101,11 @@ mirror to carry it to GitHub, then GoReleaser (`.goreleaser.yaml`) publishes
 the binaries as a GitHub release and opens a `jwarykowski/homebrew-tap` PR with
 the formula, which the workflow merges (needs the `GH_RELEASE_TOKEN` secret on
 Forgejo: a GitHub token with write access to shepherd and the tap).
-
-- `master`: stable versions (`0.21.0`) → `Formula/shepherd.rb`
-- `pro`: pre-releases (`0.21.0-alpha.2`) → `Formula/shepherd-alpha.rb`
-
-A pre-release version on `master`, or a stable one on `pro`, releases nothing.
-`pro` is the integration branch for the agents/Pro work under test: branch
-those features off `pro` and PR into it; it merges into `master` when stable.
+Only stable versions (`0.21.0`) release, to `Formula/shepherd.rb`; a
+pre-release version on `master` releases nothing.
 
 Conventional Commits; PR-merge commits carry the trailing `(#NN)`. Branch
-`feat/…`, `fix/…`, `refactor/…`, `chore/…`, `docs/…` off `master` (or off `pro`
-for agents/Pro work). (Global
+`feat/…`, `fix/…`, `refactor/…`, `chore/…`, `docs/…` off `master`. (Global
 rules already apply: `--no-gpg-sign`, no `Co-Authored-By`, never commit on the
 default branch, commit only when asked.) `origin` is the Forgejo repo
 (`code.warykowski.io/jwarykowski/shepherd`) and runs CI and releases; GitHub

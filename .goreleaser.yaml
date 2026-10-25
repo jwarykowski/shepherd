@@ -2,8 +2,7 @@
 # .github/scripts/release.sh has tagged a version bump. Binaries and checksums
 # go on the GitHub release here; the Homebrew formula goes to
 # jwarykowski/homebrew-tap as a pull request (GH_RELEASE_TOKEN needs write
-# access to the tap). Stable versions update Formula/shepherd.rb,
-# pre-releases Formula/shepherd-alpha.rb.
+# access to the tap).
 version: 2
 
 project_name: shepherd
@@ -52,13 +51,11 @@ release:
     owner: jwarykowski
     name: shepherd
   name_template: "shepherd {{ .Version }}"
-  prerelease: auto
 
 brews:
   - name: shepherd
     ids: [shepherd]
-    skip_upload: "{{ if .Prerelease }}true{{ else }}false{{ end }}"
-    repository: &tap
+    repository:
       owner: jwarykowski
       name: homebrew-tap
       token: "{{ .Env.GH_RELEASE_TOKEN }}"
@@ -73,31 +70,10 @@ brews:
     homepage: https://shepherdcli.dev
     description: Interactive todo board backed by a markdown file
     license: MIT
-    commit_author: &author
+    commit_author:
       name: Jonathan Warykowski
       email: jonathan.chrisp@gmail.com
     commit_msg_template: "feat: shepherd {{ .Version }}"
-    install: |
-      bin.install "shepherd"
-    test: |
-      assert_match "{{ .Version }}", shell_output("#{bin}/shepherd --version")
-
-  - name: shepherd-alpha
-    ids: [shepherd]
-    skip_upload: "{{ if .Prerelease }}false{{ else }}true{{ end }}"
-    repository:
-      <<: *tap
-      branch: "shepherd-alpha-{{ .Version }}"
-    directory: Formula
-    homepage: https://shepherdcli.dev
-    description: "Shepherd alpha: the todo board, plus sending tasks to your coding agent"
-    license: MIT
-    dependencies:
-      - name: jwarykowski/tap/drover
-    conflicts:
-      - shepherd
-    commit_author: *author
-    commit_msg_template: "feat: shepherd-alpha {{ .Version }}"
     install: |
       bin.install "shepherd"
     test: |

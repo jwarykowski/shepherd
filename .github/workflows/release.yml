@@ -1,12 +1,11 @@
 # Releases on a version bump in herdr-plugin.toml: release.sh tags the commit,
 # then GoReleaser builds the binaries, publishes the GitHub release and opens
-# the Homebrew formula pull request, which is merged here. Stable versions
-# release from master, pre-releases (-alpha, -beta) from pro.
+# the Homebrew formula pull request, which is merged here.
 name: release
 
 on:
   push:
-    branches: [master, pro]
+    branches: [master]
 
 permissions:
   contents: write
@@ -53,6 +52,6 @@ jobs:
       - if: steps.tag.outputs.tag != ''
         run: |
           GH_TOKEN="$GH_RELEASE_TOKEN" gh pr merge -R jwarykowski/homebrew-tap \
-            --squash --delete-branch "${{ steps.tag.outputs.formula }}-${{ steps.tag.outputs.version }}"
+            --squash --delete-branch "shepherd-${{ steps.tag.outputs.version }}"
         env:
           GH_RELEASE_TOKEN: ${{ secrets.GH_RELEASE_TOKEN }}
