@@ -7,651 +7,79 @@ Run it standalone in any terminal, or as a [herdr](https://herdr.dev) plugin in
 a split, tab, overlay, or zoomed pane. Greppable, hand-editable, syncable, and
 your coding agents can work from it too.
 
-- [install](#install)
-- [usage](#usage)
-- [subtasks](#subtasks)
-- [boards](#boards)
-- [global view](#global-view)
-- [launch filter](#launch-filter)
-- [command api](#command-api)
-- [stats](#stats)
-- [agentic tools](#agentic-tools)
-- [configuration](#configuration)
-- [storage](#storage)
-- [herdr integration](#herdr-integration)
-- [develop](#develop)
-- [support](#support)
-
-No setup required — everything defaults under `~/.config/shepherd/` (or
-`$XDG_CONFIG_HOME/shepherd/` when that is set):
-
-| What | Path |
-|------|------|
-| Default board | `~/.config/shepherd/todo.md` |
-| Named board | `~/.config/shepherd/boards/<name>.md` — via `--board <name>` |
-| Archive | sibling of the board: `archive.md` / `<name>-archive.md` |
-| Config (optional, shared) | `~/.config/shepherd/config.toml` |
-
-Overrides: `$SHEPHERD_TODO_FILE` (exact board file), `$SHEPHERD_CONFIG` (config
-file). See [storage](#storage).
-
 ![Shepherd in action](assets/demo.gif)
 
 ## install
-
-Requires a Go toolchain to build.
-
-Homebrew (recommended):
 
 ```sh
 brew install jwarykowski/tap/shepherd
 ```
 
-Local dev, from a checkout:
+From a checkout (needs Go), or as a herdr plugin:
 
 ```sh
 go build -o bin/shepherd .
-herdr plugin link .
-```
-
-Published (public repo + GitHub topic `herdr-plugin`) — herdr runs the
-`[[build]]` step for you:
-
-```sh
+herdr plugin link .                      # local dev
 herdr plugin install jwarykowski/shepherd
 ```
 
 ## usage
 
-Keys like `gb` are a sequence: press `g`, then `b`. After `g` the footer lists
-what can follow; `esc` cancels. Every key can be rebound in `config.toml` (see
-[key bindings](#key-bindings)).
+Run `shepherd`. No setup: the board lives at `~/.config/shepherd/todo.md`. Press
+`a` and type one line; tokens set the fields:
+
+```text
+deploy api @work #api !h due:tomorrow
+```
 
 | key | action |
 |-----|--------|
-| `j` / `↓`, `k` / `↑` | move |
-| `gg` / `G` | jump to the top / bottom |
-| `enter` | open detail view (shows every field) |
-| `space` | toggle done (on a parent, cascades to its subtasks; the last subtask done completes the parent) |
-| `tab` | cycle status (open → in-progress → done → open); see `statuses` config |
-| `a` | add item (inline syntax below); inherits the selected item's category unless the text names one |
-| `A` | add a subtask to the selected item |
-| `e` | edit item (or subtask) text |
-| `x` | delete item |
-| `X` | archive the selected item to `archive.md` (whole items only — dimmed on a subtask row) |
-| `C` | clear done: sweep all done items to `archive.md` |
-| `h` / `m` / `l` | set priority high / medium / low |
-| `c` | set category |
-| `t` | set tags (space- or comma-separated; empty clears) |
-| `d` | set due date — `today`, `tomorrow`, a weekday (`fri`, `friday`: the next one, never today), `3d`/`2w`/`5m`/`1y`, or `DD-MM-YYYY` (empty clears) |
-| `s` | set start (defer) date (same formats as due; item shows dimmed with `starts Nd` until then) |
-| `L` | set a reference link (url) |
-| `o` | open the selected item's link in the browser |
-| `y` | copy the selected item's title to the clipboard (OSC 52, so it works over SSH and in tmux with `set-clipboard on`) |
-| `v` | cycle view: category / priority / tag / table / lane |
-| `←`/`→` | switch the active column in the [lane view](#lane-view) |
-| `/` | filter (text/note/category/tags/due/defer/link — also greps `archive.md`) |
-| `u` / `ctrl+r` | undo / redo (multi-level; an archive sweep saves the board and clears history) |
-| `w` | save now (the header shows `● unsaved` / `● saved`) |
-| `ctrl+e` | open the markdown file in `$EDITOR` |
-| `gb` | open the board picker — every board with done/total counts; `enter` jumps, `a` creates a board, `r` renames, `A` archives, `x` deletes (confirmed), `d` shows detail (name, dir, paths, counts) for the selected board (rename/archive/delete don't apply to the default board); `e` toggles the archived-boards view where `u` unarchives the selected board |
-| `ga` | toggle the [global view](#global-view) across all boards |
-| `gh` | browse the archive (read-only; all boards in the global view; `esc` to leave) |
-| `gs` or `,` | open settings — edit view, density, autosave, categories, statuses, footer, mouse, theme; changes save to `config.toml` |
-| `gt` | theme picker — `j`/`k` preview each theme live, `enter` keeps it (saved to `config.toml`), `esc` restores the old one |
-| `gf` | hide / show the footer help grid (the `jwarykowski/shepherd` · version line stays); `hidefooter` config sets the default |
-| `?` | full help page |
-| `q` | save + quit |
+| `j` / `k` | move (`gg` / `G` top and bottom) |
+| `a` / `A` | add an item / a subtask |
+| `e` | edit text |
+| `space` / `tab` | toggle done / cycle status |
+| `enter` | detail view, also an editor |
+| `h` `m` `l` | priority |
+| `c` `t` `d` `s` | category, tags, due, start |
+| `v` | cycle views: category, priority, tag, table, lane |
+| `/` | filter |
+| `u` / `ctrl+r` | undo / redo |
+| `gb` / `ga` | boards / all boards |
+| `gs` / `gt` | settings / theme |
+| `?` | every key |
+| `q` | save and quit |
 
-The detail view is also an editor: the same field keys work there — `e` text,
-`h`/`m`/`l` priority, `c` category, `t` tags, `d` due, `s` start, `L` link, `tab`
-status — and saving returns you to the detail view rather than the list. Plus
-`n` edit note (`esc`, or `shift+enter` in terminals with the Kitty keyboard protocol, finishes) · `space` toggle · `o` open link · `y` copy title · `esc` back ·
-`q` save + quit. Its footer is the same labelled key grid as the board's,
-narrowed to the keys that act on the one item (`fields` · `dates` · `item` ·
-`go`).
-
-**Rows carry two flush-right values**: the subtask progress (`1/2`) when the item
-has subtasks, else the due/defer label — then, pinned far right, whichever
-grouping axis the headers *don't* already name. The category view shows the
-priority there, the priority view shows the category, and the tag view shows the
-priority. Status needs no width at all: the box shape carries it (`○` open,
-`◐` a named status, `✓` done).
-
-**Inline quick-add** — `a`, then one line:
-`deploy api @work #api !h due:tomorrow defer:1w link:https://…`. `@word` sets
-category, `#word` adds a tag (`tags:a,b` sets the whole set), `!h`/`!m`/`!l`
-priority, `due:<preset>` the due date, `defer:<preset>` a start/defer date,
-`link:<url>` a reference, `status:<name>` a status, and `note:<text>` a note
-(holds spaces, takes the rest of the line — put it last); everything else is the
-task text.
-
-Items are ordered by **category, then priority, then soonest due**, grouped
-under headers. **Overdue** open
-items are pinned to a `⚠ overdue` group at the top. New items get a `created`
-timestamp; due items show a relative label
-(`due 3d`, `overdue 2d` in red). Edits save on quit, autosave after a short
-idle pause (`autosave` seconds, default 60; `0` disables), or on demand with
-`w`; the header shows `● unsaved` / `● saved`. The board reloads on-disk changes
-automatically when you have no unsaved edits, so external edits (or a dotfile
-sync) show up on their own.
-
-## lane view
-
-A kanban board: one column per configured `statuses` entry, cycled to with
-`v`. `←`/`→` switch the active column; `j`/`k` move within it. `tab` cycles the
-selected card's status same as everywhere else — in lane view that also moves
-it into the next column, cursor and all. Every other key still acts on the
-card under the cursor (`h`/`m`/`l` priority, `c` category, `t` tags, `d` due,
-`s` start, `L` link, `o` open, `y` copy, `e` edit, `enter` detail, `space` toggle,
-`x` delete). Not available in the [global view](#global-view), since boards
-can each configure different statuses.
-
-## subtasks
-
-Any item can hold **one level** of subtasks — the steps that make up a task.
-Each subtask is a full item (its own done state, priority, due date, …); it just
-lives nested under its parent.
-
-On the board, subtasks render indented beneath their parent, and the parent
-shows a `done/total` badge:
-
-```
-○ ship cli edit                    1/3   high
-    ○ parse tokens                     medium
-    ✓ wire into Run
-    ○ update usage
-```
-
-- `A` — add a subtask to the selected item (same quick-add syntax as `a`).
-- On a subtask row every per-item key works as it does on a parent: `space`
-  toggle, `tab` status, `e` text, `h`/`m`/`l` priority, `d` due, `s` start,
-  `L` link, `o` open link, `x` delete. Overdue/defer labels show on the row.
-- `enter` opens the subtask's detail view — its own fields plus a `parent` line
-  naming the task it belongs to; edit its note there with `n`, same as a parent.
-- `c` (category) is the one exception — it's parent-only, since a subtask shares
-  its parent's board; it's dimmed in the footer on a subtask row. Set a
-  subtask's fields at creation from the CLI too:
-  `shepherd sub <n> "text @home !h due:tomorrow defer:1w link:https://…"`.
-
-**Completion cascades both ways:** completing a parent completes all its
-subtasks, and completing the last open subtask completes the parent (reopening
-one reopens the parent). From the CLI:
-
-```sh
-shepherd sub 2 "chop onions !m"   # add subtask to item 2
-shepherd done 2.1                 # complete subtask 1 of item 2
-shepherd done 2                   # complete item 2 and all its subtasks
-shepherd rm 2.1                   # remove just that subtask
-```
-
-`list --json` nests them under each item's `subtasks` array (each with a 1-based
-`index` within the parent). `stats` counts top-level items only — subtasks are
-decomposition, not separate board work.
-
-## boards
-
-Each named board gets its own file at
-`~/.config/shepherd/boards/<name>.md`; with no board selected you're on the
-default `todo.md`. `config.toml` is shared across every board.
-
-```sh
-shepherd --board web            # open the web board
-SHEPHERD_BOARD=web shepherd     # same, via env
-```
-
-Names are a simple slug — letters, digits, `.` `_` `-`. The archive is
-per-board (`boards/web.md` → `boards/web-archive.md`); see
-[storage](#storage). This also works from the command API (below) and as a
-herdr pane entrypoint:
-
-```toml
-[[panes]]
-id = "shepherd-work"
-title = "todo: work"
-placement = "tab"
-command = ["./bin/shepherd", "--board", "work"]
-```
-
-## global view
-
-See every board at once — the default plus all named boards — in one **read-only**
-view. Launch with `--all`, or press `ga` from any board to toggle in and out
-(your board is saved first, and `ga` again drops you back on it).
-
-```sh
-shepherd --all        # aggregate of every board
-```
-
-`v` cycles five groupings: **board → category → priority → tag → table**. In the
-board grouping each board is a header; in the others every row carries a
-`[board]` tag (the table gets a `board` column). It's read-only by design —
-editing stays on the focused board, so the aggregate is never written back.
-`/` filters across boards (including by board name).
-
-Only the keys that read or navigate work here — `j`/`k`, `gg`/`G`, `enter`, `v`,
-`/`, `gh`, `gb`, `o`, `y`, `gf`, `gt`, `?`, `ga`/`esc` to leave, `q` to quit. Every editing key is inert
-and shown dimmed in the footer, on the board and in the detail view alike.
-
-The command API mirrors it: `shepherd list --all` (see [command api](#command-api)).
-
-## launch filter
-
-`--board` gives a board its own file; `--filter` is a saved *view* over one
-board — start it pre-filtered by text/note/category/tags/due/defer/link:
-
-```sh
-./bin/shepherd --filter work      # or: SHEPHERD_FILTER=work ./bin/shepherd
-```
-
-When the filter names a category (one you've configured or already use), items
-you add while it's active inherit that category — so a task added on a
-`--filter work` board lands in `work` and stays in view. This is the fallback:
-the selected item's own category is inherited first, and an inline `@category`
-overrides both. A filter that isn't a category leaves new items uncategorized.
-The two combine: `shepherd --board web --filter '!h'`.
-
-`shepherd --version` prints the version and exits.
+Keys like `gb` are a sequence: press `g`, and the footer lists what can follow.
+Every key can be rebound. See [keys](docs/keys.md).
 
 ## command api
 
-For scripts and agentic tools that can't drive the TUI. A leading non-flag
-argument switches shepherd from the board to a one-shot command that reads or
-mutates a board file and exits — the binary owns the file format, so writes are
-always valid. Items carry a stable `id` (in `list --json`); mutating verbs take
-either that id or the 1-based `list` index. Agents should use the id — the index
-shifts as the board reorders, the id never does. Mutations serialise under a
-board lock, so parallel processes never lose one another's writes.
+Any non-flag argument makes shepherd a one-shot command, for scripts and
+agents:
 
 ```sh
-shepherd list [--json]              # show items with their index
-shepherd list --all [--json]        # aggregate across every board (read-only)
-shepherd list --filter home         # only items matching the query, real indexes kept
-shepherd watch                      # stream board changes as NDJSON until killed
-shepherd watch --interval 500ms     # poll faster (default 1s)
-shepherd boards [--json]            # list boards with done/total counts (* = current)
-shepherd boards --archived          # list archived boards instead
-shepherd board rename web webapp    # rename a board (and its archive sibling)
-shepherd board archive webapp       # stash a board under boards/archived/ (reversible)
-shepherd board unarchive webapp     # restore an archived board
-shepherd board delete webapp --force  # delete a board (and its archive sibling)
-shepherd board delete webapp --dry-run # preview the delete without writing
-shepherd stats [--json] [--all]     # board metrics as charts (--json = numbers)
-shepherd stats --legend             # explain every chart and the aging numbers
-shepherd stats --no-color           # charts without ANSI color
-shepherd add "buy milk @home !h due:tomorrow"
-shepherd add "buy milk" -q          # add quietly (no confirmation line)
-shepherd add "buy milk" --json      # echo the new item (incl. its id) as JSON
-shepherd sub 2 "chop onions !m"     # add a subtask to item 2 (id or index)
-shepherd edit 2 "@work !h due:friday" # merge tokens onto item 2 (2.1 edits a subtask)
-shepherd done 2                     # mark item 2 done (cascades to its subtasks)
-shepherd done 2 5 7                 # mark several done in one atomic write
-shepherd done 2f3a…c1 --json        # mark by id; echo the result as JSON
-shepherd undone 2.1                 # reopen subtask 1 (also reopens the parent)
-shepherd edit 2 "status:in-progress" # set item 2's status (status:done|open recognised)
-shepherd edit 2 "note:waiting on infra" # set item 2's note (edit 2 "note:" clears it)
-shepherd edit 2 "#api #docs"        # add tags (tags:a,b replaces the set, tags: clears)
-shepherd rm 2                       # remove item 2 (rm 2.1 removes just the subtask)
-shepherd rm 2 5 --dry-run           # preview removing several without writing
-shepherd archive 2                  # move item 2 off the board into archive.md (whole items only)
-shepherd add --text "fix #123 crash" "@work" # text taken verbatim; tokens from the positional string
-shepherd claim 2 --by agent-1       # take item 2 (sets claimed + in-progress; exit 1 if held or done)
-shepherd claim 2 --release --by agent-1 # hand it back
-shepherd edit 2 "!h" --if-rev 1a2b3c4d5e6f # write only if item 2 is unchanged since that rev
+shepherd list --json                  # items with stable ids
+shepherd add "ship v2 @work !h due:3d" --board web
+shepherd edit <id> "status:in-progress"
+shepherd done <id> <id>               # one atomic write
+shepherd watch                        # NDJSON changes until killed
+shepherd stats                        # charts in the terminal
 ```
 
-Global flags (any command):
+Agents get the contract from `shepherd help`, the bundled skill or
+[`AGENTS.md`](AGENTS.md). No server, no MCP.
 
-- `-q`, `--quiet` — silence a mutation's confirmation line (`list`/`stats` data is never suppressed).
-- `--no-input` — accepted for script-compat; this API never prompts.
-- `-h`, `--help` — print a command's flags, exit 0.
+## docs
 
-Exit codes: `0` success · `2` usage/input error (bad flag, unknown command,
-unknown ref, a `due:`/`defer:` date it can't read) · `1` runtime/IO failure. A mistyped command suggests the
-closest real one.
-
-`done`/`undone`/`rm` take one or more refs (id or index) and apply them as a
-single atomic write; they're safe to repeat, since re-marking a done item keeps
-its original completion stamp. A subtask is addressed by its own id or a dotted
-`n.m` reference (subtask `m` of item `n`); see [subtasks](#subtasks) for the
-cascade rules. `--json` on any mutating verb echoes the resulting item(s) in the
-`list --json` shape and reports failures as `{"error":…}` on stdout.
-
-`edit <n[.m]> "<tokens>"` sets only the fields its tokens carry — `@category`,
-`#tag`/`tags:`, `!h`/`!m`/`!l`, `due:`, `defer:`, `link:`, `status:`, `note:` — and replaces the
-text only when plain words are present. A bare key clears its field
-(`edit 2 "@ due:"`); `note:` holds spaces and takes the rest of the line, so put
-it last (`edit 2 "!h note:call the bank"`).
-
-For agents, `--text`, `--if-rev` and `claim` are covered under
-[agentic tools](#agentic-tools).
-
-`list --filter <q>` matches text/note/category/tags/due/defer/link and keeps each
-item's real board index, so `done`/`rm` on a filtered listing still hit the
-right item.
-
-`watch` streams a board's changes as NDJSON until killed — a coordinating agent
-reacts instead of polling. The first line is a `{"type":"snapshot","items":[…]}`
-baseline, then one line per change keyed by the item's stable id:
-`{"type":"added|updated|removed","item":{…}}` (item shape = `list --json`).
-Change detection is mtime polling (`--interval`, default `1s`); it's read-only
-and never blocks a writer.
-
-Flags go **after** the verb. Add `--board <name>` (or set `$SHEPHERD_BOARD`)
-to target a named board instead of the default:
-
-```sh
-shepherd add "ship v2 @work !h" --board web
-shepherd list --board web
-```
-
-`add` accepts the same quick-add tokens as the board: `@category`, `#tag`
-(`tags:a,b` replaces the set), `!h`/`!m`/`!l` priority,
-`due:<today|tomorrow|friday|+3d|15-07-2026>`, `defer:`, `link:`, `status:`, and `note:`
-(takes the rest of the line). Agents should read with
-`list --json` (stable machine shape) and mutate with `add`/`edit`/`done`/`rm`;
-an open board picks up the change within ~2s. `edit` is the single setter for
-every field, including `status:` (any name, like a free-form `@category`;
-`status:done`/`status:open` are the terminal/default ends, with `done`/`undone`
-as shorthands) — the `status` field appears in `list --json`.
-`list --all --json` adds a `board` field per item so you can tell which board
-each came from.
-
-```json
-[
-  { "id": "019f7390…d901", "index": 1, "done": false, "priority": "H",
-    "text": "buy milk", "category": "home", "tags": ["errand"],
-    "created": "10-07-2026 13:40",
-    "defer": "2026-07-11", "due": "2026-07-15", "link": "https://…",
-    "note": "", "completed": "" }
-]
-```
-
-## stats
-
-`shepherd stats` summarises a board as terminal charts — completion, due and
-urgency, priority load, aging, status mix, throughput and backlog trend (drawn
-with [ntcharts](https://github.com/NimbleMarkets/ntcharts)).
-
-![shepherd stats](assets/stats.gif)
-
-Done-based counts include the archive, so throughput survives a sweep. Only
-top-level items are counted — subtasks don't appear in any chart.
-
-| Flag | What |
-|------|------|
-| `--all` | aggregate every board, and add a by-board breakdown |
-| `--json` | the raw numbers instead of charts, for scripts |
-| `--legend` | explain every chart and the aging numbers |
-| `--no-color` | charts without ANSI colour |
-
-Colour drops itself when stdout isn't a terminal, `$NO_COLOR` is set, or
-`$TERM=dumb`; `--no-color` forces it off.
-
-The backlog health line under the charts is the part worth watching: `oldest
-open`, `avg open`, `stale >30d` (open items created over 30 days ago) and `time
-to done` (mean create→complete). A rising `net +N/mo` on the backlog chart means
-the board is growing faster than it's being cleared.
-
-## agentic tools
-
-The command API is the whole integration — any agent that can run a shell drives
-shepherd with the same verbs. Discovery is layered:
-
-- **Any tool:** `shepherd help` prints the contract. That's the universal
-  fallback; nothing else is required.
-- **Claude Code:** symlink the bundled skill in once —
-  ```sh
-  ln -s "$PWD/skills/shepherd" ~/.claude/skills/shepherd
-  ```
-  Available in every project; Claude invokes it when a request relates to your
-  todos (the skill's description is what it matches on).
-- **Cursor / Codex / Zed / others:** paste [`AGENTS.md`](AGENTS.md) into the
-  tool's global rules / instructions slot.
-
-All three point at the same `shepherd` CLI — no per-tool server, no MCP.
-
-### safe writes
-
-Three features keep an agent from mangling text or clobbering a change it
-hasn't seen:
-
-- Literal text: `--text "<s>"` on `add`, `sub` and `edit` sets the item
-  text verbatim, so `#123`, `@home` or `due:` inside it stay text. The
-  positional string then holds tokens only; a plain word there alongside
-  `--text` is a usage error (exit 2) rather than silently dropped.
-  ```sh
-  shepherd add --text "fix #123 crash due: soon" "@work !h"
-  ```
-- Revisions: every item in `--json` output carries a `rev`, a short hash of
-  the item as stored (subtasks included). It is computed on read, never written
-  to the board. `--if-rev <rev>` on `edit`, `sub`, `claim`, `done`, `undone`,
-  `rm` and `archive` writes only if the item is unchanged since that rev;
-  otherwise it exits 1 and writes nothing (`{"error":"conflict"}` under
-  `--json`). Read, then write with the rev you read:
-  ```sh
-  shepherd list --json                       # note the item's id and rev
-  shepherd done <id> --if-rev 6d6b662e659f   # exit 1 if someone changed it
-  ```
-  Any change from the board or another agent changes the rev, so on a conflict
-  re-read and decide again.
-- Claims: `claim <ref> --by <name>` marks an item as taken: it records a
-  `claimed: <name>` line and moves the item to the first configured status
-  that isn't the default or `done` (`in-progress` by default). It exits 1 if
-  the item is done or claimed by someone else; claiming your own item again
-  succeeds. `claim <ref> --release --by <name>` hands it back (status returns
-  to the default); leaving out `--by` forces the release. Completing an item
-  ends its claim. The board shows the claimer after the item's text, and the
-  detail view has a `claimed` row.
-  ```sh
-  shepherd claim 3 --by agent-1 || echo "taken, pick another"
-  shepherd claim 3 --release --by agent-1
-  ```
-
-## configuration
-
-Optional `config.toml` at `$XDG_CONFIG_HOME/shepherd/config.toml` (defaults to
-`~/.config/shepherd/config.toml`) — shared across every board (override with
-`SHEPHERD_CONFIG`):
-
-```toml
-view = "category"                          # category (default) | priority | tag | table | lane
-density = "compact"                        # compact (default) | comfort
-autosave = 60                              # seconds idle before writing; 0 disables
-categories = ["work", "home", "personal"]  # tab-cycles in the category prompt
-statuses = ["open", "in-progress", "done"] # tab cycles item status in the list
-hidefooter = false                         # true starts with the footer help grid hidden (F toggles at runtime)
-mouse = false                              # true: wheel scrolls, click selects, double-click opens
-theme = "ansi"                             # ansi (default) | catppuccin | dracula | gruvbox | nord | mono
-# theme.accent = "#88c0d0"                 # optional per-colour overrides (see below)
-```
-
-- `view` — default grouping/layout on launch (`v` still cycles at runtime).
-- `density` — `comfort` adds outer padding and blank lines between rows.
-- `autosave` — idle seconds before an unsaved board is written to disk (default 60); `0` disables it, so only `w` and quit save.
-- `categories` — press `tab` in the category prompt (`c`) to cycle through them.
-- `statuses` — ordered list `tab` cycles through in the list; `done` is always kept and forced last. Defaults to `["open", "done"]`. Intermediate statuses persist as a `status:` line and show a `◐` glyph; [`shepherd stats`](#stats) breaks items down by status in this order.
-- `hidefooter` — start with the footer help grid hidden for a cleaner board (the `jwarykowski/shepherd` · version line stays); `gf` toggles it at runtime.
-- `mouse` — wheel scrolling, click to select a row or card, double-click for its detail. Off by default because it takes over the terminal's own text selection (hold `shift` to select while it's on).
-- `theme` — the colour palette for the board and `shepherd stats`. `ansi` uses your terminal's own 16 colours, so it follows your terminal theme; the others are fixed palettes with light and dark variants, picked from the terminal's background (and downsampled on 256- or 16-colour terminals). `mono` drops colour for bold/faint only. Override single colours with `theme.<token> = "<colour>"`: tokens are `accent` (group headers), `ok`, `info`, `warn`, `rule`, `muted`, `cursor` (row highlight), `prio_high`, `prio_med`, `prio_low`; a colour is a palette index (`0`-`255`), `#rrggbb`, an ANSI name (`red`, `bright-blue`, `grey`), or `none`. Overrides apply on top of whichever theme is active.
-
-Edit these in the running board with `gs` or `,` (settings): `enter` cycles `view`/`density`/`footer`/`mouse`/`theme` (previewed live) and edits `autosave`/`categories`/`statuses`, and each change is written straight back to `config.toml`. shepherd owns the file — a settings save rewrites the managed keys.
-
-herdr pane placement (`placement` / `direction`) lives in the same file — see
-[herdr integration](#herdr-integration).
-
-### key bindings
-
-Rebind any board key with `key.<action> = "<keys>"`. Separate several keys with
-commas; a space makes a two-key sequence:
-
-```toml
-key.due    = "t"           # one key
-key.tags   = "T"
-key.up     = "k, up"       # several keys
-key.boards = "g b, B"      # a sequence and a single key
-key.prio   = "1, 2, 3"     # always three: high, medium, low
-```
-
-Actions: `up`, `down`, `top`, `bottom`, `lane_left`, `lane_right`, `toggle`,
-`detail`, `view`, `global`, `archive_view`, `boards`, `footer`, `add`,
-`add_sub`, `edit`, `status`, `delete`, `sweep`, `archive`, `prio`, `category`,
-`tags`, `due`, `defer`, `link`, `open`, `copy`, `note`, `save`, `editor`,
-`undo`, `redo`, `filter`, `settings`, `theme`, `help`. Key names are as Bubble
-Tea reports them: a character (`x`, `X`, `/`), `space`, `enter`, `tab`,
-`up`/`down`/`left`/`right`, `home`/`end`, `ctrl+<key>`, `alt+<key>`, and
-`comma` for `,` alongside other keys (`"comma, g s"`).
-
-Overrides are checked when the board starts, so two actions can swap keys. One
-that names an unknown action, has no keys, uses `esc`, `q` or `ctrl+c`, or
-clashes with another binding (including a single key that is also the start of
-a sequence) is ignored, and the board says so in the footer until the next key.
-`esc` and `q` always back out and quit. The footer and `?` help show your
-bindings. Pickers and prompts (boards, settings, archive, text entry) keep their
-fixed keys.
-
-To keep the old layout (0.20 and earlier), paste this:
-
-```toml
-key.detail = "d"
-key.edit = "u"
-key.undo = "U"
-key.add_sub = "S"
-key.archive = "C"
-key.sweep = "c"
-key.category = "g"
-key.tags = "T"
-key.due = "t"
-key.boards = "b"
-key.global = "A"
-key.archive_view = "e"
-key.footer = "F"
-key.theme = "ctrl+t"
-key.top = "home"
-key.settings = ","
-```
-
-## storage
-
-Layout is the table at the top: the default `todo.md`, a shared `config.toml`,
-and one `boards/<name>.md` per named board (selected with
-`--board`/`$SHEPHERD_BOARD`). Override the exact board file with
-`$SHEPHERD_TODO_FILE`; while it's set, `--board` and the board actions refuse
-to run. Board names are letters, digits, `.`, `_` and `-`; `default`, `todo`,
-`archive` and names ending in `-archive` are reserved.
-
-Dates are stored ISO (`YYYY-MM-DD`) so they sort correctly, but shown and
-entered day-month-year / DMY (`DD-MM-YYYY`). Metadata rides as indented
-sub-lines:
-
-```markdown
-- [ ] (H) ship the release
-  id: 019f7390ff8b0e369b6ed5540057c717
-  created: 10-07-2026 13:40
-  defer: 2026-07-11
-  due: 2026-07-15
-  category: work
-  tags: api, docs
-  status: in-progress
-  link: https://github.com/org/repo/pull/1
-  note: block on the migration first
-```
-
-`id` is a stable, opaque handle minted when an item is first written (a legacy
-board without ids gets them the next time shepherd saves it); it's how scripts
-and agents address an item across reorderings. `completed` (a timestamp) is
-added automatically when an item is marked done and cleared if it's reopened.
-
-[Subtasks](#subtasks) nest as further-indented checklist lines — two spaces for
-the `- [ ]`, four for their own metadata — written after the parent's metadata:
-
-```markdown
-- [ ] (H) ship cli edit
-  created: 10-07-2026 13:40
-  category: shepherd
-  - [ ] (M) parse tokens
-  - [x] wire into Run
-    due: 2026-07-15
-```
-
-`status` is the named intermediate status (`tab` cycles it — see the `statuses`
-config). It rides as a sub-line only on non-done items with a status past the
-first; a plain open item (`- [ ]`) and a done item (`- [x]`) carry no `status:`
-line, so existing files stay unchanged.
-
-### archive
-
-Pressing `c` sweeps every done item off the board and **appends** it to a
-sibling archive file (`todo.md` → `archive.md`, `boards/web.md` →
-`boards/web-archive.md`, created on first use). `C` archives just the
-selected item instead, whatever its status — whole items only, so it's a no-op
-(and dimmed in the legend) on a subtask row, matching the `shepherd archive
-<ref>` CLI. Same markdown format as `todo.md`, so it's greppable and
-hand-editable. It's append-only — shepherd never rewrites or prunes it; trim it
-yourself if it grows. The board doesn't display the archive, but `/` filtering
-also greps it and shows matches in a separate section, so archived items stay
-findable.
-
-## herdr integration
-
-### placement
-
-The board opens as a `split`, `tab`, `overlay`, or `zoomed` pane. Five actions:
-
-| Action         | Placement                        |
-| -------------- | -------------------------------- |
-| `open`         | from config (`split` if unset)   |
-| `open-split`   | split                            |
-| `open-tab`     | tab                              |
-| `open-overlay` | overlay                          |
-| `open-zoomed`  | zoomed                           |
-
-`open` resolves placement from (highest first): env
-`SHEPHERD_PLACEMENT`/`SHEPHERD_DIRECTION` → `config.toml` → `split`/`right`.
-`direction` (`right`/`left`/`up`/`down`) applies to `split` only.
-
-Set the `config.toml` defaults (in the shared
-`~/.config/shepherd/config.toml`):
-
-```toml
-placement = "split"     # split (default) | tab | overlay | zoomed
-direction = "right"     # split only: right (default) | left | up | down
-```
-
-`open-split` / `open-tab` / `open-overlay` / `open-zoomed` force one placement
-regardless of config; `SHEPHERD_PLACEMENT` / `SHEPHERD_DIRECTION` override too.
-
-### keybindings
-
-```toml
-[[keys.command]]
-key = "prefix+shift+o"
-type = "plugin_action"
-command = "jwarykowski.herdr-shepherd.open"          # placement from config
-description = "shepherd"
-
-[[keys.command]]
-key = "prefix+shift+t"
-type = "plugin_action"
-command = "jwarykowski.herdr-shepherd.open-tab"
-description = "shepherd (tab)"
-
-[[keys.command]]
-key = "prefix+shift+y"
-type = "plugin_action"
-command = "jwarykowski.herdr-shepherd.open-overlay"
-description = "shepherd (overlay)"
-
-[[keys.command]]
-key = "prefix+shift+z"
-type = "plugin_action"
-command = "jwarykowski.herdr-shepherd.open-zoomed"
-description = "shepherd (zoomed)"
-```
-
-## develop
-
-See [CONTRIBUTING.md](CONTRIBUTING.md).
+- [keys](docs/keys.md): every key, quick-add tokens, the detail view, rebinding
+- [boards](docs/boards.md): named boards, the global view, filters, lanes, subtasks
+- [command api](docs/command-api.md): every verb, flags, JSON, `watch`
+- [agents](docs/agents.md): setting up agents, and safe writes (`--text`, `--if-rev`, `claim`)
+- [configuration](docs/configuration.md): `config.toml`, themes, environment
+- [storage](docs/storage.md): file layout, format, archive
+- [stats](docs/stats.md): `shepherd stats`
+- [herdr](docs/herdr.md): pane placement and keybindings
+- [contributing](CONTRIBUTING.md)
 
 ## support
 

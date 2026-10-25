@@ -111,14 +111,14 @@ func TestKeyNotice(t *testing.T) {
 	}
 }
 
-// TestClassicKeys pins that the README's old-layout block applies cleanly.
+// TestClassicKeys pins that the old-layout block in docs/keys.md applies cleanly.
 func TestClassicKeys(t *testing.T) {
 	t.Cleanup(func() { applyKeys(nil) })
-	readme, err := os.ReadFile("../../README.md")
+	doc, err := os.ReadFile("../../docs/keys.md")
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, block, _ := strings.Cut(string(readme), "To keep the old layout")
+	_, block, _ := strings.Cut(string(doc), "To keep the old layout")
 	block, _, _ = strings.Cut(block[strings.Index(block, "```toml")+7:], "```")
 	kv := map[string]string{}
 	for ln := range strings.SplitSeq(strings.TrimSpace(block), "\n") {

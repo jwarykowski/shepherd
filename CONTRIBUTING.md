@@ -17,8 +17,8 @@ request; keep them green.
 
 ## demo gifs
 
-The README's `assets/demo.gif` (the board) and `assets/stats.gif` (`shepherd
-stats`) are scripted, not screen-captured — regenerate them after any change to
+The README's `assets/demo.gif` (the board) and `docs/stats.md`'s `assets/stats.gif`
+(`shepherd stats`) are scripted, not screen-captured — regenerate them after any change to
 the board layout, the footer, or the charts:
 
 ```sh

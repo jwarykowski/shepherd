@@ -34,6 +34,7 @@ archives:
     files:
       - README.md
       - LICENSE
+      - docs/*.md
 
 checksum:
   name_template: checksums.txt

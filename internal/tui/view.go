@@ -1115,7 +1115,7 @@ func (m model) helpBody() []string {
 	line(k(keys.Quit) + " — save + quit")
 	blank()
 	sec("keys")
-	line("Keys like gb are a sequence: press g, then b (the footer lists what can follow). Rebind any key in config.toml with key.<action> = \"x\" (see the README).")
+	line("Keys like gb are a sequence: press g, then b (the footer lists what can follow). Rebind any key in config.toml with key.<action> = \"x\" (see docs/keys.md).")
 	return out
 }
 

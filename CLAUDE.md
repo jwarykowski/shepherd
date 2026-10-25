@@ -50,7 +50,7 @@ or detail view = a field on `keyMap` with its default in `defaultKeys` (its
 config name, `key.<snake_case>`, comes from the field name) + a
 `binding.Matches` case in the right `updateXxx` + an entry in its grid
 (`helpGrid`/`detailGrid`) and `helpBody` (read the label from the binding,
-never hardcode it) + the README key table and action list + a test. Users
+never hardcode it) + the key table and action list in `docs/keys.md` + a test. Users
 rebind keys, so handlers must match bindings, not literal strings. Keys are
 mnemonic (`d` due, `t` tags, `c` category); rare screen-level actions go under
 the `g` sequence (`gb` boards, `gs` settings). Keep bindings consistent: `esc`
