@@ -44,6 +44,16 @@ func (m model) updateDetail(msg fmt.Stringer) (tea.Model, tea.Cmd) {
 		return m.quit()
 	case binding.Matches(msg, keys.Back):
 		m.mode = modeList
+		if m.detailBack == modeAgents {
+			m.mode, m.detailBack = modeAgents, modeList
+		}
+	case binding.Matches(msg, keys.Run):
+		return m.sendToAgent()
+	case binding.Matches(msg, keys.RunLog):
+		if runs := m.itemRuns(p.ID); len(runs) > 0 {
+			return m.openLog(runs[0], modeDetail)
+		}
+		m.notice = "no runs yet: " + keys.Run.Help().Key + " sends it to your agent"
 	case binding.Matches(msg, keys.Note):
 		if !m.global {
 			m.mode = modeNote

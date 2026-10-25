@@ -23,5 +23,7 @@ func Run(run func() int) int {
 		_ = os.Unsetenv(k)
 	}
 	_ = os.Setenv("HOME", dir)
+	// keep a real drover (and its agents) out of reach; drovertest.Fake puts a fake first
+	_ = os.Setenv("PATH", "/bin:/usr/bin")
 	return run()
 }

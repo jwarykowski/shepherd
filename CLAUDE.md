@@ -25,7 +25,10 @@ Run format + vet + test + lint before proposing changes done — CI
 `internal/` packages, dependencies pointing strictly inward:
 `todo` (pure domain, no I/O) → `store` (markdown persistence) → `cli` +
 `tui` (frontends) → `main`. `theme` (colour palettes, pure) sits beside
-`todo` and is used by both frontends; `testenv` is imported only by tests.
+`todo` and is used by both frontends. `drover` (the bridge to the agent
+engine: it runs the `drover` command, never reads its files) depends on `todo`
+and `store` and is used by both frontends. `testenv` is imported only by tests,
+and keeps a real `drover` off their `PATH`.
 Each package doc comment states its job and dependency direction; keep that
 true.
 

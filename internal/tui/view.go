@@ -306,6 +306,9 @@ func (m model) rowContent(it todo.Item, indent, badge string, isSub bool) string
 		text += " " + dimStyle.Render("["+it.Source+"]")
 	}
 	text += claimSuffix(it)
+	if run := m.runLabel(it); run != "" {
+		text += " " + run
+	}
 	// In the tag view the group header names the grouping tag; show the item's
 	// other tags after the text so a multi-tag item isn't misread as single-tag.
 	if m.view == viewTag && len(it.Tags) > 1 {
@@ -738,6 +741,12 @@ func (m model) listFooter() string {
 		return rule + "\n" + m.inputPrompt()
 	default:
 		grid := m.helpGrid()
+		if d := m.droverDown(); d != "" {
+			grid = m.st().prio['H'].Render(ansi.Truncate(d, m.width(), "…")) + "\n" + grid
+		}
+		if m.notice != "" {
+			grid = m.st().warn.Render(ansi.Truncate(m.notice, m.width(), "…")) + "\n" + grid
+		}
 		switch {
 		case m.pending != "":
 			grid = m.chordMenu()
@@ -754,6 +763,9 @@ func (m model) listFooter() string {
 func (m model) chordMenu() string {
 	var parts []string
 	for _, nb := range keys.bindings() {
+		if nb.name == "run_log" && m.mode != modeDetail {
+			continue
+		}
 		for _, k := range nb.b.Keys() {
 			if rest, ok := strings.CutPrefix(k, m.pending+" "); ok {
 				desc := nb.b.Help().Desc
@@ -786,7 +798,7 @@ type keyCol struct {
 func (m model) helpGrid() string {
 	cols := []keyCol{
 		{"move", entries(keys.Up, keys.Top, keys.LaneLeft, keys.Toggle, keys.Detail, keys.View, keys.Global, keys.ArchiveView, keys.Boards, keys.Footer)},
-		{"edit", entries(keys.Add, keys.AddSub, keys.Edit, keys.Status, keys.Delete, keys.Sweep, keys.Archive)},
+		{"edit", entries(keys.Add, keys.AddSub, keys.Edit, keys.Status, keys.Delete, keys.Sweep, keys.Archive, keys.Run, keys.Runs)},
 		{"fields", entries(keys.Prio, keys.Category, keys.Tags, keys.Due, keys.Defer, keys.Link, keys.Open, keys.Copy)},
 		{"board", entries(keys.Save, keys.Editor, keys.Undo, keys.Redo, keys.Filter, keys.Settings, keys.Theme, keys.Help, keys.Quit)},
 	}
@@ -814,14 +826,18 @@ func (m model) detailGrid() string {
 		{"fields", []keyEntry{{keys.Edit, "text"}, {b: keys.Prio}, {b: keys.Category}, {b: keys.Tags}}},
 		{"dates", entries(keys.Due, keys.Defer)},
 		{"item", entries(keys.Note, keys.Link, keys.Status, keys.Toggle)},
+		{"agent", []keyEntry{{keys.Run, "send"}, {b: keys.RunLog}}},
 		{"go", []keyEntry{{keys.Open, "open link"}, {keys.Copy, "copy title"}, {b: keys.Back}, {b: keys.Quit}}},
 	}
 
 	// Same inert rules as the list footer: the global aggregate is read-only, and
 	// category/tags are parent-only on a subtask.
-	globalActive := keySet(keys.Open, keys.Copy, keys.Back, keys.Quit)
+	globalActive := keySet(keys.Open, keys.Copy, keys.Back, keys.Quit, keys.RunLog)
 	onSub := !m.global && m.selRef().sub >= 0
 	subInert := keySet(keys.Category, keys.Tags)
+	if ref := m.selRef(); ref.item >= 0 && len(m.itemRuns(m.rowItem(ref).ID)) == 0 {
+		subInert[keys.RunLog.Help().Key] = true // nothing to show yet
+	}
 	return m.keyGrid(cols, func(key string) bool {
 		return (m.global && !globalActive[key]) || (onSub && subInert[key])
 	})
@@ -1091,6 +1107,11 @@ func (m model) helpBody() []string {
 	line(k(keys.Sweep) + " — archive all done items · " + k(keys.Archive) + " — archive the selected item (whole items only, not subtasks)")
 	line("subtasks: completing a parent completes its subtasks; completing the last subtask completes the parent")
 	blank()
+	sec("agents (Shepherd Pro)")
+	line(k(keys.Run) + " — send the selected item or subtask to your coding agent (a subtask goes with its parent as context). Rows show where their run stands: waiting (press " + k(keys.Run) + " to say go), queued (waiting for a free agent), running, failed (" + k(keys.Run) + " retries), or review (a run finished; check its work). Set up with shepherd agents setup")
+	line(k(keys.Runs) + " — the agents view: every run on every board and source, grouped by state. " + k(keys.Run) + " go/retry · l the run's log · " + k(keys.Open) + " open its link · t take over · enter its task · X archive a run · C clear every finished run into the archive · e the archive · " + k(keys.Back) + " back")
+	line("in the detail view, the item's runs are listed under its note; " + k(keys.RunLog) + " opens the latest run's log")
+	blank()
 	sec("due dates")
 	line("today · tomorrow · a weekday (fri: the next one) · Nd/Nw/Nm/Ny (e.g. 3d, 2w) · DD-MM-YYYY. Anything unrecognised clears the date here; the command API rejects it. Overdue items are pinned to a group at the top.")
 	blank()
@@ -1276,6 +1297,7 @@ func (m model) detailView() string {
 	default:
 		b.WriteString(dimStyle.Render("(none — press "+keys.Note.Help().Key+" to add)") + "\n")
 	}
+	b.WriteString(m.detailRuns(it))
 
 	rule := dimStyle.Render(strings.Repeat("─", m.width()))
 	var help string
@@ -1290,6 +1312,9 @@ func (m model) detailView() string {
 		// the list's field editors work here too and come back here when done, so
 		// the footer is the list's grid narrowed to one item.
 		help = rule + "\n" + m.detailGrid()
+		if m.notice != "" {
+			help = rule + "\n" + m.st().warn.Render(m.notice) + "\n" + m.detailGrid()
+		}
 	}
 	return m.frame(b.String(), help)
 }

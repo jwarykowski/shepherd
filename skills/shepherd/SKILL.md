@@ -31,6 +31,7 @@ Run `shepherd help` for the authoritative command list. Summary:
 | `shepherd edit <ref> "<tokens>" [--json]` | the single setter — merge @category/#tag/tags:/!prio/due:/defer:/link:/status:/note:/text onto an item (or subtask); bare key clears, note: takes the rest |
 | `shepherd done <ref>... [--json]` / `undone <ref>...` | (un)complete one or more items/subtasks (shorthand for `edit … status:done`/`status:open`) |
 | `shepherd rm <ref>... [--dry-run] [--json]` | remove one or more items/subtasks (`--dry-run`/`-n` previews) |
+| `shepherd go <ref> [--json]` | send an item to the user's coding agent (needs Shepherd Pro); only when the user asks, since it starts real work |
 | `shepherd archive <ref>... [--json]` | move whole items off the board into `archive.md` (subtasks can't be archived alone) |
 | `shepherd claim <ref> --by <name> [--release] [--json]` | atomically take an item: sets `claimed` and the first working status (`in-progress` by default); exit 1 if done or held by someone else; `--release` hands it back |
 

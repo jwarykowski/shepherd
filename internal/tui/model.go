@@ -5,6 +5,7 @@ package tui
 import (
 	"fmt"
 	"os"
+	"shepherd/internal/drover"
 	"shepherd/internal/store"
 	"shepherd/internal/theme"
 	"shepherd/internal/todo"
@@ -198,7 +199,9 @@ const (
 	modeBoardDetail // board detail: name, dir, source + archive paths, counts
 	modeBoardRename
 	modeConfirmDelete
-	modeTheme // quick theme picker over the board
+	modeTheme    // quick theme picker over the board
+	modeAgents   // every drover run (R), or its archive
+	modeAgentLog // one run's log
 )
 
 // density controls spacing: compact (tight, default) or comfort (roomier).
@@ -262,41 +265,58 @@ type model struct {
 	noteRef       rowRef         // the row the note editor opened on; a filter can hide it mid-edit
 	w             int
 	height        int
-	past          [][]todo.Item     // undo stack (snapshots before each mutation)
-	future        [][]todo.Item     // redo stack (snapshots undone)
-	dirty         bool              // cached: board differs from disk; recomputed per event
-	saved         string            // fingerprint of the board as last saved to disk
-	lastEdit      time.Time         // when the last mutation happened (debounce autosave)
-	autosaveEvery time.Duration     // idle gap before autosaving; 0 disables
-	lastMod       time.Time         // todo file mtime we last saw
-	base          []todo.Item       // the board as last read from or written to disk (merge base)
-	helpScroll    int               // scroll offset in the help page
-	categories    []string          // configured categories (tab-cycle in category mode)
-	catIdx        int               // cursor into categories while cycling
-	statuses      []string          // configured statuses, ordered, "done" last (Tab-cycle in list)
-	density       density           // spacing mode
-	global        bool              // read-only aggregate across all boards
-	board         string            // the board to return to when leaving global
-	projRows      []store.Board     // board list for the picker (modeBoards)
-	projCounts    [][2]int          // open/total per projRows entry, counted once per listing
-	projCur       int               // cursor into projRows
-	projArchived  bool              // picker is showing archived boards (unarchive-only)
-	projNotice    string            // transient picker error (e.g. invalid/duplicate board name)
-	keyNotice     string            // key.<action> overrides that were ignored; cleared on the next key
-	pending       string            // first key of a sequence awaiting its second (see chordKey)
-	projPending   string            // board whose working dir is being set (modeBoardDir)
-	projDirEdit   bool              // dir editor opened from the detail view (empty clears, return to detail); false = creation flow (empty skips)
-	fieldEdit     bool              // a field editor was opened from the item detail view, so save/cancel returns there instead of the list
-	settingsCur   int               // cursor into the settings rows (modeSettings)
-	themeWas      string            // theme to restore when the picker is cancelled (modeTheme)
-	hideFooter    bool              // hide the list footer (help grid + version line)
-	light         bool              // the terminal reported a light background
-	kbdEnhanced   bool              // the terminal tells shift+enter from enter (Kitty keyboard protocol)
-	mouse         bool              // mouse reporting on (config: mouse = true)
-	lastClick     rowClickMsg       // the previous row click, for double-click
-	theme         string            // active built-in theme
-	themeKV       map[string]string // theme.<token> overrides from config.toml
-	sty           *styles           // coloured styles for theme + background; nil = defaults
+	past          [][]todo.Item         // undo stack (snapshots before each mutation)
+	future        [][]todo.Item         // redo stack (snapshots undone)
+	dirty         bool                  // cached: board differs from disk; recomputed per event
+	saved         string                // fingerprint of the board as last saved to disk
+	lastEdit      time.Time             // when the last mutation happened (debounce autosave)
+	autosaveEvery time.Duration         // idle gap before autosaving; 0 disables
+	lastMod       time.Time             // todo file mtime we last saw
+	base          []todo.Item           // the board as last read from or written to disk (merge base)
+	helpScroll    int                   // scroll offset in the help page
+	categories    []string              // configured categories (tab-cycle in category mode)
+	catIdx        int                   // cursor into categories while cycling
+	statuses      []string              // configured statuses, ordered, "done" last (Tab-cycle in list)
+	density       density               // spacing mode
+	global        bool                  // read-only aggregate across all boards
+	board         string                // the board to return to when leaving global
+	projRows      []store.Board         // board list for the picker (modeBoards)
+	projCounts    [][2]int              // open/total per projRows entry, counted once per listing
+	projCur       int                   // cursor into projRows
+	projArchived  bool                  // picker is showing archived boards (unarchive-only)
+	projNotice    string                // transient picker error (e.g. invalid/duplicate board name)
+	keyNotice     string                // key.<action> overrides that were ignored; cleared on the next key
+	pending       string                // first key of a sequence awaiting its second (see chordKey)
+	notice        string                // transient list message (e.g. how @ went); cleared on the next key
+	runs          map[string]drover.Run // each item's most telling run, for the row marks
+	allRuns       []drover.Run          // drover's runs, live and recent, newest first
+	watching      bool                  // drover is running (service or drover watch)
+	droverOn      bool                  // drover is installed
+	itemIdx       map[string]boardItem  // every item on every board by id, for the agents view
+	agCur         int                   // cursor in the agents view
+	agArchive     bool                  // the agents view shows the archive
+	agArchiveRuns []drover.Run          // every finished run, for the archive
+	actionNames   map[string]string     // action id -> its label, to tell a subject's threads apart
+	logRun        drover.Run            // the run whose log is open
+	logTitle      string                // its task's title
+	logRows       []drover.LogRow       // its log; nil while loading
+	logErr        string                // why the log couldn't be read
+	logScroll     int                   // scroll offset in the log
+	logBack       mode                  // where esc returns from the log
+	detailBack    mode                  // where esc returns from the detail view (the list, or the agents view)
+	projPending   string                // board whose working dir is being set (modeBoardDir)
+	projDirEdit   bool                  // dir editor opened from the detail view (empty clears, return to detail); false = creation flow (empty skips)
+	fieldEdit     bool                  // a field editor was opened from the item detail view, so save/cancel returns there instead of the list
+	settingsCur   int                   // cursor into the settings rows (modeSettings)
+	themeWas      string                // theme to restore when the picker is cancelled (modeTheme)
+	hideFooter    bool                  // hide the list footer (help grid + version line)
+	light         bool                  // the terminal reported a light background
+	kbdEnhanced   bool                  // the terminal tells shift+enter from enter (Kitty keyboard protocol)
+	mouse         bool                  // mouse reporting on (config: mouse = true)
+	lastClick     rowClickMsg           // the previous row click, for double-click
+	theme         string                // active built-in theme
+	themeKV       map[string]string     // theme.<token> overrides from config.toml
+	sty           *styles               // coloured styles for theme + background; nil = defaults
 }
 
 // currentConfig snapshots the live, editable settings for the settings screen

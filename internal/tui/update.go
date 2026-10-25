@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"shepherd/internal/drover"
 	"shepherd/internal/store"
 	"shepherd/internal/todo"
 	"slices"
@@ -19,7 +20,7 @@ import (
 // works over SSH and inside tmux/herdr panes. A package var so tests can record.
 var copyText = tea.SetClipboard
 
-func (m model) Init() tea.Cmd { return tea.Batch(tick(), tea.RequestBackgroundColor) }
+func (m model) Init() tea.Cmd { return tea.Batch(tick(), tea.RequestBackgroundColor, firstRuns) }
 
 // beforeMutate pushes the current state onto the undo stack, clears the redo
 // stack (a fresh edit invalidates the redo future), and marks the model dirty.
@@ -408,6 +409,40 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tick()
 	case diskMsg:
 		return m.applyDisk(msg), nil
+	case runsMsg:
+		return m.gotRuns(msg)
+	case logMsg:
+		m.logRows = msg.rows
+		if m.logRows == nil {
+			m.logRows = []drover.LogRow{}
+		}
+		if msg.err != nil {
+			m.logErr = msg.err.Error()
+		}
+		return m, nil
+	case archivedMsg:
+		m.notice = msg.notice
+		if msg.err != nil {
+			m.notice = msg.err.Error()
+		}
+		return m, loadRuns
+	case takeOverMsg:
+		m.notice = "back from the conversation"
+		if msg.err != nil {
+			m.notice = "take over: " + msg.err.Error()
+		}
+		return m, loadRuns
+	case actionsMsg:
+		m.actionNames = msg.names
+		return m, nil
+	case archiveRunsMsg:
+		m.agArchiveRuns = msg.runs
+		if msg.err != nil {
+			m.notice = msg.err.Error()
+		}
+		return m, nil
+	case sentMsg:
+		return m.sent(msg)
 	case tea.PasteMsg:
 		return m.paste(msg)
 	case tea.MouseWheelMsg:
@@ -462,7 +497,7 @@ func (m model) updateGlobal(msg fmt.Stringer) (tea.Model, tea.Cmd) {
 		m.clamp()
 	case binding.Matches(msg, keys.Detail):
 		if m.sel() >= 0 {
-			m.mode = modeDetail
+			m.mode, m.detailBack = modeDetail, modeList
 		}
 	case binding.Matches(msg, keys.Open):
 		if m.sel() >= 0 {
@@ -518,7 +553,12 @@ func (m model) updateList(msg fmt.Stringer) (tea.Model, tea.Cmd) {
 	rows := m.cursorRows()
 	ref := m.selRef()
 	idx := ref.item
+	m.notice = ""
 	switch {
+	case binding.Matches(msg, keys.Run):
+		return m.sendToAgent()
+	case binding.Matches(msg, keys.Runs):
+		return m.openAgents()
 	case binding.Matches(msg, keys.Quit):
 		return m.quit()
 	case binding.Matches(msg, keys.Save):
@@ -576,7 +616,7 @@ func (m model) updateList(msg fmt.Stringer) (tea.Model, tea.Cmd) {
 		}
 	case binding.Matches(msg, keys.Detail):
 		if idx >= 0 {
-			m.mode = modeDetail
+			m.mode, m.detailBack = modeDetail, modeList
 		}
 	case binding.Matches(msg, keys.AddSub):
 		if idx >= 0 {
@@ -1071,6 +1111,10 @@ func (m model) dispatchKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		res, cmd = m.updateSettingEdit(msg)
 	case modeTheme:
 		res, cmd = m.updateTheme(msg)
+	case modeAgents:
+		res, cmd = m.updateAgents(msg)
+	case modeAgentLog:
+		res, cmd = m.updateLog(msg)
 	default: // list, global and detail views
 		res, cmd = m.chordKey(msg)
 	}

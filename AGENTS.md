@@ -20,6 +20,7 @@ format.
 - `shepherd done <ref>... [--json]` / `shepherd undone <ref>...` — (un)complete one or more items/subtasks
 - `shepherd archive <ref>... [--json]` — move whole items off the live board into the sibling `archive.md` (per-item counterpart to whole-board `board archive`); subtasks can't be archived alone
 - `shepherd rm <ref>... [--dry-run] [--json]` — remove one or more items/subtasks (`--dry-run`/`-n` previews without writing)
+- `shepherd go <ref> [--json]` — send an item to the user's coding agent (releases a run that's waiting for it, or starts one; needs Shepherd Pro). Only when the user asks: it starts real work
 
 `edit` is the single setter for every field — status, note, category, tags,
 priority, due, defer, link, and text all change through its tokens (`edit 2 "status:in-progress"`,

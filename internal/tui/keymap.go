@@ -17,6 +17,7 @@ type keyMap struct {
 	Up, Down, Top, Bottom, LaneLeft, LaneRight, Toggle, Detail, View, Global, ArchiveView, Boards, Footer binding.Binding
 	Add, AddSub, Edit, Status, Delete, Sweep, Archive                                                     binding.Binding
 	Prio, Category, Tags, Due, Defer, Link, Open, Copy, Note                                              binding.Binding
+	Run, Runs, RunLog                                                                                     binding.Binding
 	Save, Editor, Undo, Redo, Filter, Settings, Theme, Help, Back, Quit                                   binding.Binding
 }
 
@@ -58,6 +59,10 @@ var defaultKeys = keyMap{
 	Open:     bind("open", "o"),
 	Copy:     bind("copy", "y"),
 	Note:     bind("note", "n"),
+
+	Run:    bind("run", "r"),
+	Runs:   bind("runs", "g r"),
+	RunLog: bind("run log", "g l"),
 
 	Save:     bind("save", "w"),
 	Editor:   bind("editor", "ctrl+e"),

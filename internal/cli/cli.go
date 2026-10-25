@@ -55,6 +55,23 @@ Items (ref = an item's stable id from 'list --json', or its 1-based index n;
           due:<date>  defer:<date>  link:<url>  status:<name>
           note:<text> (takes the rest of the line)
 
+Agents, with Shepherd Pro (see shepherdcli.dev/pro):
+  agents setup [--runner claude|codex]  set up agents for every board and start them
+  agents start|stop|status [--json]     agents running in the background
+  agents add github <owner/repo> [--dir path] [--label agent]
+                               issues with the label become tasks
+  agents add webhook <service> [--dir path]   a URL for webhook|sentry|linear|
+                               datadog|alertmanager to send tasks to
+  agents sources [--json] | remove <name>     where tasks come from
+  agents actions [--json]      what each kind of event does
+  agents action <name> on|off|edit   switch one, or change what it tells the agent
+  agents secret <name>         take only deliveries the service signed
+                               (Sentry, Linear; --scheme github for others)
+  go <ref> [--json]            send an item to your coding agent (releases a
+                               run that's waiting, or starts one now)
+  pro activate <key>           activate Shepherd Pro
+  pro status [--json]          show the edition
+
 Boards (the default board can't be renamed/deleted/archived):
   board rename <old> <new>
   board archive <name>            stash under boards/archived/ (reversible)
@@ -83,7 +100,7 @@ func Usage() string { return cliUsage }
 // knownVerbs is the dispatch table, used both to route and to suggest a
 // correction for a mistyped verb. Version reporting is the `--version` board
 // flag (the clig standard), handled in main — not a subcommand here.
-var knownVerbs = []string{"help", "list", "watch", "boards", "board", "stats", "schema", "add", "sub", "edit", "claim", "done", "undone", "archive", "rm"}
+var knownVerbs = []string{"help", "list", "watch", "boards", "board", "stats", "schema", "add", "sub", "edit", "claim", "done", "undone", "archive", "rm", "go", "agents", "pro"}
 
 // Run handles one command-API invocation and returns a process exit code.
 //
@@ -135,6 +152,12 @@ func Run(verb string, args []string) int {
 		return cmdArchive(rest, board, os.Stdout)
 	case "rm":
 		return cmdRemove(rest, board, os.Stdout)
+	case "go":
+		return cmdGo(rest, board, os.Stdout)
+	case "agents":
+		return cmdAgents(rest, os.Stdout)
+	case "pro":
+		return cmdPro(rest, os.Stdout)
 	default:
 		fmt.Fprintf(os.Stderr, "shepherd: unknown command %q\n", verb)
 		if s := suggest(verb); s != "" {

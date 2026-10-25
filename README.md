@@ -46,6 +46,7 @@ deploy api @work #api !h due:tomorrow
 | `u` / `ctrl+r` | undo / redo |
 | `gb` / `ga` | boards / all boards |
 | `gs` / `gt` | settings / theme |
+| `r` / `gr` | run: send to your agent / the runs view (Pro) |
 | `?` | every key |
 | `q` | save and quit |
 
@@ -74,7 +75,7 @@ Agents get the contract from `shepherd help`, the bundled skill or
 - [keys](docs/keys.md): every key, quick-add tokens, the detail view, rebinding
 - [boards](docs/boards.md): named boards, the global view, filters, lanes, subtasks
 - [command api](docs/command-api.md): every verb, flags, JSON, `watch`
-- [agents](docs/agents.md): setting up agents, and safe writes (`--text`, `--if-rev`, `claim`)
+- [agents](docs/agents.md): safe writes for agents, and sending tasks to your coding agent with Shepherd Pro
 - [configuration](docs/configuration.md): `config.toml`, themes, environment
 - [storage](docs/storage.md): file layout, format, archive
 - [stats](docs/stats.md): `shepherd stats`

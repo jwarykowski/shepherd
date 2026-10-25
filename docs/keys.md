@@ -39,6 +39,8 @@ what can follow; `esc` cancels. Every key can be rebound (see
 | `gs` or `,` | settings: view, density, autosave, categories, statuses, footer, mouse, theme; changes save to `config.toml` |
 | `gt` | theme picker: `j`/`k` preview each theme live, `enter` keeps it (saved to `config.toml`), `esc` restores the old one |
 | `gf` | hide / show the footer help grid (the `jwarykowski/shepherd` · version line stays); `hidefooter` config sets the default |
+| `r` | run: send the item to your coding agent ([Shepherd Pro](agents.md#send-tasks-to-your-agent-shepherd-pro)) |
+| `gr` | the agents view: every run, its log, take over |
 | `?` | full help page |
 | `q` | save + quit |
 
@@ -82,8 +84,9 @@ The detail view is also an editor. The same field keys work there (`e` text,
 `tab` status), and saving returns to the detail view rather than the list.
 Plus `n` edit note (`esc`, or `shift+enter` in terminals with the Kitty
 keyboard protocol, finishes), `space` toggle, `o` open link, `y` copy title,
-`esc` back, `q` save + quit. Its footer is the board's key grid narrowed to the
-keys that act on one item (`fields` · `dates` · `item` · `go`).
+`esc` back, `q` save + quit. With agents, it lists the item's runs: `r` sends
+it, `gl` opens the latest run's log. Its footer is the board's key grid narrowed
+to the keys that act on one item (`fields` · `dates` · `item` · `agent` · `go`).
 
 ## key bindings
 
@@ -102,7 +105,8 @@ Actions: `up`, `down`, `top`, `bottom`, `lane_left`, `lane_right`, `toggle`,
 `detail`, `view`, `global`, `archive_view`, `boards`, `footer`, `add`,
 `add_sub`, `edit`, `status`, `delete`, `sweep`, `archive`, `prio`, `category`,
 `tags`, `due`, `defer`, `link`, `open`, `copy`, `note`, `save`, `editor`,
-`undo`, `redo`, `filter`, `settings`, `theme`, `help`. Key names are as Bubble
+`undo`, `redo`, `filter`, `settings`, `theme`, `help`, `run`, `runs`,
+`run_log`. Key names are as Bubble
 Tea reports them: a character (`x`, `X`, `/`), `space`, `enter`, `tab`,
 `up`/`down`/`left`/`right`, `home`/`end`, `ctrl+<key>`, `alt+<key>`, and
 `comma` for `,` alongside other keys (`"comma, g s"`).
@@ -134,4 +138,7 @@ key.footer = "F"
 key.theme = "ctrl+t"
 key.top = "home"
 key.settings = ","
+key.run = "@"
+key.runs = "R"
+key.run_log = "r"
 ```
