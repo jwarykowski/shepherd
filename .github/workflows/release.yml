@@ -26,15 +26,29 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      # a 401 later is far less clear than failing here
+      - if: steps.tag.outputs.tag != ''
+        name: check the GitHub token
+        run: GH_TOKEN="$GH_RELEASE_TOKEN" gh api user --jq '"publishing as " + .login'
+        env:
+          GH_RELEASE_TOKEN: ${{ secrets.GH_RELEASE_TOKEN }}
       - if: steps.tag.outputs.tag != ''
         uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
           version: "~> v2"
-          args: release --clean
+          install-only: true
+      # GoReleaser reads the GitHub token from its file, since the runner's own
+      # GITHUB_TOKEN (Forgejo's) would otherwise win. The release goes on
+      # GitHub's copy; the formula pull request goes to the tap.
+      - if: steps.tag.outputs.tag != ''
+        name: release
+        run: |
+          mkdir -p ~/.config/goreleaser
+          printf '%s' "$GH_RELEASE_TOKEN" > ~/.config/goreleaser/github_token
+          unset GITHUB_TOKEN
+          goreleaser release --clean
         env:
-          # the release goes on GitHub's copy; the formula pull request goes to the tap
-          GITHUB_TOKEN: ${{ secrets.GH_RELEASE_TOKEN }}
           GH_RELEASE_TOKEN: ${{ secrets.GH_RELEASE_TOKEN }}
       - if: steps.tag.outputs.tag != ''
         run: |
