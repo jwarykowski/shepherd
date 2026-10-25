@@ -37,7 +37,9 @@ if [ -n "${DRY_RUN:-}" ]; then
 	exit 0
 fi
 
-git -c tag.gpgSign=false tag -a "$tag" -m "$tag"
+# the runner has no git identity, and an annotated tag needs one
+git -c user.name="Jonathan Warykowski" -c user.email="jonathan@warykowski.io" \
+	-c tag.gpgSign=false tag -a "$tag" -m "$tag"
 git push origin "$tag"
 
 # origin is Forgejo; the release goes on GitHub's copy, which gets the tag from
