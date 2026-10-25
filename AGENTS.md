@@ -13,6 +13,9 @@ format.
 - `shepherd add "buy milk @home !h due:tomorrow" [--json]` — add an item
 - `shepherd sub <ref> "<text>" [--json]` — add a subtask to an item (same quick-add tokens)
 - `shepherd edit <ref> "<tokens>" [--json]` — merge tokens onto an item (or subtask); only the given fields change. Tokens: `@category`, `#tag`/`tags:a,b`, `!prio`, `due:`, `defer:`, `link:`, `status:`, `note:`, and text. A bare key clears its field; `note:` takes the rest of the line
+- `--text "<s>"` on `add`/`sub`/`edit` — take the item text verbatim (`shepherd add --text "fix #123 crash, due: soon" "@work !h"`); the positional string then carries tokens only, and a stray plain word there is a usage error (exit 2). Use it whenever the text comes from elsewhere (an issue title, a user message)
+- `shepherd claim <ref> --by <name> [--json]` — atomically take an item: records `claimed` and moves it to the first configured working status (`in-progress` by default). Exit 1 if it's done or claimed by someone else; re-claiming your own is fine. `--release` drops your claim and returns it to open (omit `--by` to force-release); `done` ends the claim
+- `--if-rev <rev>` on `edit`/`sub`/`claim`/`done`/`undone`/`rm`/`archive` (one ref) — refuse with exit 1 and no write unless the item's `rev` (from `list --json` or a `--json` echo) still matches. `rev` is a hash of the item as stored, subtasks included, so any change by anyone moves it; re-read and retry
 - `shepherd list --filter <q>` — list only matching items (text/note/category/tags/due/defer/link), keeping their real indexes for done/rm
 - `shepherd done <ref>... [--json]` / `shepherd undone <ref>...` — (un)complete one or more items/subtasks
 - `shepherd archive <ref>... [--json]` — move whole items off the live board into the sibling `archive.md` (per-item counterpart to whole-board `board archive`); subtasks can't be archived alone
@@ -38,8 +41,10 @@ Quick-add tokens (shared by `add`, `sub`, `edit`): `@category`, `#tag`,
 `tags:<a,b>`, `!h`/`!m`/`!l` priority, `due:<today|tomorrow|friday|+3d|15-07-2026>`,
 `defer:<same date forms>` (start/defer date; a weekday means the next one, and a date shepherd can't read fails with exit 2 rather than being dropped), `link:<url>`, `status:<name>`,
 and `note:<text>` (holds spaces, takes the rest of the line — put it last).
-`list --json` reports `id` (the stable handle), `completed` (done timestamp),
-`defer`, `link`, `tags`, and `status` per item.
+`list --json` reports `id` (the stable handle), `rev` (for `--if-rev`),
+`completed` (done timestamp), `defer`, `link`, `tags`, `status` and `claimed`
+per item. A failed `--if-rev` or `claim` reports `{"error":"conflict",…}` under
+`--json`.
 
 Category and tags are different axes: `category` is one lowercase label per item
 and drives board grouping/order; `tags` is a free-form lowercase set with no
@@ -70,6 +75,7 @@ mutate with the same `--board` as its board — its `id` works directly, or
 re-list that board (`list --board <name>`) for its local index.
 
 Exit codes for scripting: `0` success, `2` usage/input error (bad flag, unknown
-command, unknown ref), `1` runtime/IO failure. `-q`/`--quiet` on a
+command, unknown ref), `1` runtime/IO failure or a conflict (stale `--if-rev`,
+a refused `claim`). `-q`/`--quiet` on a
 mutation drops its confirmation line but never the requested data. Run
 `shepherd help` for the full contract.

@@ -11,6 +11,28 @@ import (
 	"testing"
 )
 
+// TestClaimedAndRev: the claimed: meta line round-trips, and Rev is stable
+// across a load but changes with any field (subtasks included).
+func TestClaimedAndRev(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "todo.md")
+	items := []todo.Item{{ID: "a", Text: "x", Claimed: "bot", Subs: []todo.Item{{ID: "b", Text: "s"}}}}
+	if err := Save(p, items); err != nil {
+		t.Fatal(err)
+	}
+	got := Load(p)
+	if got[0].Claimed != "bot" || len(got[0].Extra) != 0 {
+		t.Fatalf("claimed not parsed: %+v", got[0])
+	}
+	if Rev(got[0]) != Rev(items[0]) || len(Rev(got[0])) != 12 {
+		t.Fatalf("rev unstable: %s vs %s", Rev(got[0]), Rev(items[0]))
+	}
+	changed := todo.Clone(got)
+	changed[0].Subs[0].Done = true
+	if Rev(changed[0]) == Rev(got[0]) {
+		t.Fatal("rev ignored a subtask change")
+	}
+}
+
 // TestWithLockSerialisesWriters proves the advisory lock closes the lost-update
 // race: N concurrent load→append→save transactions must all survive. Without
 // WithLock each writer clobbers the file another just wrote and the final count

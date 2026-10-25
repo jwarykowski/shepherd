@@ -304,6 +304,7 @@ func (m model) rowContent(it todo.Item, indent, badge string, isSub bool) string
 	if m.global && m.view != viewBoard && it.Source != "" {
 		text += " " + dimStyle.Render("["+it.Source+"]")
 	}
+	text += claimSuffix(it)
 	// In the tag view the group header names the grouping tag; show the item's
 	// other tags after the text so a multi-tag item isn't misread as single-tag.
 	if m.view == viewTag && len(it.Tags) > 1 {
@@ -902,6 +903,9 @@ func (m model) tableView() string {
 			due, _ = todo.DueLabel(it.Due)
 		}
 		task, cat := it.Text, it.Category
+		if it.Claimed != "" {
+			task += " (" + it.Claimed + ")" // plain: the table measures cells without ANSI
+		}
 		if r.sub >= 0 { // subtask: indent the task cell, inherit the parent's board/category columns
 			task = "  " + task
 			cat = ""
@@ -939,6 +943,14 @@ func (m model) tableView() string {
 	return m.frame(head+"\n"+t.View(), footer)
 }
 
+// claimSuffix names who claimed an item (see `shepherd claim`), or "".
+func claimSuffix(it todo.Item) string {
+	if it.Claimed == "" {
+		return ""
+	}
+	return " " + dimStyle.Render("("+it.Claimed+")")
+}
+
 // laneCard renders one lane-view card line: a priority marker plus the title,
 // truncated to width w. Status is implied by the column, so unlike rowContent
 // there's no box glyph.
@@ -951,6 +963,7 @@ func (m model) laneCard(it todo.Item, w int) string {
 	if it.Done {
 		text = doneStyle.Render(text)
 	}
+	text += claimSuffix(it)
 	return ansi.Truncate(markSt.Render(marker)+" "+text, w, "…")
 }
 
@@ -1186,6 +1199,9 @@ func (m model) detailView() string {
 		b.WriteString(field("parent", m.items[ref.item].Text))
 	}
 	b.WriteString(field("status", status))
+	if it.Claimed != "" {
+		b.WriteString(field("claimed", it.Claimed))
+	}
 	b.WriteString(field("priority", prio))
 	b.WriteString(field("category", category))
 	tags := dimStyle.Render("—")

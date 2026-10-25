@@ -3,6 +3,8 @@
 package store
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -16,12 +18,12 @@ import (
 
 var (
 	lineRE = regexp.MustCompile(`^- \[([ xX])\] (?:\(([HMLhml])\) )?(.*)$`)
-	metaRE = regexp.MustCompile(`^  (id|created|completed|defer|note|category|tags|due|link|status): (.*)$`)
+	metaRE = regexp.MustCompile(`^  (id|created|completed|defer|note|category|tags|due|link|status|claimed): (.*)$`)
 	// subtask lines are the same checklist syntax indented two spaces, with
 	// their own meta indented four. They never collide with metaRE (which needs
 	// a bare `word:` at two spaces, never `- [`).
 	subLineRE = regexp.MustCompile(`^  - \[([ xX])\] (?:\(([HMLhml])\) )?(.*)$`)
-	subMetaRE = regexp.MustCompile(`^    (id|created|completed|defer|note|category|tags|due|link|status): (.*)$`)
+	subMetaRE = regexp.MustCompile(`^    (id|created|completed|defer|note|category|tags|due|link|status|claimed): (.*)$`)
 )
 
 // boardRE is the allowed board-name slug. Anchored and free of path
@@ -494,6 +496,8 @@ func applyMeta(it *todo.Item, key, val string) {
 		}
 	case "status":
 		it.Status = strings.ToLower(val)
+	case "claimed":
+		it.Claimed = val
 	}
 }
 
@@ -580,6 +584,9 @@ func writeItem(b *strings.Builder, it todo.Item, indent string) {
 	if !it.Done && it.Status != "" {
 		fmt.Fprintf(b, "%sstatus: %s\n", meta, it.Status)
 	}
+	if it.Claimed != "" {
+		fmt.Fprintf(b, "%sclaimed: %s\n", meta, it.Claimed)
+	}
 	if it.Link != "" {
 		fmt.Fprintf(b, "%slink: %s\n", meta, strings.ReplaceAll(it.Link, "\n", " "))
 	}
@@ -604,6 +611,14 @@ func Serialize(items []todo.Item) string {
 		}
 	}
 	return b.String()
+}
+
+// Rev is a short content hash of an item's serialised form (subtasks
+// included): computed, never stored, so agents can detect a concurrent change
+// without the file format carrying a version.
+func Rev(it todo.Item) string {
+	sum := sha256.Sum256([]byte(Serialize([]todo.Item{it})))
+	return hex.EncodeToString(sum[:6])
 }
 
 // AssignMissingIDs gives a stable todo.NewID to every item and subtask that

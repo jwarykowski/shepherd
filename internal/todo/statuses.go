@@ -1,6 +1,9 @@
 package todo
 
-import "slices"
+import (
+	"fmt"
+	"slices"
+)
 
 // SetStatus sets an item to a named status, applying the same terminal rules as
 // the cycle: "done" marks it done (stamping completion), "open" or "" clears to
@@ -18,6 +21,44 @@ func SetStatus(it *Item, name string) {
 		SetDone(it, false)
 		it.Status = name
 	}
+}
+
+// ClaimStatus is the status a claim moves an item to: the first configured
+// status that is neither the default (first) nor done, else "in-progress".
+func ClaimStatus(statuses []string) string {
+	for i, s := range statuses {
+		if i > 0 && s != "done" {
+			return s
+		}
+	}
+	return "in-progress"
+}
+
+// Claim marks it claimed by `by` and moves it to status. It refuses a done item
+// or one already claimed by someone else; re-claiming your own succeeds.
+func Claim(it *Item, by, status string) error {
+	switch {
+	case it.Done:
+		return fmt.Errorf("%q is done", it.Text)
+	case it.Claimed != "" && it.Claimed != by:
+		return fmt.Errorf("%q is already claimed by %s", it.Text, it.Claimed)
+	}
+	it.Claimed = by
+	SetStatus(it, status)
+	return nil
+}
+
+// Release clears a claim and returns an open item to the default status. Only
+// the claimer may release; by == "" skips that check (a forced release).
+func Release(it *Item, by string) error {
+	if by != "" && it.Claimed != "" && it.Claimed != by {
+		return fmt.Errorf("%q is claimed by %s, not %s", it.Text, it.Claimed, by)
+	}
+	it.Claimed = ""
+	if !it.Done {
+		it.Status = ""
+	}
+	return nil
 }
 
 // StatusOf is an item's effective status name against the configured order:

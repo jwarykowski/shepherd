@@ -68,6 +68,8 @@ func buildSchema() schemaDoc {
 		AddlProps: false,
 		Properties: map[string]property{
 			"id":        {Type: "string", ReadOnly: true, Description: "stable opaque id; address items by this, never index"},
+			"rev":       {Type: "string", ReadOnly: true, Description: "content hash; changes on any edit. Pass to --if-rev to refuse a stale write"},
+			"claimed":   {Type: "string", Description: "who claimed the item via `claim --by`; empty = unclaimed"},
 			"index":     {Type: "integer", ReadOnly: true, Description: "1-based board position; shifts as the board reorders"},
 			"done":      {Type: "boolean"},
 			"status":    {Type: "string", Enum: statuses, Description: "named status; empty = default/open. done is the terminal state"},

@@ -24,6 +24,7 @@ type Item struct {
 	Due       string // YYYY-MM-DD, or empty
 	Note      string
 	Link      string // reference URL, or empty
+	Claimed   string // who claimed the item (see Claim), or empty
 	// Extra holds the raw lines under an item that shepherd doesn't parse (a
 	// newer version's meta key, a hand-written line), written back verbatim
 	// after the item's meta so a save never drops them.

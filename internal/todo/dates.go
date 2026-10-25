@@ -131,7 +131,8 @@ func DueLabel(due string) (string, bool) {
 }
 
 // SetDone flips an item's done state and maintains the completion timestamp:
-// stamped when marked done, cleared when reopened.
+// stamped when marked done, cleared when reopened. Finishing an item ends its
+// claim.
 func SetDone(it *Item, done bool) {
 	if it.Done == done {
 		return // idempotent: re-marking a done/open item keeps its original stamp
@@ -139,6 +140,7 @@ func SetDone(it *Item, done bool) {
 	it.Done = done
 	if done {
 		it.Completed = Now()
+		it.Claimed = ""
 	} else {
 		it.Completed = ""
 	}

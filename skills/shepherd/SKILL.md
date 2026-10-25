@@ -32,6 +32,14 @@ Run `shepherd help` for the authoritative command list. Summary:
 | `shepherd done <ref>... [--json]` / `undone <ref>...` | (un)complete one or more items/subtasks (shorthand for `edit … status:done`/`status:open`) |
 | `shepherd rm <ref>... [--dry-run] [--json]` | remove one or more items/subtasks (`--dry-run`/`-n` previews) |
 | `shepherd archive <ref>... [--json]` | move whole items off the board into `archive.md` (subtasks can't be archived alone) |
+| `shepherd claim <ref> --by <name> [--release] [--json]` | atomically take an item: sets `claimed` and the first working status (`in-progress` by default); exit 1 if done or held by someone else; `--release` hands it back |
+
+Pass untrusted or copied text with `--text "<s>"` on `add`/`sub`/`edit`: it's
+taken verbatim (`#123`, `due:` stay text) and the positional string holds tokens
+only (`shepherd add --text "fix #123 crash" "@work !h"`). To avoid overwriting a
+change you haven't seen, pass the item's `rev` from `list --json` as
+`--if-rev <rev>` to any mutating verb (one ref): a mismatch exits 1 without
+writing; re-read and retry.
 
 A `<ref>` is either an item's **stable id** (the `id` field from `list --json`)
 or its 1-based index. **Prefer the id**: the index shifts whenever the board
@@ -50,7 +58,7 @@ parallel agents never lose one another's writes.
 `{"error":…}` object on stdout instead of text on stderr.
 
 Exit codes: `0` success · `2` usage/input error (bad flag, unknown command,
-unknown ref) · `1` runtime/IO failure. `-q`/`--quiet` drops a mutation's
+unknown ref) · `1` runtime/IO failure or conflict (stale `--if-rev`, refused `claim`). `-q`/`--quiet` drops a mutation's
 confirmation line, never the requested data.
 
 ## watching

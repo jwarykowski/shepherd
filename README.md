@@ -289,6 +289,10 @@ shepherd edit 2 "#api #docs"        # add tags (tags:a,b replaces the set, tags:
 shepherd rm 2                       # remove item 2 (rm 2.1 removes just the subtask)
 shepherd rm 2 5 --dry-run           # preview removing several without writing
 shepherd archive 2                  # move item 2 off the board into archive.md (whole items only)
+shepherd add --text "fix #123 crash" "@work" # text taken verbatim; tokens from the positional string
+shepherd claim 2 --by agent-1       # take item 2 (sets claimed + in-progress; exit 1 if held or done)
+shepherd claim 2 --release --by agent-1 # hand it back
+shepherd edit 2 "!h" --if-rev 1a2b3c4d5e6f # write only if item 2 is unchanged since that rev
 ```
 
 Global flags (any command):
@@ -313,6 +317,9 @@ cascade rules. `--json` on any mutating verb echoes the resulting item(s) in the
 text only when plain words are present. A bare key clears its field
 (`edit 2 "@ due:"`); `note:` holds spaces and takes the rest of the line, so put
 it last (`edit 2 "!h note:call the bank"`).
+
+For agents, `--text`, `--if-rev` and `claim` are covered under
+[agentic tools](#agentic-tools).
 
 `list --filter <q>` matches text/note/category/tags/due/defer/link and keeps each
 item's real board index, so `done`/`rm` on a filtered listing still hit the
@@ -398,6 +405,43 @@ shepherd with the same verbs. Discovery is layered:
   tool's global rules / instructions slot.
 
 All three point at the same `shepherd` CLI — no per-tool server, no MCP.
+
+### safe writes
+
+Three features keep an agent from mangling text or clobbering a change it
+hasn't seen:
+
+- Literal text: `--text "<s>"` on `add`, `sub` and `edit` sets the item
+  text verbatim, so `#123`, `@home` or `due:` inside it stay text. The
+  positional string then holds tokens only; a plain word there alongside
+  `--text` is a usage error (exit 2) rather than silently dropped.
+  ```sh
+  shepherd add --text "fix #123 crash due: soon" "@work !h"
+  ```
+- Revisions: every item in `--json` output carries a `rev`, a short hash of
+  the item as stored (subtasks included). It is computed on read, never written
+  to the board. `--if-rev <rev>` on `edit`, `sub`, `claim`, `done`, `undone`,
+  `rm` and `archive` writes only if the item is unchanged since that rev;
+  otherwise it exits 1 and writes nothing (`{"error":"conflict"}` under
+  `--json`). Read, then write with the rev you read:
+  ```sh
+  shepherd list --json                       # note the item's id and rev
+  shepherd done <id> --if-rev 6d6b662e659f   # exit 1 if someone changed it
+  ```
+  Any change from the board or another agent changes the rev, so on a conflict
+  re-read and decide again.
+- Claims: `claim <ref> --by <name>` marks an item as taken: it records a
+  `claimed: <name>` line and moves the item to the first configured status
+  that isn't the default or `done` (`in-progress` by default). It exits 1 if
+  the item is done or claimed by someone else; claiming your own item again
+  succeeds. `claim <ref> --release --by <name>` hands it back (status returns
+  to the default); leaving out `--by` forces the release. Completing an item
+  ends its claim. The board shows the claimer after the item's text, and the
+  detail view has a `claimed` row.
+  ```sh
+  shepherd claim 3 --by agent-1 || echo "taken, pick another"
+  shepherd claim 3 --release --by agent-1
+  ```
 
 ## configuration
 

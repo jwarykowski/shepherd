@@ -35,15 +35,20 @@ Read:
 Items (ref = an item's stable id from 'list --json', or its 1-based index n;
        n.m or <id> = a subtask). Agents should address items by id: the index
        shifts as the board reorders, the id never does.
-  add "<text>" [--json]        add an item
-  sub <ref> "<text>" [--json]  add a subtask
-  edit <ref> "<toks>" [--json] merge tokens onto an item (bare key clears)
+  add "<text>" [--text <s>] [--json]        add an item
+  sub <ref> "<text>" [--text <s>] [--json]  add a subtask
+  edit <ref> "<toks>" [--text <s>] [--json] merge tokens onto an item (bare key clears)
+  claim <ref> --by <name> [--release] [--json]  take an item (exit 1 if done or held)
   done|undone <ref>... [--json] mark one or more (not) done
   archive <ref>... [--json]    move whole items off the board into archive.md
   rm <ref>... [--dry-run] [--json]  remove one or more (--dry-run/-n previews)
 
   --json  echo the resulting item(s) as JSON (like 'list --json'), and report
           failures as {"error":…} on stdout instead of text on stderr.
+  --text <s>     item text taken verbatim (no token parsing); the positional
+                 string then holds tokens only
+  --if-rev <rev> refuse (exit 1, no write) unless the item's rev from
+                 'list --json' still matches; every mutating verb, one ref
   Mutating verbs are safe to repeat: re-marking a done item keeps its stamp.
 
   syntax: @category  #tag (adds)  tags:<a,b> (replaces)  !h|!m|!l
@@ -78,7 +83,7 @@ func Usage() string { return cliUsage }
 // knownVerbs is the dispatch table, used both to route and to suggest a
 // correction for a mistyped verb. Version reporting is the `--version` board
 // flag (the clig standard), handled in main — not a subcommand here.
-var knownVerbs = []string{"help", "list", "watch", "boards", "board", "stats", "schema", "add", "sub", "edit", "done", "undone", "archive", "rm"}
+var knownVerbs = []string{"help", "list", "watch", "boards", "board", "stats", "schema", "add", "sub", "edit", "claim", "done", "undone", "archive", "rm"}
 
 // Run handles one command-API invocation and returns a process exit code.
 //
@@ -120,6 +125,8 @@ func Run(verb string, args []string) int {
 		return cmdSub(rest, board, os.Stdout)
 	case "edit":
 		return cmdEdit(rest, board, os.Stdout)
+	case "claim":
+		return cmdClaim(rest, board, os.Stdout)
 	case "done":
 		return cmdToggle(rest, board, true, os.Stdout)
 	case "undone":
@@ -270,29 +277,128 @@ func levenshtein(a, b string) int {
 // runs before the per-command FlagSets, which would reject it as unknown, and
 // before `add` joins its args into text. Last occurrence wins.
 func extractBoard(args []string) (string, []string, error) {
-	board := ""
+	board, _, rest, err := extractOpt(args, "--board")
+	return board, rest, err
+}
+
+// extractOpt pulls a valued flag (`name <v>` or `name=<v>`) out of args the way
+// extractBoard does, also reporting whether it was given at all.
+func extractOpt(args []string, name string) (string, bool, []string, error) {
+	val, set := "", false
 	rest := make([]string, 0, len(args))
 	for i := 0; i < len(args); i++ {
 		a := args[i]
 		switch {
-		case a == "--board":
+		case a == name:
 			if i+1 >= len(args) {
-				return "", nil, errors.New("--board needs a name")
+				return "", false, nil, fmt.Errorf("%s needs a value", name)
 			}
-			board = args[i+1]
+			val, set = args[i+1], true
 			i++
-		case strings.HasPrefix(a, "--board="):
-			board = strings.TrimPrefix(a, "--board=")
+		case strings.HasPrefix(a, name+"="):
+			val, set = strings.TrimPrefix(a, name+"="), true
 		default:
 			rest = append(rest, a)
 		}
 	}
-	return board, rest, nil
+	return val, set, rest, nil
+}
+
+// extractRev pulls --if-rev <rev>: the optimistic-concurrency guard on mutating
+// verbs. Given but empty is a usage error, not "no guard".
+func extractRev(args []string) (string, []string, error) {
+	rev, set, rest, err := extractOpt(args, "--if-rev")
+	if err == nil && set && rev == "" {
+		err = errors.New("--if-rev needs a rev")
+	}
+	return rev, rest, err
+}
+
+// extractText pulls --text <s>: the item text taken verbatim, so `#123` or
+// `due:` inside it stay text instead of being parsed as tokens.
+func extractText(args []string) (string, bool, []string, error) {
+	text, set, rest, err := extractOpt(args, "--text")
+	if err == nil && set {
+		if text = strings.Join(strings.Fields(text), " "); text == "" {
+			err = errors.New("--text needs non-empty text")
+		}
+	}
+	return text, set, rest, err
+}
+
+// applyInput applies quick-add tokens to it, then, with --text, sets the text
+// verbatim. The token string must then hold only tokens: a stray plain word
+// would otherwise be dropped silently.
+func applyInput(it *todo.Item, toks, text string, literal bool) error {
+	if err := todo.CheckDates(toks); err != nil {
+		return err
+	}
+	if !literal {
+		todo.ApplyEdit(it, toks)
+		return nil
+	}
+	it.Text = ""
+	todo.ApplyEdit(it, toks)
+	if it.Text != "" {
+		return fmt.Errorf("unexpected text %q alongside --text: pass only tokens", it.Text)
+	}
+	it.Text = text
+	return nil
+}
+
+// revConflict fails (exit 1) when want is set and differs from it's current rev,
+// so an agent never overwrites a change it hasn't seen.
+func revConflict(w io.Writer, asJSON bool, it todo.Item, want string) (int, bool) {
+	if got := store.Rev(it); want != "" && got != want {
+		return conflictErr(w, asJSON, fmt.Sprintf("item %s changed (rev %s, expected %s); re-read and retry", it.ID, got, want)), true
+	}
+	return 0, false
+}
+
+// refsRevConflict is revConflict for the multi-ref verbs: --if-rev guards
+// exactly one ref.
+func refsRevConflict(w io.Writer, asJSON bool, items []todo.Item, refs [][2]int, want string) (int, bool) {
+	if want == "" {
+		return 0, false
+	}
+	if len(refs) != 1 {
+		return usageErr(w, asJSON, "--if-rev takes a single ref"), true
+	}
+	return revConflict(w, asJSON, refItem(items, refs[0][0], refs[0][1]), want)
+}
+
+func refItem(items []todo.Item, p, s int) todo.Item {
+	if s == 0 {
+		return items[p-1]
+	}
+	return items[p-1].Subs[s-1]
+}
+
+func conflictErr(w io.Writer, asJSON bool, msg string) int {
+	if asJSON {
+		return jsonErr(w, 1, "conflict", msg)
+	}
+	fmt.Fprintln(os.Stderr, "shepherd:", msg)
+	return 1
+}
+
+// echoRef prints the item (or subtask) at p/s after a single-ref mutation.
+func echoRef(w io.Writer, asJSON bool, items []todo.Item, p, s int) int {
+	switch {
+	case asJSON:
+		return emitJSON(w, toJSON(items[p-1], p))
+	case s == 0:
+		say(w, formatLine(p, items[p-1]))
+	default:
+		say(w, formatSub(p, s, items[p-1].Subs[s-1]))
+	}
+	return 0
 }
 
 // itemJSON is the machine-readable view agents read via `list --json`.
 type itemJSON struct {
 	ID        string     `json:"id,omitempty"` // stable opaque id; use it (not index) to address the item
+	Rev       string     `json:"rev"`          // content hash; pass to --if-rev to refuse a stale write
 	Index     int        `json:"index"`
 	Done      bool       `json:"done"`
 	Status    string     `json:"status,omitempty"`   // named non-terminal status; empty when open or done
@@ -306,12 +412,13 @@ type itemJSON struct {
 	Due       string     `json:"due,omitempty"`   // ISO YYYY-MM-DD
 	Link      string     `json:"link,omitempty"`
 	Note      string     `json:"note,omitempty"`
+	Claimed   string     `json:"claimed,omitempty"`  // who claimed it (see `claim`)
 	Board     string     `json:"board,omitempty"`    // board name, only in --all
 	Subtasks  []itemJSON `json:"subtasks,omitempty"` // Index is the 1-based position under the parent (n.m)
 }
 
 func toJSON(it todo.Item, idx int) itemJSON {
-	j := itemJSON{ID: it.ID, Index: idx, Done: it.Done, Status: it.Status, Text: it.Text, Category: it.Category, Tags: it.Tags, Created: it.Created, Completed: it.Completed, Defer: it.Defer, Due: it.Due, Link: it.Link, Note: it.Note, Board: it.Source}
+	j := itemJSON{ID: it.ID, Rev: store.Rev(it), Claimed: it.Claimed, Index: idx, Done: it.Done, Status: it.Status, Text: it.Text, Category: it.Category, Tags: it.Tags, Created: it.Created, Completed: it.Completed, Defer: it.Defer, Due: it.Due, Link: it.Link, Note: it.Note, Board: it.Source}
 	if it.Prio != 0 {
 		j.Priority = string(it.Prio)
 	}
@@ -689,14 +796,18 @@ func locked(board string, w io.Writer, asJSON bool, fn func(path string, items [
 
 func cmdAdd(args []string, board string, w io.Writer) int {
 	asJSON, args := extractJSON(args)
-	text := strings.TrimSpace(strings.Join(args, " "))
-	if text == "" {
-		return usageErr(w, asJSON, `add needs text, e.g. shepherd add "buy milk @home !h"`)
-	}
-	if err := todo.CheckDates(text); err != nil {
+	lit, literal, args, err := extractText(args)
+	if err != nil {
 		return usageErr(w, asJSON, err.Error())
 	}
-	it := todo.ParseQuickAdd(text)
+	text := strings.TrimSpace(strings.Join(args, " "))
+	if text == "" && !literal {
+		return usageErr(w, asJSON, `add needs text, e.g. shepherd add "buy milk @home !h"`)
+	}
+	it := todo.Item{Created: todo.Now()}
+	if err := applyInput(&it, text, lit, literal); err != nil {
+		return usageErr(w, asJSON, err.Error())
+	}
 	if it.Text == "" {
 		return usageErr(w, asJSON, "nothing to add after parsing tokens")
 	}
@@ -719,6 +830,14 @@ func cmdAdd(args []string, board string, w io.Writer) int {
 // parent (it's no longer all-done). <ref> must resolve to a top-level item.
 func cmdSub(args []string, board string, w io.Writer) int {
 	asJSON, args := extractJSON(args)
+	lit, literal, args, err := extractText(args)
+	var rev string
+	if err == nil {
+		rev, args, err = extractRev(args)
+	}
+	if err != nil {
+		return usageErr(w, asJSON, err.Error())
+	}
 	return locked(board, w, asJSON, func(path string, items []todo.Item) (int, error) {
 		if len(args) == 0 {
 			return usageErr(w, asJSON, `sub needs an item and text, e.g. shepherd sub 1 "parse tokens"`), nil
@@ -727,14 +846,17 @@ func cmdSub(args []string, board string, w io.Writer) int {
 		if !ok || s != 0 {
 			return refErr(w, asJSON, args[0], len(items)), nil
 		}
+		if code, bad := revConflict(w, asJSON, items[p-1], rev); bad {
+			return code, nil
+		}
 		text := strings.TrimSpace(strings.Join(args[1:], " "))
-		if text == "" {
+		if text == "" && !literal {
 			return usageErr(w, asJSON, `sub needs text, e.g. shepherd sub 1 "parse tokens"`), nil
 		}
-		if err := todo.CheckDates(text); err != nil {
+		sub := todo.Item{Created: todo.Now()}
+		if err := applyInput(&sub, text, lit, literal); err != nil {
 			return usageErr(w, asJSON, err.Error()), nil
 		}
-		sub := todo.ParseQuickAdd(text)
 		if sub.Text == "" {
 			return usageErr(w, asJSON, "nothing to add after parsing tokens"), nil
 		}
@@ -758,6 +880,14 @@ func cmdSub(args []string, board string, w io.Writer) int {
 // is replaced only when plain words are given (see todo.ApplyEdit).
 func cmdEdit(args []string, board string, w io.Writer) int {
 	asJSON, args := extractJSON(args)
+	lit, literal, args, err := extractText(args)
+	var rev string
+	if err == nil {
+		rev, args, err = extractRev(args)
+	}
+	if err != nil {
+		return usageErr(w, asJSON, err.Error())
+	}
 	return locked(board, w, asJSON, func(path string, items []todo.Item) (int, error) {
 		if len(args) == 0 {
 			return usageErr(w, asJSON, `edit needs an item and tokens, e.g. shepherd edit 2 "@home !h due:tomorrow"`), nil
@@ -766,31 +896,84 @@ func cmdEdit(args []string, board string, w io.Writer) int {
 		if !ok {
 			return refErr(w, asJSON, args[0], len(items)), nil
 		}
+		if code, bad := revConflict(w, asJSON, refItem(items, p, s), rev); bad {
+			return code, nil
+		}
 		text := strings.TrimSpace(strings.Join(args[1:], " "))
-		if text == "" {
+		if text == "" && !literal {
 			return usageErr(w, asJSON, `edit needs tokens, e.g. shepherd edit 2 "@home !h due:tomorrow"`), nil
 		}
-		if err := todo.CheckDates(text); err != nil {
+		it := &items[p-1]
+		if s > 0 {
+			it = &items[p-1].Subs[s-1]
+		}
+		if err := applyInput(it, text, lit, literal); err != nil {
 			return usageErr(w, asJSON, err.Error()), nil
 		}
-		if s == 0 {
-			todo.ApplyEdit(&items[p-1], text)
-		} else {
-			todo.ApplyEdit(&items[p-1].Subs[s-1], text)
+		if s > 0 {
 			todo.ReconcileParent(&items[p-1])
 		}
 		if err := store.Save(path, items); err != nil {
 			return 0, err
 		}
-		switch {
-		case asJSON:
-			return emitJSON(w, toJSON(items[p-1], p)), nil
-		case s == 0:
-			say(w, formatLine(p, items[p-1]))
-		default:
-			say(w, formatSub(p, s, items[p-1].Subs[s-1]))
+		return echoRef(w, asJSON, items, p, s), nil
+	})
+}
+
+// cmdClaim atomically claims an item for an agent: shepherd claim <ref> --by
+// <name>. It records the claimer and moves the item to the board's first
+// working status, failing (exit 1) if it's done or someone else holds it.
+// --release drops the claim (only the claimer's, unless --by is omitted) and
+// returns the item to the default status.
+func cmdClaim(args []string, board string, w io.Writer) int {
+	asJSON, args := extractJSON(args)
+	release, args := extractFlag(args, "--release")
+	by, _, args, err := extractOpt(args, "--by")
+	var rev string
+	if err == nil {
+		rev, args, err = extractRev(args)
+	}
+	if err != nil {
+		return usageErr(w, asJSON, err.Error())
+	}
+	by = strings.TrimSpace(by)
+	switch {
+	case by == "" && !release:
+		return usageErr(w, asJSON, `claim needs --by <name>, e.g. shepherd claim <id> --by agent-1`)
+	case strings.ContainsFunc(by, unicode.IsControl):
+		return usageErr(w, asJSON, "--by must be a single line")
+	case len(args) != 1:
+		return usageErr(w, asJSON, "claim takes exactly one item ref")
+	}
+	status := todo.ClaimStatus(store.ConfigStatusOrder())
+	return locked(board, w, asJSON, func(path string, items []todo.Item) (int, error) {
+		p, s, ok := resolveRef(args[0], items)
+		if !ok {
+			return refErr(w, asJSON, args[0], len(items)), nil
 		}
-		return 0, nil
+		if code, bad := revConflict(w, asJSON, refItem(items, p, s), rev); bad {
+			return code, nil
+		}
+		it := &items[p-1]
+		if s > 0 {
+			it = &items[p-1].Subs[s-1]
+		}
+		var cerr error
+		if release {
+			cerr = todo.Release(it, by)
+		} else {
+			cerr = todo.Claim(it, by, status)
+		}
+		if cerr != nil {
+			return conflictErr(w, asJSON, cerr.Error()), nil
+		}
+		if s > 0 {
+			todo.ReconcileParent(&items[p-1])
+		}
+		if err := store.Save(path, items); err != nil {
+			return 0, err
+		}
+		return echoRef(w, asJSON, items, p, s), nil
 	})
 }
 
@@ -800,10 +983,17 @@ func cmdEdit(args []string, board string, w io.Writer) int {
 // stays valid through the loop.
 func cmdToggle(args []string, board string, done bool, w io.Writer) int {
 	asJSON, args := extractJSON(args)
+	rev, args, err := extractRev(args)
+	if err != nil {
+		return usageErr(w, asJSON, err.Error())
+	}
 	return locked(board, w, asJSON, func(path string, items []todo.Item) (int, error) {
 		refs, bad, ok := parseRefs(args, items)
 		if !ok {
 			return refErr(w, asJSON, bad, len(items)), nil
+		}
+		if code, bad := refsRevConflict(w, asJSON, items, refs, rev); bad {
+			return code, nil
 		}
 		for _, r := range refs {
 			if r[1] == 0 {
@@ -834,10 +1024,17 @@ func cmdToggle(args []string, board string, done bool, w io.Writer) int {
 func cmdRemove(args []string, board string, w io.Writer) int {
 	asJSON, args := extractJSON(args)
 	dry, args := extractDryRun(args)
+	rev, args, err := extractRev(args)
+	if err != nil {
+		return usageErr(w, asJSON, err.Error())
+	}
 	return locked(board, w, asJSON, func(path string, items []todo.Item) (int, error) {
 		refs, bad, ok := parseRefs(args, items)
 		if !ok {
 			return refErr(w, asJSON, bad, len(items)), nil
+		}
+		if code, bad := refsRevConflict(w, asJSON, items, refs, rev); bad {
+			return code, nil
 		}
 		rmParent := map[int]bool{}      // parent index -> whole item removed
 		rmSub := map[int]map[int]bool{} // parent index -> sub indices removed
@@ -903,10 +1100,17 @@ func cmdRemove(args []string, board string, w io.Writer) int {
 // multi-archive is index-shift-safe like rm.
 func cmdArchive(args []string, board string, w io.Writer) int {
 	asJSON, args := extractJSON(args)
+	rev, args, err := extractRev(args)
+	if err != nil {
+		return usageErr(w, asJSON, err.Error())
+	}
 	return locked(board, w, asJSON, func(path string, items []todo.Item) (int, error) {
 		refs, bad, ok := parseRefs(args, items)
 		if !ok {
 			return refErr(w, asJSON, bad, len(items)), nil
+		}
+		if code, bad := refsRevConflict(w, asJSON, items, refs, rev); bad {
+			return code, nil
 		}
 		arcParent := map[int]bool{} // distinct parent indices to archive
 		for _, r := range refs {
