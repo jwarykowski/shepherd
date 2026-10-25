@@ -65,7 +65,7 @@ func TestRealCursor(t *testing.T) {
 		t.Errorf("cursor at %d,%d on %q", v.Cursor.X, v.Cursor.Y, line)
 	}
 
-	m = drive(m, "esc", "d", "n", "x")
+	m = drive(m, "esc", "enter", "n", "x")
 	v = m.View()
 	if v.Cursor == nil || !strings.Contains(ansi.Strip(strings.Split(v.Content, "\n")[v.Cursor.Y]), "x") {
 		t.Fatalf("note cursor %+v", v.Cursor)

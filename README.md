@@ -63,43 +63,48 @@ herdr plugin install jwarykowski/shepherd
 
 ## usage
 
+Keys like `gb` are a sequence: press `g`, then `b`. After `g` the footer lists
+what can follow; `esc` cancels. Every key can be rebound in `config.toml` (see
+[key bindings](#key-bindings)).
+
 | key | action |
 |-----|--------|
 | `j` / `↓`, `k` / `↑` | move |
+| `gg` / `G` | jump to the top / bottom |
+| `enter` | open detail view (shows every field) |
 | `space` | toggle done (on a parent, cascades to its subtasks; the last subtask done completes the parent) |
 | `tab` | cycle status (open → in-progress → done → open); see `statuses` config |
+| `a` | add item (inline syntax below); inherits the selected item's category unless the text names one |
+| `A` | add a subtask to the selected item |
+| `e` | edit item (or subtask) text |
+| `x` | delete item |
+| `X` | archive the selected item to `archive.md` (whole items only — dimmed on a subtask row) |
+| `C` | clear done: sweep all done items to `archive.md` |
 | `h` / `m` / `l` | set priority high / medium / low |
-| `g` | set category |
-| `T` | set tags (space- or comma-separated; empty clears) |
-| `t` | set due date — `today`, `tomorrow`, a weekday (`fri`, `friday`: the next one, never today), `3d`/`2w`/`5m`/`1y`, or `DD-MM-YYYY` (empty clears) |
-| `s` | set defer/start date (same formats as due; item shows dimmed with `starts Nd` until then) |
+| `c` | set category |
+| `t` | set tags (space- or comma-separated; empty clears) |
+| `d` | set due date — `today`, `tomorrow`, a weekday (`fri`, `friday`: the next one, never today), `3d`/`2w`/`5m`/`1y`, or `DD-MM-YYYY` (empty clears) |
+| `s` | set start (defer) date (same formats as due; item shows dimmed with `starts Nd` until then) |
 | `L` | set a reference link (url) |
 | `o` | open the selected item's link in the browser |
 | `y` | copy the selected item's title to the clipboard (OSC 52, so it works over SSH and in tmux with `set-clipboard on`) |
-| `a` | add item (inline syntax below); inherits the selected item's category unless the text names one |
-| `S` | add a subtask to the selected item |
-| `u` | edit item (or subtask) text |
-| `d` | open detail view (shows every field) |
 | `v` | cycle view: category / priority / tag / table / lane |
 | `←`/`→` | switch the active column in the [lane view](#lane-view) |
-| `F` | hide / show the footer help grid (the `jwarykowski/shepherd` · version line stays); `hidefooter` config sets the default |
-| `A` | toggle the [global view](#global-view) across all boards |
-| `b` | open the board picker — every board with done/total counts; `enter` jumps, `a` creates a board, `r` renames, `A` archives, `x` deletes (confirmed), `d` shows detail (name, dir, paths, counts) for the selected board (rename/archive/delete don't apply to the default board); `e` toggles the archived-boards view where `u` unarchives the selected board |
-| `e` | browse the archive (read-only; all boards in the global view; `esc` to leave) |
 | `/` | filter (text/note/category/tags/due/defer/link — also greps `archive.md`) |
-| `U` / `ctrl+r` | undo / redo (multi-level; an archive sweep saves the board and clears history) |
+| `u` / `ctrl+r` | undo / redo (multi-level; an archive sweep saves the board and clears history) |
 | `w` | save now (the header shows `● unsaved` / `● saved`) |
 | `ctrl+e` | open the markdown file in `$EDITOR` |
-| `,` | open settings — edit view, density, autosave, categories, statuses, footer; changes save to `config.toml` |
-| `ctrl+t` | theme picker — `j`/`k` preview each theme live, `enter` keeps it (saved to `config.toml`), `esc` restores the old one |
-| `x` | delete item |
-| `c` | sweep all done items to `archive.md` |
-| `C` | archive the selected item to `archive.md` (whole items only — dimmed on a subtask row) |
+| `gb` | open the board picker — every board with done/total counts; `enter` jumps, `a` creates a board, `r` renames, `A` archives, `x` deletes (confirmed), `d` shows detail (name, dir, paths, counts) for the selected board (rename/archive/delete don't apply to the default board); `e` toggles the archived-boards view where `u` unarchives the selected board |
+| `ga` | toggle the [global view](#global-view) across all boards |
+| `gh` | browse the archive (read-only; all boards in the global view; `esc` to leave) |
+| `gs` or `,` | open settings — edit view, density, autosave, categories, statuses, footer, mouse, theme; changes save to `config.toml` |
+| `gt` | theme picker — `j`/`k` preview each theme live, `enter` keeps it (saved to `config.toml`), `esc` restores the old one |
+| `gf` | hide / show the footer help grid (the `jwarykowski/shepherd` · version line stays); `hidefooter` config sets the default |
 | `?` | full help page |
 | `q` | save + quit |
 
-The detail view is also an editor: the same field keys work there — `u` text,
-`h`/`m`/`l` priority, `g` category, `T` tags, `t` due, `s` defer, `L` link, `tab`
+The detail view is also an editor: the same field keys work there — `e` text,
+`h`/`m`/`l` priority, `c` category, `t` tags, `d` due, `s` start, `L` link, `tab`
 status — and saving returns you to the detail view rather than the list. Plus
 `n` edit note (`esc`, or `shift+enter` in terminals with the Kitty keyboard protocol, finishes) · `space` toggle · `o` open link · `y` copy title · `esc` back ·
 `q` save + quit. Its footer is the same labelled key grid as the board's,
@@ -137,8 +142,8 @@ A kanban board: one column per configured `statuses` entry, cycled to with
 `v`. `←`/`→` switch the active column; `j`/`k` move within it. `tab` cycles the
 selected card's status same as everywhere else — in lane view that also moves
 it into the next column, cursor and all. Every other key still acts on the
-card under the cursor (`h`/`m`/`l` priority, `g` category, `T` tags, `t` due,
-`s` defer, `L` link, `o` open, `y` copy, `u` edit, `d` detail, `space` toggle,
+card under the cursor (`h`/`m`/`l` priority, `c` category, `t` tags, `d` due,
+`s` start, `L` link, `o` open, `y` copy, `e` edit, `enter` detail, `space` toggle,
 `x` delete). Not available in the [global view](#global-view), since boards
 can each configure different statuses.
 
@@ -158,13 +163,13 @@ shows a `done/total` badge:
     ○ update usage
 ```
 
-- `S` — add a subtask to the selected item (same quick-add syntax as `a`).
+- `A` — add a subtask to the selected item (same quick-add syntax as `a`).
 - On a subtask row every per-item key works as it does on a parent: `space`
-  toggle, `tab` status, `u` text, `h`/`m`/`l` priority, `t` due, `s` defer,
+  toggle, `tab` status, `e` text, `h`/`m`/`l` priority, `d` due, `s` start,
   `L` link, `o` open link, `x` delete. Overdue/defer labels show on the row.
-- `d` opens the subtask's detail view — its own fields plus a `parent` line
+- `enter` opens the subtask's detail view — its own fields plus a `parent` line
   naming the task it belongs to; edit its note there with `n`, same as a parent.
-- `g` (category) is the one exception — it's parent-only, since a subtask shares
+- `c` (category) is the one exception — it's parent-only, since a subtask shares
   its parent's board; it's dimmed in the footer on a subtask row. Set a
   subtask's fields at creation from the CLI too:
   `shepherd sub <n> "text @home !h due:tomorrow defer:1w link:https://…"`.
@@ -211,8 +216,8 @@ command = ["./bin/shepherd", "--board", "work"]
 ## global view
 
 See every board at once — the default plus all named boards — in one **read-only**
-view. Launch with `--all`, or press `A` from any board to toggle in and out
-(your board is saved first, and `A` again drops you back on it).
+view. Launch with `--all`, or press `ga` from any board to toggle in and out
+(your board is saved first, and `ga` again drops you back on it).
 
 ```sh
 shepherd --all        # aggregate of every board
@@ -224,8 +229,8 @@ board grouping each board is a header; in the others every row carries a
 editing stays on the focused board, so the aggregate is never written back.
 `/` filters across boards (including by board name).
 
-Only the keys that read or navigate work here — `j`/`k`, `d`, `v`, `/`, `e`, `b`,
-`o`, `y`, `F`, `?`, `A`/`esc` to leave, `q` to quit. Every editing key is inert
+Only the keys that read or navigate work here — `j`/`k`, `gg`/`G`, `enter`, `v`,
+`/`, `gh`, `gb`, `o`, `y`, `gf`, `gt`, `?`, `ga`/`esc` to leave, `q` to quit. Every editing key is inert
 and shown dimmed in the footer, on the board and in the detail view alike.
 
 The command API mirrors it: `shepherd list --all` (see [command api](#command-api)).
@@ -464,16 +469,67 @@ theme = "ansi"                             # ansi (default) | catppuccin | dracu
 - `view` — default grouping/layout on launch (`v` still cycles at runtime).
 - `density` — `comfort` adds outer padding and blank lines between rows.
 - `autosave` — idle seconds before an unsaved board is written to disk (default 60); `0` disables it, so only `w` and quit save.
-- `categories` — press `tab` in the category prompt (`g`) to cycle through them.
+- `categories` — press `tab` in the category prompt (`c`) to cycle through them.
 - `statuses` — ordered list `tab` cycles through in the list; `done` is always kept and forced last. Defaults to `["open", "done"]`. Intermediate statuses persist as a `status:` line and show a `◐` glyph; [`shepherd stats`](#stats) breaks items down by status in this order.
-- `hidefooter` — start with the footer help grid hidden for a cleaner board (the `jwarykowski/shepherd` · version line stays); `F` toggles it at runtime.
+- `hidefooter` — start with the footer help grid hidden for a cleaner board (the `jwarykowski/shepherd` · version line stays); `gf` toggles it at runtime.
 - `mouse` — wheel scrolling, click to select a row or card, double-click for its detail. Off by default because it takes over the terminal's own text selection (hold `shift` to select while it's on).
 - `theme` — the colour palette for the board and `shepherd stats`. `ansi` uses your terminal's own 16 colours, so it follows your terminal theme; the others are fixed palettes with light and dark variants, picked from the terminal's background (and downsampled on 256- or 16-colour terminals). `mono` drops colour for bold/faint only. Override single colours with `theme.<token> = "<colour>"`: tokens are `accent` (group headers), `ok`, `info`, `warn`, `rule`, `muted`, `cursor` (row highlight), `prio_high`, `prio_med`, `prio_low`; a colour is a palette index (`0`-`255`), `#rrggbb`, an ANSI name (`red`, `bright-blue`, `grey`), or `none`. Overrides apply on top of whichever theme is active.
 
-Edit these in the running board with `,` (settings): `enter` cycles `view`/`density`/`footer`/`mouse`/`theme` (previewed live) and edits `autosave`/`categories`/`statuses`, and each change is written straight back to `config.toml`. shepherd owns the file — a settings save rewrites the managed keys.
+Edit these in the running board with `gs` or `,` (settings): `enter` cycles `view`/`density`/`footer`/`mouse`/`theme` (previewed live) and edits `autosave`/`categories`/`statuses`, and each change is written straight back to `config.toml`. shepherd owns the file — a settings save rewrites the managed keys.
 
 herdr pane placement (`placement` / `direction`) lives in the same file — see
 [herdr integration](#herdr-integration).
+
+### key bindings
+
+Rebind any board key with `key.<action> = "<keys>"`. Separate several keys with
+commas; a space makes a two-key sequence:
+
+```toml
+key.due    = "t"           # one key
+key.tags   = "T"
+key.up     = "k, up"       # several keys
+key.boards = "g b, B"      # a sequence and a single key
+key.prio   = "1, 2, 3"     # always three: high, medium, low
+```
+
+Actions: `up`, `down`, `top`, `bottom`, `lane_left`, `lane_right`, `toggle`,
+`detail`, `view`, `global`, `archive_view`, `boards`, `footer`, `add`,
+`add_sub`, `edit`, `status`, `delete`, `sweep`, `archive`, `prio`, `category`,
+`tags`, `due`, `defer`, `link`, `open`, `copy`, `note`, `save`, `editor`,
+`undo`, `redo`, `filter`, `settings`, `theme`, `help`. Key names are as Bubble
+Tea reports them: a character (`x`, `X`, `/`), `space`, `enter`, `tab`,
+`up`/`down`/`left`/`right`, `home`/`end`, `ctrl+<key>`, `alt+<key>`, and
+`comma` for `,` alongside other keys (`"comma, g s"`).
+
+Overrides are checked when the board starts, so two actions can swap keys. One
+that names an unknown action, has no keys, uses `esc`, `q` or `ctrl+c`, or
+clashes with another binding (including a single key that is also the start of
+a sequence) is ignored, and the board says so in the footer until the next key.
+`esc` and `q` always back out and quit. The footer and `?` help show your
+bindings. Pickers and prompts (boards, settings, archive, text entry) keep their
+fixed keys.
+
+To keep the old layout (0.20 and earlier), paste this:
+
+```toml
+key.detail = "d"
+key.edit = "u"
+key.undo = "U"
+key.add_sub = "S"
+key.archive = "C"
+key.sweep = "c"
+key.category = "g"
+key.tags = "T"
+key.due = "t"
+key.boards = "b"
+key.global = "A"
+key.archive_view = "e"
+key.footer = "F"
+key.theme = "ctrl+t"
+key.top = "home"
+key.settings = ","
+```
 
 ## storage
 

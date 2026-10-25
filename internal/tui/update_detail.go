@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"fmt"
+
 	binding "charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 )
@@ -19,13 +21,13 @@ func (m *model) afterFieldEdit() mode {
 // detailFieldKeys are the list's field editors reused from the detail view, so
 // the item can be changed while you're looking at it. They're delegated to
 // updateList rather than reimplemented — it already guards parent-only fields and
-// resorts/re-places the cursor. Keys the detail view handles itself (n, space, o,
-// esc, q) never reach here; x/delete is deliberately list-only.
+// resorts/re-places the cursor. Keys the detail view handles itself (note, open,
+// copy, back, quit) never reach here; delete is deliberately list-only.
 var detailFieldKeys = []binding.Binding{
 	keys.Edit, keys.Category, keys.Tags, keys.Due, keys.Defer, keys.Link, keys.Prio, keys.Status, keys.Toggle,
 }
 
-func (m model) updateDetail(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+func (m model) updateDetail(msg fmt.Stringer) (tea.Model, tea.Cmd) {
 	ref := m.selRef()
 	if ref.item < 0 {
 		switch {

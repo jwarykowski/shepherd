@@ -71,7 +71,7 @@ func TestNoteEditorKeepsItsItem(t *testing.T) {
 	m := model{input: textinput.New(), note: textarea.New(), filter: "zz", items: []todo.Item{
 		{Text: "a", Note: "zz"}, {Text: "b zz"},
 	}}
-	m = drive(m, "d", "n")
+	m = drive(m, "enter", "n")
 	for range 3 {
 		nm, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyBackspace})
 		m = nm.(model)
@@ -87,7 +87,7 @@ func TestRenameSavesOpenBoard(t *testing.T) {
 	base := tempHome(t)
 	_ = os.WriteFile(filepath.Join(base, "boards", "web.md"), []byte("- [ ] one\n- [ ] two\n"), 0o644)
 	m := newModel("web")
-	m = drive(m, "x", "b", "r")
+	m = drive(m, "x", "g", "b", "r")
 	m.input.SetValue("web2")
 	m = drive(m, "enter")
 	if got := store.Load(filepath.Join(base, "boards", "web2.md")); len(got) != 1 {
@@ -102,7 +102,7 @@ func TestSweepCannotBeUndone(t *testing.T) {
 	p := filepath.Join(dir, "todo.md")
 	_ = os.WriteFile(p, []byte("- [x] done one\n- [ ] keep me\n"), 0o644)
 	m := model{path: p, input: textinput.New(), items: store.Load(p)}
-	m = drive(m, "c", "U")
+	m = drive(m, "C", "u")
 	if texts(m.items)["done one"] || texts(store.Load(p))["done one"] {
 		t.Fatal("undo put the swept item back on the board; it's also in archive.md")
 	}
@@ -115,7 +115,7 @@ func TestLaneDetailSpaceStaysOnCard(t *testing.T) {
 		input: textinput.New(), view: viewLane, statuses: []string{"open", "done"},
 		items: []todo.Item{{Text: "one"}, {Text: "two"}},
 	}
-	m = drive(m, "d", " ")
+	m = drive(m, "enter", " ")
 	if !lastByText(m, "one").Done || m.mode != modeDetail {
 		t.Fatalf("first space: one done=%v mode=%d", lastByText(m, "one").Done, m.mode)
 	}

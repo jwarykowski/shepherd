@@ -94,7 +94,7 @@ func (m model) clickRow(msg rowClickMsg) (tea.Model, tea.Cmd) {
 	m.clamp()
 	if again {
 		m.lastClick = rowClickMsg{}
-		return m.dispatchKey(tea.KeyPressMsg{Code: 'd', Text: "d"})
+		return m.boardKey(chord(keys.Detail.Keys()[0]))
 	}
 	m.lastClick = msg
 	return m, nil
@@ -107,6 +107,14 @@ func (m model) wheel(msg tea.MouseWheelMsg) (tea.Model, tea.Cmd) {
 	case modeList, modeHelp, modeArchive, modeBoards, modeSettings, modeTheme:
 	default:
 		return m, nil
+	}
+	if m.mode == modeList { // the board keys may be rebound
+		switch msg.Button {
+		case tea.MouseWheelDown:
+			return m.boardKey(chord(keys.Down.Keys()[0]))
+		case tea.MouseWheelUp:
+			return m.boardKey(chord(keys.Up.Keys()[0]))
+		}
 	}
 	switch msg.Button {
 	case tea.MouseWheelDown:

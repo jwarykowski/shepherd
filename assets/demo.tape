@@ -50,9 +50,9 @@ Space
 Sleep 1.8s
 
 # detail view, then tag it from there
-Type "d"
+Enter
 Sleep 2.2s
-Type "T"
+Type "t"
 Sleep 600ms
 Type "docs,launch"
 Sleep 600ms
@@ -76,6 +76,18 @@ Type "release"
 Sleep 1.8s
 Escape
 Sleep 1.2s
+
+# g shows its sequences; gt opens the theme picker
+Type "g"
+Sleep 1.5s
+Type "t"
+Sleep 1.2s
+Type "j"
+Sleep 1.2s
+Type "j"
+Sleep 1.2s
+Escape
+Sleep 1s
 
 Type "q"
 Sleep 1.5s

@@ -79,7 +79,7 @@ func TestBoardsPickerJump(t *testing.T) {
 		items: store.Load(filepath.Join(base, "todo.md")),
 	}
 
-	m = drive(m, "b") // open picker
+	m = drive(m, "g", "b") // open picker
 	if m.mode != modeBoards {
 		t.Fatalf("b did not open picker, mode=%d", m.mode)
 	}
@@ -185,7 +185,7 @@ func TestBoardPickerActions(t *testing.T) {
 	}
 
 	// archive: move cursor to api (row 1) and press A
-	m = drive(m, "b", "j", "A")
+	m = drive(m, "g", "b", "j", "A")
 	if _, err := os.Stat(store.TodoPathFor("api")); err == nil {
 		t.Fatal("A did not archive the selected board")
 	}
@@ -253,7 +253,7 @@ func TestBoardUnarchive(t *testing.T) {
 	m := model{path: filepath.Join(base, "todo.md"), board: "", input: textinput.New()}
 
 	// archive web (row 1), then toggle to the archived view with e
-	m = drive(m, "b", "j", "A", "e")
+	m = drive(m, "g", "b", "j", "A", "e")
 	if !m.projArchived || len(m.projRows) != 1 || m.projRows[0].Name != "web" {
 		t.Fatalf("archived view not showing web: archived=%v rows=%+v", m.projArchived, m.projRows)
 	}
@@ -295,7 +295,7 @@ func TestModelActions(t *testing.T) {
 	if len(m.items) != before-1 {
 		t.Fatal("delete (x) failed")
 	}
-	m = drive(m, "c")
+	m = drive(m, "C")
 	for _, it := range m.items {
 		if it.Done {
 			t.Fatal("clear left a done item")
@@ -310,10 +310,10 @@ func TestSubtasks(t *testing.T) {
 	}
 
 	// S adds a subtask to the selected parent
-	m = drive(m, "S")
+	m = drive(m, "A")
 	m.input.SetValue("step one")
 	m = drive(m, "enter")
-	m = drive(m, "S")
+	m = drive(m, "A")
 	m.input.SetValue("step two")
 	m = drive(m, "enter")
 	if len(m.items[0].Subs) != 2 {
@@ -338,7 +338,7 @@ func TestSubtasks(t *testing.T) {
 	}
 
 	// undo restores the prior sub state (deep-copy snapshot, not shared slice)
-	m = drive(m, "U")
+	m = drive(m, "u")
 	if m.items[0].Done || m.items[0].Subs[1].Done {
 		t.Fatalf("undo did not restore sub state: %+v", m.items[0])
 	}
@@ -354,11 +354,11 @@ func TestSubtasks(t *testing.T) {
 	}
 
 	// category (g) stays parent-only: a no-op on a sub row
-	if got := drive(m, "g"); got.mode != modeList {
+	if got := drive(m, "c"); got.mode != modeList {
 		t.Fatalf("g on a subtask row should be a no-op, entered mode %d", got.mode)
 	}
 	// due/defer/link DO work on a sub: set a due date via t
-	m = drive(m, "t")
+	m = drive(m, "d")
 	m.input.SetValue("tomorrow")
 	m = drive(m, "enter")
 	if m.items[0].Subs[ref.sub].Due == "" {
@@ -417,7 +417,7 @@ func TestSetCategory(t *testing.T) {
 		{Text: "a", Category: "work"}, {Text: "b"},
 	}}
 	todo.Sort(m.items, false)
-	m = drive(m, "g")
+	m = drive(m, "c")
 	m.input.SetValue("home")
 	m = drive(m, "enter")
 	if m.items[0].Category != "home" || m.items[0].Text != "a" {
@@ -520,7 +520,7 @@ func lastByText(m model, text string) todo.Item {
 
 func TestDetailNote(t *testing.T) {
 	m := model{input: textinput.New(), note: textarea.New(), items: []todo.Item{{Text: "task"}}}
-	m = drive(m, "d")
+	m = drive(m, "enter")
 	if m.mode != modeDetail {
 		t.Fatal("d did not open detail")
 	}
@@ -693,7 +693,7 @@ func TestTagEditor(t *testing.T) {
 		items: []todo.Item{{Text: "wire the webhook"}},
 	}
 
-	m = drive(m, "T")
+	m = drive(m, "t")
 	if m.mode != modeTags {
 		t.Fatalf("T did not open the tag editor: mode=%d", m.mode)
 	}
@@ -707,8 +707,8 @@ func TestTagEditor(t *testing.T) {
 	}
 
 	// from the detail view: T opens the editor and saving lands back on detail
-	m = drive(m, "d")
-	m = drive(m, "T")
+	m = drive(m, "enter")
+	m = drive(m, "t")
 	if m.mode != modeTags || !m.fieldEdit {
 		t.Fatalf("T from detail did not open the editor: mode=%d fieldEdit=%v", m.mode, m.fieldEdit)
 	}
@@ -723,7 +723,7 @@ func TestTagEditor(t *testing.T) {
 
 	// while editing, the item stays on screen — prompt in the detail footer, not
 	// the list's
-	m = drive(m, "T")
+	m = drive(m, "t")
 	m.input.SetValue("ops")
 	if out := ansi.Strip(m.render()); !strings.Contains(out, "(tags: enter=save esc=cancel)") ||
 		!strings.Contains(out, "task") || strings.Contains(out, "j/k") {
@@ -732,7 +732,7 @@ func TestTagEditor(t *testing.T) {
 	m = drive(m, "enter")
 
 	// esc from a detail-opened editor also returns to detail, unchanged
-	m = drive(m, "T")
+	m = drive(m, "t")
 	m.input.SetValue("nope")
 	m = drive(m, "esc")
 	if m.mode != modeDetail || len(m.items[0].Tags) != 1 {
@@ -763,7 +763,7 @@ func TestTagEditor(t *testing.T) {
 	}
 
 	// empty clears
-	m = drive(m, "esc", "T")
+	m = drive(m, "esc", "t")
 	m.input.SetValue("")
 	m = drive(m, "enter")
 	if len(m.items[0].Tags) != 0 {
@@ -829,10 +829,9 @@ func TestDetailNoteWraps(t *testing.T) {
 }
 
 func TestView(t *testing.T) {
-	// height 21: one more than the two-item body needs, so the footer's help
-	// grid (now one row taller for the lane view's ←/→ hint) doesn't window out
-	// the uncategorized group.
-	m := model{input: textinput.New(), w: 50, height: 21, items: []todo.Item{
+	// height 22: one more than the two-item body needs, so the footer's help
+	// grid (ten rows tall) doesn't window out the uncategorized group.
+	m := model{input: textinput.New(), w: 50, height: 22, items: []todo.Item{
 		{Text: "ship release", Prio: 'H', Category: "work"},
 		{Text: "buy milk"},
 	}}
@@ -850,7 +849,7 @@ func TestView(t *testing.T) {
 			t.Fatalf("view missing %q", want)
 		}
 	}
-	if got := strings.Count(v, "\n") + 1; got != 21 {
+	if got := strings.Count(v, "\n") + 1; got != 22 {
 		t.Fatalf("frame not pinned to height: %d rows", got)
 	}
 }
@@ -949,7 +948,7 @@ func TestDirtyUndoRedo(t *testing.T) {
 	if !m.dirty {
 		t.Fatal("edit should mark dirty")
 	}
-	m = drive(m, "U") // undo back to the saved content
+	m = drive(m, "u") // undo back to the saved content
 	if m.dirty {
 		t.Fatal("undo to saved state should be clean")
 	}
@@ -957,7 +956,7 @@ func TestDirtyUndoRedo(t *testing.T) {
 	if !m.dirty {
 		t.Fatal("redo away from saved state should be dirty")
 	}
-	m = drive(m, "U") // undo again → clean
+	m = drive(m, "u") // undo again → clean
 	m = drive(m, "v") // view switch reorders items but changes nothing
 	if m.dirty {
 		t.Fatal("view switch should not mark dirty")
@@ -971,11 +970,11 @@ func TestUndoRedo(t *testing.T) {
 	if len(m.items) != 0 {
 		t.Fatalf("deletes failed: %+v", m.items)
 	}
-	m = drive(m, "U")
+	m = drive(m, "u")
 	if len(m.items) != 1 || m.items[0].Text != "b" {
 		t.Fatalf("undo 1 wrong: %+v", m.items)
 	}
-	m = drive(m, "U")
+	m = drive(m, "u")
 	if len(m.items) != 2 || m.items[0].Text != "a" {
 		t.Fatalf("undo 2 wrong: %+v", m.items)
 	}
@@ -1031,7 +1030,7 @@ func TestArchive(t *testing.T) {
 	p := filepath.Join(dir, "todo.md")
 	_ = os.WriteFile(p, []byte("- [x] done one\n- [ ] keep me\n"), 0o644)
 	m := model{path: p, input: textinput.New(), items: store.Load(p)}
-	m = drive(m, "c")
+	m = drive(m, "C")
 	if len(m.items) != 1 || m.items[0].Text != "keep me" {
 		t.Fatalf("archive left wrong items: %+v", m.items)
 	}
@@ -1047,7 +1046,7 @@ func TestArchiveSelected(t *testing.T) {
 	p := filepath.Join(dir, "todo.md")
 	_ = os.WriteFile(p, []byte("- [ ] first\n- [ ] second\n"), 0o644)
 	m := model{path: p, input: textinput.New(), items: store.Load(p)}
-	m = drive(m, "j", "C") // cursor onto "second", archive it
+	m = drive(m, "j", "X") // cursor onto "second", archive it
 	if len(m.items) != 1 || m.items[0].Text != "first" {
 		t.Fatalf("C left wrong items: %+v", m.items)
 	}
@@ -1064,7 +1063,7 @@ func TestArchiveSelectedSkipsSubtask(t *testing.T) {
 	m := model{path: p, input: textinput.New(), items: []todo.Item{
 		{Text: "parent", Subs: []todo.Item{{Text: "child"}}},
 	}}
-	m = drive(m, "j", "C") // cursor on the subtask row
+	m = drive(m, "j", "X") // cursor on the subtask row
 	if len(m.items) != 1 || len(m.items[0].Subs) != 1 {
 		t.Fatalf("C on a subtask must not archive: %+v", m.items)
 	}
@@ -1100,7 +1099,7 @@ func TestArchiveBrowse(t *testing.T) {
 		w:        80, height: 24,
 	}
 
-	m = drive(m, "e")
+	m = drive(m, "g", "h")
 	if m.mode != modeArchive || len(m.arcRows) != 2 {
 		t.Fatalf("e should open archive with 2 rows: mode=%d rows=%d", m.mode, len(m.arcRows))
 	}
@@ -1474,13 +1473,13 @@ func TestGlobalReadOnly(t *testing.T) {
 
 	// the footer grid shows F and A as live here, so they must actually work: F
 	// toggles the footer, A leaves the aggregate the same way it entered it
-	if got := drive(m, "F"); !got.hideFooter {
+	if got := drive(m, "g", "f"); !got.hideFooter {
 		t.Fatal("F did not toggle the footer in the global view")
 	}
 	dir := t.TempDir() // toggling out rebuilds the board from disk
 	t.Setenv("SHEPHERD_TODO_FILE", filepath.Join(dir, "todo.md"))
 	t.Setenv("SHEPHERD_CONFIG", filepath.Join(dir, "config.toml"))
-	if got := drive(m, "A"); got.global {
+	if got := drive(m, "g", "a"); got.global {
 		t.Fatal("A should toggle back to the focused board")
 	}
 
@@ -1516,7 +1515,7 @@ func TestFooterToggle(t *testing.T) {
 	if m.hideFooter || !strings.Contains(m.listFooter(), "toggle") {
 		t.Fatal("help grid should be shown by default")
 	}
-	m = drive(m, "F")
+	m = drive(m, "g", "f")
 	if !m.hideFooter {
 		t.Fatal("F should set hideFooter")
 	}
@@ -1527,7 +1526,7 @@ func TestFooterToggle(t *testing.T) {
 	if !strings.Contains(foot, repoName) {
 		t.Fatalf("repo/version line should stay visible; footer=%q", foot)
 	}
-	m = drive(m, "F")
+	m = drive(m, "g", "f")
 	if m.hideFooter || !strings.Contains(m.listFooter(), "toggle") {
 		t.Fatal("F should toggle the help grid back on")
 	}
@@ -1550,7 +1549,7 @@ func TestPasteIntoEditors(t *testing.T) {
 	if m.filter != "bank" || len(m.rows()) != 1 {
 		t.Fatalf("filter paste = %q, rows %d", m.filter, len(m.rows()))
 	}
-	m = drive(m, "enter", "d", "n")
+	m = drive(m, "enter", "enter", "n")
 	paste("from the clipboard")
 	if m.items[0].Note != "from the clipboard" {
 		t.Fatalf("note paste = %q", m.items[0].Note)

@@ -1,11 +1,13 @@
 package tui
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"runtime"
 	"shepherd/internal/store"
 	"shepherd/internal/todo"
+	"slices"
 	"strings"
 	"time"
 
@@ -421,12 +423,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // updateGlobal handles keys in the read-only global view. It deliberately has
 // no mutation cases — read-only is structural here, not a per-case guard — and
 // never saves the aggregate to disk.
-func (m model) updateGlobal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+func (m model) updateGlobal(msg fmt.Stringer) (tea.Model, tea.Cmd) {
 	rows := m.rows()
 	switch {
 	case binding.Matches(msg, keys.Quit):
 		return m.quit()
-	case binding.Matches(msg, keys.Back, keys.Global): // A toggles both ways, like it does on a board
+	case binding.Matches(msg, keys.Back, keys.Global): // toggles both ways, like it does on a board
 		m.toggleGlobal()
 	case binding.Matches(msg, keys.Footer):
 		m.hideFooter = !m.hideFooter
@@ -438,6 +440,10 @@ func (m model) updateGlobal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if m.cursor > 0 {
 			m.cursor--
 		}
+	case binding.Matches(msg, keys.Top):
+		m.cursor = 0
+	case binding.Matches(msg, keys.Bottom):
+		m.cursor = max(len(rows)-1, 0)
 	case binding.Matches(msg, keys.View):
 		var cur todo.Item
 		has := m.sel() >= 0
@@ -508,7 +514,7 @@ func (m model) quit() (tea.Model, tea.Cmd) {
 	return m, tea.Quit
 }
 
-func (m model) updateList(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+func (m model) updateList(msg fmt.Stringer) (tea.Model, tea.Cmd) {
 	rows := m.cursorRows()
 	ref := m.selRef()
 	idx := ref.item
@@ -526,6 +532,10 @@ func (m model) updateList(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if m.cursor > 0 {
 			m.cursor--
 		}
+	case binding.Matches(msg, keys.Top):
+		m.cursor = 0
+	case binding.Matches(msg, keys.Bottom):
+		m.cursor = max(len(rows)-1, 0)
 	case binding.Matches(msg, keys.LaneLeft):
 		if m.view == viewLane && m.lane > 0 {
 			m.lane--
@@ -630,7 +640,7 @@ func (m model) updateList(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 	case binding.Matches(msg, keys.Prio):
 		if idx >= 0 {
-			p := strings.ToUpper(msg.String())[0]
+			p := "HML"[slices.Index(keys.Prio.Keys(), msg.String())]
 			if ref.sub >= 0 { // subtask priority: set in place, no resort
 				m.beforeMutate()
 				sub := &m.items[idx].Subs[ref.sub]
@@ -1005,6 +1015,34 @@ func (m model) updateInput(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+// chordKey collects two-key sequences ("g b") on the board views: a key that
+// starts one waits for the next, and the pair is matched as a single key.
+func (m model) chordKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	m.keyNotice = ""
+	if m.pending != "" {
+		k := chord(m.pending + " " + msg.String())
+		m.pending = ""
+		return m.boardKey(k)
+	}
+	if chordPrefix(msg.String()) {
+		m.pending = msg.String()
+		return m, nil
+	}
+	return m.boardKey(msg)
+}
+
+// boardKey routes a key or completed sequence to the list, global or detail
+// handler.
+func (m model) boardKey(k fmt.Stringer) (tea.Model, tea.Cmd) {
+	switch {
+	case m.mode == modeDetail:
+		return m.updateDetail(k)
+	case m.global:
+		return m.updateGlobal(k)
+	}
+	return m.updateList(k)
+}
+
 // dispatchKey routes a key press to the open mode's handler.
 func (m model) dispatchKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if msg.String() == "ctrl+c" { // universal abort, reaches text/detail/help/confirm too
@@ -1019,8 +1057,6 @@ func (m model) dispatchKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		res, cmd = m.updateConfirmDelete(msg)
 	case modeNote:
 		res, cmd = m.updateNote(msg)
-	case modeDetail:
-		res, cmd = m.updateDetail(msg)
 	case modeHelp:
 		res, cmd = m.updateHelp(msg)
 	case modeArchive:
@@ -1035,12 +1071,8 @@ func (m model) dispatchKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		res, cmd = m.updateSettingEdit(msg)
 	case modeTheme:
 		res, cmd = m.updateTheme(msg)
-	default:
-		if m.global {
-			res, cmd = m.updateGlobal(msg)
-		} else {
-			res, cmd = m.updateList(msg)
-		}
+	default: // list, global and detail views
+		res, cmd = m.chordKey(msg)
 	}
 	if nm, ok := res.(model); ok {
 		nm.refreshDirty() // one compare per event, not per render

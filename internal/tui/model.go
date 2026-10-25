@@ -37,6 +37,7 @@ type config struct {
 	mouse      bool              // wheel scrolling and click-to-select (off: the terminal keeps text selection)
 	theme      string            // built-in theme name (see theme.Names)
 	themeKV    map[string]string // theme.<token> colour overrides, kept verbatim from the file
+	keyKV      map[string]string // key.<action> binding overrides (see applyKeys)
 }
 
 // loadConfig reads a tiny key=value config (leniently TOML-ish):
@@ -81,6 +82,12 @@ func loadConfig(path string) config {
 				c.themeKV = map[string]string{}
 			}
 			c.themeKV[k] = v
+		}
+		if strings.HasPrefix(k, "key.") {
+			if c.keyKV == nil {
+				c.keyKV = map[string]string{}
+			}
+			c.keyKV[k] = v
 		}
 	}
 	c.statuses = normalizeStatuses(c.statuses)
@@ -275,6 +282,8 @@ type model struct {
 	projCur       int               // cursor into projRows
 	projArchived  bool              // picker is showing archived boards (unarchive-only)
 	projNotice    string            // transient picker error (e.g. invalid/duplicate board name)
+	keyNotice     string            // key.<action> overrides that were ignored; cleared on the next key
+	pending       string            // first key of a sequence awaiting its second (see chordKey)
 	projPending   string            // board whose working dir is being set (modeBoardDir)
 	projDirEdit   bool              // dir editor opened from the detail view (empty clears, return to detail); false = creation flow (empty skips)
 	fieldEdit     bool              // a field editor was opened from the item detail view, so save/cancel returns there instead of the list
@@ -367,6 +376,7 @@ func newModel(board string) model {
 		mouse:         cfg.mouse,
 		theme:         cfg.theme,
 		themeKV:       cfg.themeKV,
+		keyNotice:     strings.Join(applyKeys(cfg.keyKV), "; "),
 	}
 	m.applyTheme()
 	m.reload()

@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	binding "charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/table"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -350,7 +351,7 @@ func (m model) listView() string {
 		if m.filter != "" {
 			out = append(out, dimStyle.Render("(no matches)"))
 		} else {
-			out = append(out, dimStyle.Render("(empty — press a to add)"))
+			out = append(out, dimStyle.Render("(empty — press "+keys.Add.Help().Key+" to add)"))
 		}
 	}
 	lastGroup := "\x00" // sentinel so the first group always prints a header
@@ -736,11 +737,34 @@ func (m model) listFooter() string {
 	case modeAdd, modeAddSub, modeEdit, modeCategory, modeTags, modeDue, modeDefer, modeLink:
 		return rule + "\n" + m.inputPrompt()
 	default:
-		if m.hideFooter { // keep the repo/version line; drop the help grid
+		grid := m.helpGrid()
+		switch {
+		case m.pending != "":
+			grid = m.chordMenu()
+		case m.keyNotice != "":
+			grid = m.st().warn.Render(ansi.Truncate(m.keyNotice, m.width(), "…")) + "\n" + grid
+		case m.hideFooter: // keep the repo/version line; drop the help grid
 			return rule + "\n" + m.bottomBar()
 		}
-		return rule + "\n" + m.helpGrid() + "\n" + rule + "\n" + m.bottomBar()
+		return rule + "\n" + grid + "\n" + rule + "\n" + m.bottomBar()
 	}
+}
+
+// chordMenu lists what can follow the pending first key of a sequence.
+func (m model) chordMenu() string {
+	var parts []string
+	for _, nb := range keys.bindings() {
+		for _, k := range nb.b.Keys() {
+			if rest, ok := strings.CutPrefix(k, m.pending+" "); ok {
+				desc := nb.b.Help().Desc
+				if desc == "" { // the second half of a pair (j/k, gg/G)
+					desc = nb.name
+				}
+				parts = append(parts, rest+" "+dimStyle.Render(desc))
+			}
+		}
+	}
+	return ansi.Wordwrap(m.pending+" … "+strings.Join(parts, " · ")+" · "+dimStyle.Render("esc cancel"), m.width(), " ")
 }
 
 // inputPrompt is the active field editor's line: the text input and what enter
@@ -761,7 +785,7 @@ type keyCol struct {
 // helpGrid is the list footer's key hints.
 func (m model) helpGrid() string {
 	cols := []keyCol{
-		{"move", entries(keys.Up, keys.LaneLeft, keys.Toggle, keys.Detail, keys.View, keys.Global, keys.ArchiveView, keys.Boards, keys.Footer)},
+		{"move", entries(keys.Up, keys.Top, keys.LaneLeft, keys.Toggle, keys.Detail, keys.View, keys.Global, keys.ArchiveView, keys.Boards, keys.Footer)},
 		{"edit", entries(keys.Add, keys.AddSub, keys.Edit, keys.Status, keys.Delete, keys.Sweep, keys.Archive)},
 		{"fields", entries(keys.Prio, keys.Category, keys.Tags, keys.Due, keys.Defer, keys.Link, keys.Open, keys.Copy)},
 		{"board", entries(keys.Save, keys.Editor, keys.Undo, keys.Redo, keys.Filter, keys.Settings, keys.Theme, keys.Help, keys.Quit)},
@@ -769,10 +793,10 @@ func (m model) helpGrid() string {
 
 	// In the read-only global view most actions are inert; dim them so only the
 	// keys that do something (navigate / inspect / leave) read as live.
-	globalActive := keySet(keys.Up, keys.Detail, keys.View, keys.Filter, keys.Global, keys.ArchiveView, keys.Open, keys.Copy, keys.Boards, keys.Footer, keys.Theme, keys.Help, keys.Quit)
+	globalActive := keySet(keys.Up, keys.Top, keys.Detail, keys.View, keys.Filter, keys.Global, keys.ArchiveView, keys.Open, keys.Copy, keys.Boards, keys.Footer, keys.Theme, keys.Help, keys.Quit)
 
 	// On a subtask row category is parent-only (subs share the parent's board);
-	// dim it. Archive (C) takes whole items only, so it's inert on a subtask too.
+	// dim it. Archive takes whole items only, so it's inert on a subtask too.
 	// Due / defer / link / status all work on subtasks. `o` opens the link, so dim
 	// it too when this subtask has none.
 	onSub := !m.global && m.selRef().sub >= 0
@@ -1048,43 +1072,50 @@ func (m model) helpBody() []string {
 	}
 	blank := func() { out = append(out, "") }
 
-	line("An interactive todo board backed by a plain markdown file. Runs standalone in any terminal, or as a herdr plugin pane. Changes save on quit, autosave after a short idle pause, or on demand with w; the header shows ● unsaved / ● saved. The board reloads external edits automatically when you have nothing unsaved.")
+	k := func(b binding.Binding) string { return b.Help().Key }
+	line("An interactive todo board backed by a plain markdown file. Runs standalone in any terminal, or as a herdr plugin pane. Changes save on quit, autosave after a short idle pause, or on demand with " + k(keys.Save) + "; the header shows ● unsaved / ● saved. The board reloads external edits automatically when you have nothing unsaved.")
 	blank()
 	sec("adding")
-	line("a — add. Inline syntax: text @category #tag (tags:a,b replaces the set) !h|!m|!l due:tomorrow defer:3d link:https://… status:name note:the rest of the line")
+	line(k(keys.Add) + " — add. Inline syntax: text @category #tag (tags:a,b replaces the set) !h|!m|!l due:tomorrow defer:3d link:https://… status:name note:the rest of the line")
 	line("a new item inherits the selected item's category (then a category filter's), so adding under a group stays in it; an inline @category overrides")
-	line("u — edit the selected item's (or subtask's) text")
-	line("S — add a subtask to the selected item (same !prio / due: syntax)")
+	line(k(keys.Edit) + " — edit the selected item's (or subtask's) text")
+	line(k(keys.AddSub) + " — add a subtask to the selected item (same !prio / due: syntax)")
 	blank()
 	sec("organise")
-	line("h/m/l — set priority high/medium/low (same key again clears; works on subtasks too)")
-	line("g — set category · T — set tags (space- or comma-separated; empty clears) · t — set due date · s — set defer/start date")
-	line("L — set link · o — open the link in the browser")
-	line("y — copy the selected item's title to the clipboard (through the terminal, OSC 52)")
-	line("space — toggle done · tab — cycle status · x — delete")
+	line(k(keys.Prio) + " — set priority high/medium/low (same key again clears; works on subtasks too)")
+	line(k(keys.Category) + " — set category · " + k(keys.Tags) + " — set tags (space- or comma-separated; empty clears) · " + k(keys.Due) + " — set due date · " + k(keys.Defer) + " — set start (defer) date")
+	line(k(keys.Link) + " — set link · " + k(keys.Open) + " — open the link in the browser")
+	line(k(keys.Copy) + " — copy the selected item's title to the clipboard (through the terminal, OSC 52)")
+	line(k(keys.Toggle) + " — toggle done · " + k(keys.Status) + " — cycle status · " + k(keys.Delete) + " — delete")
 	line("rows carry two flush-right values: subtask progress (else the due/defer label), then whichever grouping axis the headers don't already name — priority in the category and tag views, category in the priority view. The box shape is the status (○ open, ◐ named status, ✓ done)")
-	line("c — archive all done items · C — archive the selected item (whole items only, not subtasks)")
+	line(k(keys.Sweep) + " — archive all done items · " + k(keys.Archive) + " — archive the selected item (whole items only, not subtasks)")
 	line("subtasks: completing a parent completes its subtasks; completing the last subtask completes the parent")
 	blank()
 	sec("due dates")
 	line("today · tomorrow · a weekday (fri: the next one) · Nd/Nw/Nm/Ny (e.g. 3d, 2w) · DD-MM-YYYY. Anything unrecognised clears the date here; the command API rejects it. Overdue items are pinned to a group at the top.")
 	blank()
 	sec("view & find")
-	line("v — cycle view: category / priority / tag / table / lane (the global view adds a board grouping instead of lane). The tag view groups by an item's first tag (untagged last) and shows its other tags on the row")
-	line("lane view: one column per configured status — a kanban board. ←/→ switches the active column, tab moves the selected card into the next one; every other key (h/m/l, g, T, t, s, L, o, y, u, d, space, x) still acts on the card under the cursor. Not available in the global view, since boards can configure different statuses")
-	line("/ — filter text, note, category, tags, due (also greps the archive)")
-	line("A — toggle the read-only global view across all boards (esc to leave)")
-	line("e — browse the archive (read-only; all boards in the global view; esc to leave)")
-	line("d — detail view; the same field keys work there (u, h/m/l, g, T, t, s, L, tab) and return to it · ? — this help")
-	line("F — hide/show the footer help grid (the repo/version line stays; config: hidefooter = true starts hidden)")
-	line("mouse (config: mouse = true, or , settings): wheel scrolls, click selects a row or card, double-click opens its detail")
-	line("theme (config: theme = ansi|catppuccin|dracula|gruvbox|nord|mono, or ^t to pick with a live preview): theme.<token> = colour overrides one colour")
+	line(k(keys.Up) + " — move · " + k(keys.Top) + " — top/end")
+	line(k(keys.View) + " — cycle view: category / priority / tag / table / lane (the global view adds a board grouping instead of lane). The tag view groups by an item's first tag (untagged last) and shows its other tags on the row")
+	line("lane view: one column per configured status — a kanban board. " + k(keys.LaneLeft) + " switches the active column, " + k(keys.Status) + " moves the selected card into the next one; every other item key still acts on the card under the cursor. Not available in the global view, since boards can configure different statuses")
+	line(k(keys.Filter) + " — filter text, note, category, tags, due (also greps the archive)")
+	line(k(keys.Global) + " — toggle the read-only global view across all boards (esc to leave)")
+	line(k(keys.ArchiveView) + " — browse the archive (read-only; all boards in the global view; esc to leave)")
+	line(k(keys.Boards) + " — boards: switch, create, rename, archive")
+	line(k(keys.Detail) + " — detail view; the same field keys work there and return to it · " + k(keys.Help) + " — this help")
+	line(k(keys.Footer) + " — hide/show the footer help grid (the repo/version line stays; config: hidefooter = true starts hidden)")
+	line(k(keys.Settings) + " — settings (also ,) · " + k(keys.Theme) + " — theme picker with a live preview")
+	line("mouse (config: mouse = true, or settings): wheel scrolls, click selects a row or card, double-click opens its detail")
+	line("theme (config: theme = ansi|catppuccin|dracula|gruvbox|nord|mono): theme.<token> = colour overrides one colour")
 	blank()
 	sec("history & files")
-	line("U — undo · ^r — redo (multi-level)")
-	line("w — save now · autosave runs after idle (config: autosave = seconds, 0 disables)")
-	line("^e — open the markdown file in $EDITOR")
-	line("q — save + quit")
+	line(k(keys.Undo) + " — undo · " + k(keys.Redo) + " — redo (multi-level)")
+	line(k(keys.Save) + " — save now · autosave runs after idle (config: autosave = seconds, 0 disables)")
+	line(k(keys.Editor) + " — open the markdown file in $EDITOR")
+	line(k(keys.Quit) + " — save + quit")
+	blank()
+	sec("keys")
+	line("Keys like gb are a sequence: press g, then b (the footer lists what can follow). Rebind any key in config.toml with key.<action> = \"x\" (see the README).")
 	return out
 }
 
@@ -1243,7 +1274,7 @@ func (m model) detailView() string {
 	case it.Note != "":
 		b.WriteString(lipgloss.NewStyle().Width(m.width()).Render(it.Note) + "\n")
 	default:
-		b.WriteString(dimStyle.Render("(none — press n to add)") + "\n")
+		b.WriteString(dimStyle.Render("(none — press "+keys.Note.Help().Key+" to add)") + "\n")
 	}
 
 	rule := dimStyle.Render(strings.Repeat("─", m.width()))
@@ -1253,6 +1284,8 @@ func (m model) detailView() string {
 		help = rule + "\n" + dimStyle.Render(m.noteHint())
 	case m.fieldEdit: // editing a field from here: the prompt replaces the grid
 		help = rule + "\n" + m.inputPrompt()
+	case m.pending != "":
+		help = rule + "\n" + m.chordMenu()
 	default:
 		// the list's field editors work here too and come back here when done, so
 		// the footer is the list's grid narrowed to one item.

@@ -46,10 +46,16 @@ A new mode touches ~6 spots: the `modeXxx` iota (`model.go`), a dispatch case
 in `Update` (`update.go`), `updateXxx` + `enterXxx`, a `View` case + `xxxView`
 (`view.go`), the footer/hint (`listFooter`), the help grid/body
 (`helpGrid`/`helpBody`), and a `drive()` test. A new key on the list, global
-or detail view = a binding in `keys` + a `binding.Matches` case in the right
-`updateXxx` + an entry in its grid (`helpGrid`/`detailGrid`) + a test. Keep bindings consistent: `esc`
+or detail view = a field on `keyMap` with its default in `defaultKeys` (its
+config name, `key.<snake_case>`, comes from the field name) + a
+`binding.Matches` case in the right `updateXxx` + an entry in its grid
+(`helpGrid`/`detailGrid`) and `helpBody` (read the label from the binding,
+never hardcode it) + the README key table and action list + a test. Users
+rebind keys, so handlers must match bindings, not literal strings. Keys are
+mnemonic (`d` due, `t` tags, `c` category); rare screen-level actions go under
+the `g` sequence (`gb` boards, `gs` settings). Keep bindings consistent: `esc`
 backs out, `q`/`ctrl+c` quit, `space` toggles, `enter` activates — one key per
-action.
+action, and `TestKeymapNoClashes` holds the defaults to that.
 
 ## invariants — do not break
 

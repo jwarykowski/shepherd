@@ -86,7 +86,7 @@ func TestThemePicker(t *testing.T) {
 	m := model{input: textinput.New(), theme: theme.Default}
 	m.applyTheme()
 
-	m = drive(m, "ctrl+t", "j")
+	m = drive(m, "g", "t", "j")
 	if m.mode != modeTheme || m.theme != theme.Next(theme.Default) {
 		t.Fatalf("mode %v theme %q", m.mode, m.theme)
 	}
@@ -98,7 +98,7 @@ func TestThemePicker(t *testing.T) {
 		t.Fatalf("esc: mode %v theme %q", m.mode, m.theme)
 	}
 
-	m = drive(m, "ctrl+t", "j", "j", "enter")
+	m = drive(m, "g", "t", "j", "j", "enter")
 	want := theme.Next(theme.Next(theme.Default))
 	if m.mode != modeList || m.theme != want {
 		t.Fatalf("enter: mode %v theme %q", m.mode, m.theme)
