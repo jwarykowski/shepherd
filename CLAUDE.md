@@ -24,8 +24,10 @@ Run format + vet + test + lint before proposing changes done — CI
 
 `internal/` packages, dependencies pointing strictly inward:
 `todo` (pure domain, no I/O) → `store` (markdown persistence) → `cli` +
-`tui` (frontends) → `main`. Each package doc comment states its job and
-dependency direction; keep that true.
+`tui` (frontends) → `main`. `theme` (colour palettes, pure) sits beside
+`todo` and is used by both frontends; `testenv` is imported only by tests.
+Each package doc comment states its job and dependency direction; keep that
+true.
 
 TUI is split by file: `model.go` (the `model` struct + all state, config
 load/save), `update.go` (`Update`, the list/global/input handlers),
@@ -72,7 +74,10 @@ error in `m.projNotice`.
 
 Drive the TUI headless with `key()`/`drive()` then assert on model fields or
 `m.View()`. Pin time via `todo.Now`/`todo.Today` (`pinToday` helper). Isolate
-the filesystem with `t.TempDir()` + `t.Setenv`. Capture CLI output through an
+the filesystem with `t.TempDir()` + `t.Setenv`. Every test package's
+`TestMain` runs through `testenv.Run`, which points `HOME` at a temp dir and
+clears `SHEPHERD_*`/`XDG_CONFIG_HOME`, so a test can never write the user's
+real config or boards; a new test package needs the same `TestMain`. Capture CLI output through an
 injected `io.Writer`. Table-driven for pure logic; scenario-style for stateful
 flows. Every non-trivial change ships a test.
 

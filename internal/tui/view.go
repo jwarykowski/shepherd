@@ -20,19 +20,8 @@ var (
 	dimStyle   = lipgloss.NewStyle().Faint(true)
 	brandStyle = lipgloss.NewStyle().Bold(true)
 	doneStyle  = lipgloss.NewStyle().Faint(true).Strikethrough(true)
-	boxStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("2"))
-	progStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("4"))
-	matchStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("4"))
-	catStyle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("6"))
 	countStyle = lipgloss.NewStyle().Faint(true)
-	warnStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("3"))
-	ruleStyle  = lipgloss.NewStyle().Faint(true).Foreground(lipgloss.Color("240"))
-	prioStyles = map[byte]lipgloss.Style{
-		'H': lipgloss.NewStyle().Foreground(lipgloss.Color("1")),
-		'M': lipgloss.NewStyle().Foreground(lipgloss.Color("3")),
-		'L': lipgloss.NewStyle().Faint(true),
-	}
-	prioLabel = map[byte]string{'H': "high", 'M': "medium", 'L': "low"}
+	prioLabel  = map[byte]string{'H': "high", 'M': "medium", 'L': "low"}
 )
 
 // spread lays left flush-left and right flush-right across w columns, padding
@@ -41,11 +30,6 @@ var (
 func spread(w int, left, right string) string {
 	gap := max(w-lipgloss.Width(left)-lipgloss.Width(right), 1)
 	return left + strings.Repeat(" ", gap) + right
-}
-
-// cursorStyle highlights the cursor row, light or dark to suit the terminal.
-func (m model) cursorStyle() lipgloss.Style {
-	return lipgloss.NewStyle().Background(lipgloss.LightDark(!m.light)(lipgloss.Color("254"), lipgloss.Color("236")))
 }
 
 func (m model) View() tea.View {
@@ -171,7 +155,11 @@ func (m model) screen() string {
 	default:
 		content = m.listView()
 	}
-	return lipgloss.NewStyle().Padding(m.density.padY(), m.density.padX()).Render(content)
+	out := lipgloss.NewStyle().Padding(m.density.padY(), m.density.padX()).Render(content)
+	if m.mode == modeTheme {
+		out = m.themeOverlay(out)
+	}
+	return out
 }
 
 // width is the inner content width, i.e. the pane minus horizontal padding.
@@ -284,10 +272,10 @@ func (m model) rowComplement(it todo.Item) string {
 		if it.Category == "" {
 			return ""
 		}
-		return catStyle.Render(it.Category)
+		return m.st().cat.Render(it.Category)
 	}
 	if lbl, ok := prioLabel[it.Prio]; ok {
-		return prioStyles[it.Prio].Render(lbl)
+		return m.st().prio[it.Prio].Render(lbl)
 	}
 	return ""
 }
@@ -300,7 +288,7 @@ func (m model) rowComplement(it todo.Item) string {
 func (m model) rowContent(it todo.Item, indent, badge string, isSub bool) string {
 	w := m.width()
 	box := "○"
-	boxSt := boxStyle
+	boxSt := m.st().box
 	text := it.Text
 	deferred := todo.Deferred(it)
 	switch {
@@ -309,7 +297,7 @@ func (m model) rowContent(it todo.Item, indent, badge string, isSub bool) string
 		text = doneStyle.Render(text)
 	case it.Status != "":
 		box = "◐"
-		boxSt = progStyle
+		boxSt = m.st().prog
 	case deferred:
 		text = dimStyle.Render(text) // not started yet
 	}
@@ -338,7 +326,7 @@ func (m model) rowContent(it todo.Item, indent, badge string, isSub bool) string
 		lbl, over := todo.DueLabel(it.Due)
 		st := dimStyle
 		if over {
-			st = prioStyles['H'] // red for due/overdue
+			st = m.st().prio['H'] // red for due/overdue
 		}
 		label = st.Render(lbl)
 	}
@@ -376,7 +364,7 @@ func (m model) listView() string {
 				}
 				done, total := m.groupCount(parent)
 				cnt := countStyle.Render(fmt.Sprintf("%d/%d", done, total))
-				out = append(out, spread(w, catStyle.Render(label), cnt))
+				out = append(out, spread(w, m.st().cat.Render(label), cnt))
 				lastGroup = gid
 			}
 			if d, t := todo.SubCount(it); t > 0 {
@@ -390,7 +378,7 @@ func (m model) listView() string {
 			cursorLine = len(out)
 			// full-width subtle highlight on the selected row; strip inner styles
 			// first so their ANSI resets don't punch holes in the background.
-			row = m.cursorStyle().Width(w).Render(ansi.Truncate(ansi.Strip(row), w, "…"))
+			row = m.st().cursor.Width(w).Render(ansi.Truncate(ansi.Strip(row), w, "…"))
 		}
 		out = append(out, rowMark(0, pos)+row)
 		if m.density == comfort {
@@ -442,18 +430,18 @@ func (m model) archiveView() string {
 		out = append(out, dimStyle.Render("no archived items"))
 	}
 	for i, it := range m.arcRows {
-		left := "  " + boxStyle.Render("✓") + " " + dimStyle.Render(it.Text)
+		left := "  " + m.st().box.Render("✓") + " " + dimStyle.Render(it.Text)
 		row := left
 		if m.global && it.Source != "" {
-			row = spread(w, left, catStyle.Render("["+it.Source+"]"))
+			row = spread(w, left, m.st().cat.Render("["+it.Source+"]"))
 		}
 		if i == m.arcCur {
 			cursorLine = len(out)
-			row = m.cursorStyle().Width(w).Render(ansi.Truncate(ansi.Strip(row), w, "…"))
+			row = m.st().cursor.Width(w).Render(ansi.Truncate(ansi.Strip(row), w, "…"))
 		}
 		out = append(out, row)
 	}
-	footer := ruleStyle.Render(strings.Repeat("┈", w)) + "\n" +
+	footer := m.st().rule.Render(strings.Repeat("┈", w)) + "\n" +
 		dimStyle.Render("browse archive · j/k scroll · esc back · q quit")
 	out = m.windowRows(out, cursorLine, lines(footer))
 	body := m.headerWith("archive", len(m.arcRows), len(m.arcRows)) + "\n" + strings.Join(out, "\n")
@@ -481,17 +469,17 @@ func (m model) boardsView() string {
 		open, total := m.boardCount(i)
 		left := "  " + b.Name
 		if !m.projArchived && b.Name == cur {
-			left = boxStyle.Render("▸ ") + b.Name
+			left = m.st().box.Render("▸ ") + b.Name
 		}
 		cnt := countStyle.Render(fmt.Sprintf("%d/%d", total-open, total))
 		row := spread(w, left, cnt)
 		if i == m.projCur {
 			cursorLine = len(out)
-			row = m.cursorStyle().Width(w).Render(ansi.Truncate(ansi.Strip(row), w, "…"))
+			row = m.st().cursor.Width(w).Render(ansi.Truncate(ansi.Strip(row), w, "…"))
 		}
 		out = append(out, row)
 	}
-	rule := ruleStyle.Render(strings.Repeat("┈", w))
+	rule := m.st().rule.Render(strings.Repeat("┈", w))
 	var footer string
 	switch m.mode {
 	case modeBoardNew:
@@ -505,11 +493,11 @@ func (m model) boardsView() string {
 		if b := m.selectedBoard(); b != nil {
 			name = b.Name
 		}
-		footer = rule + "\n" + warnStyle.Render(fmt.Sprintf("delete board %q and its archive? (y/n)", name))
+		footer = rule + "\n" + m.st().warn.Render(fmt.Sprintf("delete board %q and its archive? (y/n)", name))
 	default:
 		footer = rule + "\n"
 		if m.projNotice != "" {
-			footer += warnStyle.Render(m.projNotice) + "\n"
+			footer += m.st().warn.Render(m.projNotice) + "\n"
 		}
 		footer += m.boardsHelp()
 	}
@@ -544,7 +532,7 @@ func (m model) boardDetailView() string {
 		// rename, so surface whether the recorded path still exists on disk.
 		mark := ""
 		if _, err := os.Stat(expandHome(dir)); err != nil {
-			mark = "  " + warnStyle.Render("(missing)")
+			mark = "  " + m.st().warn.Render("(missing)")
 		}
 		dirVal = dir + mark
 	}
@@ -557,7 +545,7 @@ func (m model) boardDetailView() string {
 	body.WriteString(field("archive", dimStyle.Render(store.ArchivePath(b.Path))))
 	body.WriteString(field("items", countStyle.Render(fmt.Sprintf("%d/%d", total-open, total))))
 
-	rule := ruleStyle.Render(strings.Repeat("┈", w))
+	rule := m.st().rule.Render(strings.Repeat("┈", w))
 	var footer string
 	if m.mode == modeBoardDir { // editing this board's dir
 		footer = rule + "\n" + m.inputView() + "  " + dimStyle.Render("(dir: enter=save esc=cancel)")
@@ -599,6 +587,7 @@ func (m model) settingsView() string {
 		{"statuses", strings.Join(cfg.statuses, ", ")},
 		{"footer", foot},
 		{"mouse", map[bool]string{false: "off", true: "on"}[cfg.mouse]},
+		{"theme", cfg.theme},
 	}
 	var out []string
 	for i, r := range rows {
@@ -608,7 +597,7 @@ func (m model) settingsView() string {
 		}
 		line := "  " + fmt.Sprintf("%-12s", r.k) + val
 		if i == m.settingsCur {
-			line = m.cursorStyle().Width(w).Render(ansi.Truncate(ansi.Strip(line), w, "…"))
+			line = m.st().cursor.Width(w).Render(ansi.Truncate(ansi.Strip(line), w, "…"))
 		}
 		out = append(out, line)
 	}
@@ -616,9 +605,9 @@ func (m model) settingsView() string {
 	// header without the done/total count that headerWith always appends.
 	left := titleLeft()
 	right := dimStyle.Render("settings")
-	header := spread(w, left, right) + "\n" + ruleStyle.Render(strings.Repeat("┈", w))
+	header := spread(w, left, right) + "\n" + m.st().rule.Render(strings.Repeat("┈", w))
 
-	rule := ruleStyle.Render(strings.Repeat("┈", w))
+	rule := m.st().rule.Render(strings.Repeat("┈", w))
 	footer := rule + "\n"
 	if m.mode == modeSettingEdit {
 		footer += m.inputView() + "  " + dimStyle.Render("(enter=save esc=cancel)")
@@ -693,17 +682,17 @@ func (m model) headerWith(context string, done, total int) string {
 
 	right := dimStyle.Render(context) + "  " + countStyle.Render(fmt.Sprintf("%d/%d", done, total))
 	if m.filter != "" || m.mode == modeFilter {
-		right = matchStyle.Render("/"+m.filter) + "  " + right
+		right = m.st().match.Render("/"+m.filter) + "  " + right
 	}
 	if !m.global { // global view is read-only; no save state to show
 		save := dimStyle.Render("● saved")
 		if m.dirty {
-			save = warnStyle.Render("● unsaved")
+			save = m.st().warn.Render("● unsaved")
 		}
 		right = right + "  " + save
 	}
 	return spread(w, left, right) + "\n" +
-		ruleStyle.Render(strings.Repeat("┈", w))
+		m.st().rule.Render(strings.Repeat("┈", w))
 }
 
 // Version is the running build's version, set by main from the embedded
@@ -739,7 +728,7 @@ func (m model) bottomBar() string {
 // listFooter: a full-width rule, then either the active input line or the
 // grouped multi-line key help, and always the repo/version line at the bottom.
 func (m model) listFooter() string {
-	rule := ruleStyle.Render(strings.Repeat("┈", m.width()))
+	rule := m.st().rule.Render(strings.Repeat("┈", m.width()))
 	switch m.mode {
 	case modeFilter:
 		return rule + "\n" + m.inputView() + "  " + dimStyle.Render("(filter: enter=apply esc=clear)")
@@ -774,12 +763,12 @@ func (m model) helpGrid() string {
 		{"move", entries(keys.Up, keys.LaneLeft, keys.Toggle, keys.Detail, keys.View, keys.Global, keys.ArchiveView, keys.Boards, keys.Footer)},
 		{"edit", entries(keys.Add, keys.AddSub, keys.Edit, keys.Status, keys.Delete, keys.Sweep, keys.Archive)},
 		{"fields", entries(keys.Prio, keys.Category, keys.Tags, keys.Due, keys.Defer, keys.Link, keys.Open, keys.Copy)},
-		{"board", entries(keys.Save, keys.Editor, keys.Undo, keys.Redo, keys.Filter, keys.Settings, keys.Help, keys.Quit)},
+		{"board", entries(keys.Save, keys.Editor, keys.Undo, keys.Redo, keys.Filter, keys.Settings, keys.Theme, keys.Help, keys.Quit)},
 	}
 
 	// In the read-only global view most actions are inert; dim them so only the
 	// keys that do something (navigate / inspect / leave) read as live.
-	globalActive := keySet(keys.Up, keys.Detail, keys.View, keys.Filter, keys.Global, keys.ArchiveView, keys.Open, keys.Copy, keys.Boards, keys.Footer, keys.Help, keys.Quit)
+	globalActive := keySet(keys.Up, keys.Detail, keys.View, keys.Filter, keys.Global, keys.ArchiveView, keys.Open, keys.Copy, keys.Boards, keys.Footer, keys.Theme, keys.Help, keys.Quit)
 
 	// On a subtask row category is parent-only (subs share the parent's board);
 	// dim it. Archive (C) takes whole items only, so it's inert on a subtask too.
@@ -824,7 +813,7 @@ func (m model) keyGrid(cols []keyCol, dim func(key string) bool) string {
 				keyW = kw
 			}
 		}
-		lines := []string{catStyle.Render(c.head)}
+		lines := []string{m.st().cat.Render(c.head)}
 		w := lipgloss.Width(lines[0])
 		for _, e := range c.entries {
 			key := e.label() + strings.Repeat(" ", keyW-lipgloss.Width(e.label()))
@@ -956,7 +945,7 @@ func (m model) tableView() string {
 func (m model) laneCard(it todo.Item, w int) string {
 	marker, markSt := " ", dimStyle
 	if _, ok := prioLabel[it.Prio]; ok {
-		marker, markSt = string(it.Prio), prioStyles[it.Prio]
+		marker, markSt = string(it.Prio), m.st().prio[it.Prio]
 	}
 	text := it.Text
 	if it.Done {
@@ -987,12 +976,12 @@ func (m model) laneView() string {
 	cardLines := make([][]string, len(lanes))
 	for i, status := range lanes {
 		rows := m.laneRows(status)
-		headers[i] = spread(colW, catStyle.Render(status), countStyle.Render(strconv.Itoa(len(rows))))
+		headers[i] = spread(colW, m.st().cat.Render(status), countStyle.Render(strconv.Itoa(len(rows))))
 		lines := make([]string, len(rows))
 		for j, r := range rows {
 			line := m.laneCard(m.rowItem(r), colW)
 			if i == active && j == cur {
-				line = m.cursorStyle().Width(colW).Render(ansi.Strip(line))
+				line = m.st().cursor.Width(colW).Render(ansi.Strip(line))
 			}
 			lines[j] = rowMark(i, j) + line
 		}
@@ -1038,7 +1027,7 @@ func (m model) helpBody() []string {
 	w := m.width()
 	wrap := lipgloss.NewStyle().Width(w - 2)
 	var out []string
-	sec := func(s string) { out = append(out, catStyle.Render(s)) }
+	sec := func(s string) { out = append(out, m.st().cat.Render(s)) }
 	line := func(s string) {
 		for ln := range strings.SplitSeq(wrap.Render(s), "\n") {
 			out = append(out, "  "+ln)
@@ -1076,6 +1065,7 @@ func (m model) helpBody() []string {
 	line("d — detail view; the same field keys work there (u, h/m/l, g, T, t, s, L, tab) and return to it · ? — this help")
 	line("F — hide/show the footer help grid (the repo/version line stays; config: hidefooter = true starts hidden)")
 	line("mouse (config: mouse = true, or , settings): wheel scrolls, click selects a row or card, double-click opens its detail")
+	line("theme (config: theme = ansi|catppuccin|dracula|gruvbox|nord|mono, or ^t to pick with a live preview): theme.<token> = colour overrides one colour")
 	blank()
 	sec("history & files")
 	line("U — undo · ^r — redo (multi-level)")
@@ -1175,7 +1165,7 @@ func (m model) detailView() string {
 	}
 	prio := "none"
 	if lbl, ok := prioLabel[it.Prio]; ok {
-		prio = prioStyles[it.Prio].Render(lbl)
+		prio = m.st().prio[it.Prio].Render(lbl)
 	}
 	created := it.Created
 	if created == "" {
@@ -1189,7 +1179,7 @@ func (m model) detailView() string {
 	if category == "" {
 		category = dimStyle.Render("uncategorized")
 	} else {
-		category = catStyle.Render(category)
+		category = m.st().cat.Render(category)
 	}
 	b.WriteString(field("task", it.Text))
 	if ref.sub >= 0 {
@@ -1200,11 +1190,11 @@ func (m model) detailView() string {
 	b.WriteString(field("category", category))
 	tags := dimStyle.Render("—")
 	if len(it.Tags) > 0 {
-		tags = catStyle.Render("#" + strings.Join(it.Tags, " #"))
+		tags = m.st().cat.Render("#" + strings.Join(it.Tags, " #"))
 	}
 	b.WriteString(field("tags", tags))
 	if m.global && it.Source != "" {
-		b.WriteString(field("board", catStyle.Render(it.Source)))
+		b.WriteString(field("board", m.st().cat.Render(it.Source)))
 	}
 	if it.Defer != "" {
 		deferral := todo.DisplayDate(it.Defer)
@@ -1218,13 +1208,13 @@ func (m model) detailView() string {
 		lbl, over := todo.DueLabel(it.Due)
 		st := dimStyle
 		if over {
-			st = prioStyles['H']
+			st = m.st().prio['H']
 		}
 		due = fmt.Sprintf("%s  %s", todo.DisplayDate(it.Due), st.Render(lbl))
 	}
 	b.WriteString(field("due", due))
 	if it.Link != "" {
-		b.WriteString(field("link", matchStyle.Render(it.Link)))
+		b.WriteString(field("link", m.st().match.Render(it.Link)))
 	}
 	b.WriteString(field("created", created))
 	if it.Completed != "" {

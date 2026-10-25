@@ -165,6 +165,7 @@ func TestMouse(t *testing.T) {
 // TestMouseSetting pins that the settings row toggles mouse and persists it.
 func TestMouseSetting(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("SHEPHERD_CONFIG", "")
 	t.Setenv("XDG_CONFIG_HOME", dir)
 	t.Setenv("HOME", dir)
 	m := model{input: textinput.New(), mode: modeSettings, settingsCur: 6}

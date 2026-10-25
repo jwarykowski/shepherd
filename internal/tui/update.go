@@ -362,6 +362,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.BackgroundColorMsg:
 		m.light = !msg.IsDark()
+		m.applyTheme()
 		return m, nil
 	case tea.KeyboardEnhancementsMsg:
 		m.kbdEnhanced = msg.SupportsKeyDisambiguation()
@@ -471,6 +472,8 @@ func (m model) updateGlobal(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.enterBoards()
 	case binding.Matches(msg, keys.Help):
 		m.mode = modeHelp
+	case binding.Matches(msg, keys.Theme):
+		m.enterTheme()
 	case binding.Matches(msg, keys.Filter):
 		m.prompt(modeFilter, m.filter, "filter")
 	}
@@ -718,6 +721,8 @@ func (m model) updateList(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case binding.Matches(msg, keys.Settings):
 		m.mode = modeSettings
 		m.settingsCur = 0
+	case binding.Matches(msg, keys.Theme):
+		m.enterTheme()
 	case binding.Matches(msg, keys.Editor):
 		return m, m.openEditor()
 	}
@@ -1028,6 +1033,8 @@ func (m model) dispatchKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		res, cmd = m.updateSettings(msg)
 	case modeSettingEdit:
 		res, cmd = m.updateSettingEdit(msg)
+	case modeTheme:
+		res, cmd = m.updateTheme(msg)
 	default:
 		if m.global {
 			res, cmd = m.updateGlobal(msg)

@@ -91,6 +91,7 @@ herdr plugin install jwarykowski/shepherd
 | `w` | save now (the header shows `● unsaved` / `● saved`) |
 | `ctrl+e` | open the markdown file in `$EDITOR` |
 | `,` | open settings — edit view, density, autosave, categories, statuses, footer; changes save to `config.toml` |
+| `ctrl+t` | theme picker — `j`/`k` preview each theme live, `enter` keeps it (saved to `config.toml`), `esc` restores the old one |
 | `x` | delete item |
 | `c` | sweep all done items to `archive.md` |
 | `C` | archive the selected item to `archive.md` (whole items only — dimmed on a subtask row) |
@@ -412,6 +413,8 @@ categories = ["work", "home", "personal"]  # tab-cycles in the category prompt
 statuses = ["open", "in-progress", "done"] # tab cycles item status in the list
 hidefooter = false                         # true starts with the footer help grid hidden (F toggles at runtime)
 mouse = false                              # true: wheel scrolls, click selects, double-click opens
+theme = "ansi"                             # ansi (default) | catppuccin | dracula | gruvbox | nord | mono
+# theme.accent = "#88c0d0"                 # optional per-colour overrides (see below)
 ```
 
 - `view` — default grouping/layout on launch (`v` still cycles at runtime).
@@ -421,8 +424,9 @@ mouse = false                              # true: wheel scrolls, click selects,
 - `statuses` — ordered list `tab` cycles through in the list; `done` is always kept and forced last. Defaults to `["open", "done"]`. Intermediate statuses persist as a `status:` line and show a `◐` glyph; [`shepherd stats`](#stats) breaks items down by status in this order.
 - `hidefooter` — start with the footer help grid hidden for a cleaner board (the `jwarykowski/shepherd` · version line stays); `F` toggles it at runtime.
 - `mouse` — wheel scrolling, click to select a row or card, double-click for its detail. Off by default because it takes over the terminal's own text selection (hold `shift` to select while it's on).
+- `theme` — the colour palette for the board and `shepherd stats`. `ansi` uses your terminal's own 16 colours, so it follows your terminal theme; the others are fixed palettes with light and dark variants, picked from the terminal's background (and downsampled on 256- or 16-colour terminals). `mono` drops colour for bold/faint only. Override single colours with `theme.<token> = "<colour>"`: tokens are `accent` (group headers), `ok`, `info`, `warn`, `rule`, `muted`, `cursor` (row highlight), `prio_high`, `prio_med`, `prio_low`; a colour is a palette index (`0`-`255`), `#rrggbb`, an ANSI name (`red`, `bright-blue`, `grey`), or `none`. Overrides apply on top of whichever theme is active.
 
-Edit these in the running board with `,` (settings): `enter` cycles `view`/`density`/`footer`/`mouse` and edits `autosave`/`categories`/`statuses`, and each change is written straight back to `config.toml`. shepherd owns the file — a settings save rewrites the managed keys.
+Edit these in the running board with `,` (settings): `enter` cycles `view`/`density`/`footer`/`mouse`/`theme` (previewed live) and edits `autosave`/`categories`/`statuses`, and each change is written straight back to `config.toml`. shepherd owns the file — a settings save rewrites the managed keys.
 
 herdr pane placement (`placement` / `direction`) lives in the same file — see
 [herdr integration](#herdr-integration).

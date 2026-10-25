@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"shepherd/internal/testenv"
 	"shepherd/internal/todo"
 	"strings"
 	"sync"
@@ -43,7 +44,7 @@ func TestWithLockSerialisesWriters(t *testing.T) {
 // ids set todo.NewID themselves and restore it.
 func TestMain(m *testing.M) {
 	todo.NewID = func() string { return "" }
-	os.Exit(m.Run())
+	os.Exit(testenv.Run(m.Run))
 }
 
 // TestIDBackfillAndRoundTrip covers ids end to end: Save mints one for every

@@ -6,9 +6,12 @@ import (
 	"io"
 	"os"
 	"shepherd/internal/store"
+	"shepherd/internal/theme"
 	"shepherd/internal/todo"
 	"sort"
+	"strings"
 
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/charmbracelet/x/term"
 )
@@ -28,6 +31,10 @@ func cmdStats(args []string, board string, w io.Writer) int {
 		return usageErr(w, *asJSON, fmt.Sprintf("unexpected argument %q", fs.Arg(0)))
 	}
 	plain := colorDisabled(*noColor)
+	kv := store.ScanKVFile(store.ConfigPath())
+	// only ask the terminal for its background when colour will be drawn
+	light := !plain && !lipgloss.HasDarkBackground(os.Stdin, os.Stdout)
+	palette = theme.Resolve(strings.Trim(kv["theme"], `"`), light, kv)
 	draw := func(s string) {
 		if plain {
 			s = ansi.Strip(s)

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"shepherd/internal/store"
+	"shepherd/internal/theme"
 	"strconv"
 	"strings"
 	"time"
@@ -11,8 +12,8 @@ import (
 
 // numSettings is the count of editable rows in the settings screen, in the
 // order settingsView renders them: view, density, autosave, categories,
-// statuses, footer, mouse.
-const numSettings = 7
+// statuses, footer, mouse, theme.
+const numSettings = 8
 
 func (m *model) saveSettings() { _ = saveConfig(store.ConfigPath(), m.currentConfig()) }
 
@@ -35,7 +36,7 @@ func (m model) updateSettings(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 	case "enter":
 		switch m.settingsCur {
-		case 0, 1, 5, 6:
+		case 0, 1, 5, 6, 7:
 			m.cycleSetting() // enum/bool rows cycle in place
 		default:
 			m.prompt(modeSettingEdit, m.settingValue(m.settingsCur), m.settingPlaceholder(m.settingsCur))
@@ -64,6 +65,10 @@ func (m *model) cycleSetting() {
 		m.saveSettings()
 	case 6: // mouse: off <-> on
 		m.mouse = !m.mouse
+		m.saveSettings()
+	case 7: // theme: next built-in, previewed live
+		m.theme = theme.Next(m.theme)
+		m.applyTheme()
 		m.saveSettings()
 	}
 }

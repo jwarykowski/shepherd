@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"shepherd/internal/store"
+	"shepherd/internal/theme"
 	"shepherd/internal/todo"
 	"slices"
 	"sort"
@@ -30,10 +31,12 @@ type config struct {
 	view       viewMode
 	density    density
 	categories []string
-	statuses   []string // ordered, normalised so "done" is present and last
-	autosave   int      // seconds of idle before autosaving; 0 disables
-	hideFooter bool     // start with the list footer (help grid + version) hidden
-	mouse      bool     // wheel scrolling and click-to-select (off: the terminal keeps text selection)
+	statuses   []string          // ordered, normalised so "done" is present and last
+	autosave   int               // seconds of idle before autosaving; 0 disables
+	hideFooter bool              // start with the list footer (help grid + version) hidden
+	mouse      bool              // wheel scrolling and click-to-select (off: the terminal keeps text selection)
+	theme      string            // built-in theme name (see theme.Names)
+	themeKV    map[string]string // theme.<token> colour overrides, kept verbatim from the file
 }
 
 // loadConfig reads a tiny key=value config (leniently TOML-ish):
@@ -68,6 +71,18 @@ func loadConfig(path string) config {
 	}
 	c.hideFooter = val("hidefooter") == "true"
 	c.mouse = val("mouse") == "true"
+	c.theme = val("theme")
+	if !theme.Valid(c.theme) {
+		c.theme = theme.Default
+	}
+	for k, v := range kv {
+		if strings.HasPrefix(k, "theme.") {
+			if c.themeKV == nil {
+				c.themeKV = map[string]string{}
+			}
+			c.themeKV[k] = v
+		}
+	}
 	c.statuses = normalizeStatuses(c.statuses)
 	return c
 }
@@ -75,7 +90,7 @@ func loadConfig(path string) config {
 // managedConfigKeys are the config.toml keys the settings UI owns and rewrites.
 var managedConfigKeys = map[string]bool{
 	"view": true, "density": true, "autosave": true,
-	"categories": true, "statuses": true, "hidefooter": true, "mouse": true,
+	"categories": true, "statuses": true, "hidefooter": true, "mouse": true, "theme": true,
 }
 
 // saveConfig writes the managed config keys to config.toml and keeps every
@@ -101,6 +116,7 @@ func saveConfig(path string, c config) error {
 	fmt.Fprintf(&b, "statuses = %s\n", list(c.statuses))
 	fmt.Fprintf(&b, "hidefooter = %v\n", c.hideFooter)
 	fmt.Fprintf(&b, "mouse = %v\n", c.mouse)
+	fmt.Fprintf(&b, "theme = %q\n", c.theme)
 	if old, err := os.ReadFile(path); err == nil {
 		keepUnmanaged(&b, string(old))
 	}
@@ -175,6 +191,7 @@ const (
 	modeBoardDetail // board detail: name, dir, source + archive paths, counts
 	modeBoardRename
 	modeConfirmDelete
+	modeTheme // quick theme picker over the board
 )
 
 // density controls spacing: compact (tight, default) or comfort (roomier).
@@ -238,35 +255,39 @@ type model struct {
 	noteRef       rowRef         // the row the note editor opened on; a filter can hide it mid-edit
 	w             int
 	height        int
-	past          [][]todo.Item // undo stack (snapshots before each mutation)
-	future        [][]todo.Item // redo stack (snapshots undone)
-	dirty         bool          // cached: board differs from disk; recomputed per event
-	saved         string        // fingerprint of the board as last saved to disk
-	lastEdit      time.Time     // when the last mutation happened (debounce autosave)
-	autosaveEvery time.Duration // idle gap before autosaving; 0 disables
-	lastMod       time.Time     // todo file mtime we last saw
-	base          []todo.Item   // the board as last read from or written to disk (merge base)
-	helpScroll    int           // scroll offset in the help page
-	categories    []string      // configured categories (tab-cycle in category mode)
-	catIdx        int           // cursor into categories while cycling
-	statuses      []string      // configured statuses, ordered, "done" last (Tab-cycle in list)
-	density       density       // spacing mode
-	global        bool          // read-only aggregate across all boards
-	board         string        // the board to return to when leaving global
-	projRows      []store.Board // board list for the picker (modeBoards)
-	projCounts    [][2]int      // open/total per projRows entry, counted once per listing
-	projCur       int           // cursor into projRows
-	projArchived  bool          // picker is showing archived boards (unarchive-only)
-	projNotice    string        // transient picker error (e.g. invalid/duplicate board name)
-	projPending   string        // board whose working dir is being set (modeBoardDir)
-	projDirEdit   bool          // dir editor opened from the detail view (empty clears, return to detail); false = creation flow (empty skips)
-	fieldEdit     bool          // a field editor was opened from the item detail view, so save/cancel returns there instead of the list
-	settingsCur   int           // cursor into the settings rows (modeSettings)
-	hideFooter    bool          // hide the list footer (help grid + version line)
-	light         bool          // the terminal reported a light background
-	kbdEnhanced   bool          // the terminal tells shift+enter from enter (Kitty keyboard protocol)
-	mouse         bool          // mouse reporting on (config: mouse = true)
-	lastClick     rowClickMsg   // the previous row click, for double-click
+	past          [][]todo.Item     // undo stack (snapshots before each mutation)
+	future        [][]todo.Item     // redo stack (snapshots undone)
+	dirty         bool              // cached: board differs from disk; recomputed per event
+	saved         string            // fingerprint of the board as last saved to disk
+	lastEdit      time.Time         // when the last mutation happened (debounce autosave)
+	autosaveEvery time.Duration     // idle gap before autosaving; 0 disables
+	lastMod       time.Time         // todo file mtime we last saw
+	base          []todo.Item       // the board as last read from or written to disk (merge base)
+	helpScroll    int               // scroll offset in the help page
+	categories    []string          // configured categories (tab-cycle in category mode)
+	catIdx        int               // cursor into categories while cycling
+	statuses      []string          // configured statuses, ordered, "done" last (Tab-cycle in list)
+	density       density           // spacing mode
+	global        bool              // read-only aggregate across all boards
+	board         string            // the board to return to when leaving global
+	projRows      []store.Board     // board list for the picker (modeBoards)
+	projCounts    [][2]int          // open/total per projRows entry, counted once per listing
+	projCur       int               // cursor into projRows
+	projArchived  bool              // picker is showing archived boards (unarchive-only)
+	projNotice    string            // transient picker error (e.g. invalid/duplicate board name)
+	projPending   string            // board whose working dir is being set (modeBoardDir)
+	projDirEdit   bool              // dir editor opened from the detail view (empty clears, return to detail); false = creation flow (empty skips)
+	fieldEdit     bool              // a field editor was opened from the item detail view, so save/cancel returns there instead of the list
+	settingsCur   int               // cursor into the settings rows (modeSettings)
+	themeWas      string            // theme to restore when the picker is cancelled (modeTheme)
+	hideFooter    bool              // hide the list footer (help grid + version line)
+	light         bool              // the terminal reported a light background
+	kbdEnhanced   bool              // the terminal tells shift+enter from enter (Kitty keyboard protocol)
+	mouse         bool              // mouse reporting on (config: mouse = true)
+	lastClick     rowClickMsg       // the previous row click, for double-click
+	theme         string            // active built-in theme
+	themeKV       map[string]string // theme.<token> overrides from config.toml
+	sty           *styles           // coloured styles for theme + background; nil = defaults
 }
 
 // currentConfig snapshots the live, editable settings for the settings screen
@@ -280,6 +301,8 @@ func (m model) currentConfig() config {
 		autosave:   int(m.autosaveEvery / time.Second),
 		hideFooter: m.hideFooter,
 		mouse:      m.mouse,
+		theme:      m.theme,
+		themeKV:    m.themeKV,
 	}
 }
 
@@ -342,7 +365,10 @@ func newModel(board string) model {
 		autosaveEvery: time.Duration(cfg.autosave) * time.Second,
 		hideFooter:    cfg.hideFooter,
 		mouse:         cfg.mouse,
+		theme:         cfg.theme,
+		themeKV:       cfg.themeKV,
 	}
+	m.applyTheme()
 	m.reload()
 	if slices.ContainsFunc(m.items, func(it todo.Item) bool { return it.ID == "" }) {
 		m.save() // backfill ids now: merging another writer's edits matches items by id
@@ -421,7 +447,8 @@ func (m *model) loadGlobal() {
 func (m *model) toggleGlobal() {
 	if m.global {
 		nm := newModel(m.board)
-		nm.filter, nm.w, nm.height, nm.density, nm.hideFooter = m.filter, m.w, m.height, m.density, m.hideFooter
+		nm.adoptTerminal(*m)
+		nm.filter, nm.density, nm.hideFooter = m.filter, m.density, m.hideFooter
 		nm.clamp()
 		*m = nm
 		return

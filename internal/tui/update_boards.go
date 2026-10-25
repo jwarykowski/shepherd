@@ -93,7 +93,8 @@ func (m model) updateBoards(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.save()
 		}
 		nm := newModel(proj) // jump: rebuild the board fresh, like toggleGlobal
-		nm.w, nm.height, nm.density, nm.hideFooter = m.w, m.height, m.density, m.hideFooter
+		nm.adoptTerminal(m)
+		nm.density, nm.hideFooter = m.density, m.hideFooter
 		nm.clamp()
 		return nm, nil
 	case "d": // detail view for the selected board (name, dir, paths, counts)
@@ -180,7 +181,8 @@ func (m model) afterBoardChange(oldName, newName string) model {
 			proj = ""
 		}
 		nm := newModel(proj)
-		nm.w, nm.height, nm.density, nm.hideFooter = m.w, m.height, m.density, m.hideFooter
+		nm.adoptTerminal(m)
+		nm.density, nm.hideFooter = m.density, m.hideFooter
 		nm.enterBoards()
 		return nm
 	}

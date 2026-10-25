@@ -9,7 +9,7 @@ var keys = struct {
 	Up, Down, LaneLeft, LaneRight, Toggle, Detail, View, Global, ArchiveView, Boards, Footer binding.Binding
 	Add, AddSub, Edit, Status, Delete, Sweep, Archive                                        binding.Binding
 	Prio, Category, Tags, Due, Defer, Link, Open, Copy, Note                                 binding.Binding
-	Save, Editor, Undo, Redo, Filter, Settings, Help, Back, Quit                             binding.Binding
+	Save, Editor, Undo, Redo, Filter, Settings, Theme, Help, Back, Quit                      binding.Binding
 }{
 	Up:          binding.NewBinding(binding.WithKeys("k", "up"), binding.WithHelp("j/k", "move")),
 	Down:        binding.NewBinding(binding.WithKeys("j", "down")),
@@ -47,6 +47,7 @@ var keys = struct {
 	Redo:     binding.NewBinding(binding.WithKeys("ctrl+r"), binding.WithHelp("^r", "redo")),
 	Filter:   binding.NewBinding(binding.WithKeys("/"), binding.WithHelp("/", "filter")),
 	Settings: binding.NewBinding(binding.WithKeys(","), binding.WithHelp(",", "settings")),
+	Theme:    binding.NewBinding(binding.WithKeys("ctrl+t"), binding.WithHelp("^t", "theme")),
 	Help:     binding.NewBinding(binding.WithKeys("?"), binding.WithHelp("?", "help")),
 	Back:     binding.NewBinding(binding.WithKeys("esc"), binding.WithHelp("esc", "back")),
 	Quit:     binding.NewBinding(binding.WithKeys("q"), binding.WithHelp("q", "quit")),

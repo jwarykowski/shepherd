@@ -2,6 +2,8 @@ package cli
 
 import (
 	"fmt"
+	"image/color"
+	"shepherd/internal/theme"
 	"shepherd/internal/todo"
 	"sort"
 	"strconv"
@@ -14,30 +16,35 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-// Priority colours mirror tui/view.go: H red, M yellow, L faint. Kept here (not
-// cross-imported) so the tui package stays UI-only.
-const (
-	colHigh = "1"
-	colMed  = "3"
-	colLow  = "8"
-	colOK   = "2"
-	colDim  = "240"
-	colInfo = "4"
-)
+// palette colours the charts: the configured theme (see theme.Resolve), set by
+// cmdStats before rendering; the default theme until then.
+var palette = theme.Resolve(theme.Default, false, nil)
 
 var (
 	titleStyle = lipgloss.NewStyle().Bold(true)
 	faintStyle = lipgloss.NewStyle().Faint(true)
-	panelStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color(colDim)).
-			Padding(0, 1)
 )
+
+// fg colours s with c, or leaves it plain for a nil (colourless) token.
+func fg(s lipgloss.Style, c color.Color) lipgloss.Style {
+	if c == nil {
+		return s
+	}
+	return s.Foreground(c)
+}
+
+// lowColor is the !L bar: the theme's low priority, else its muted colour.
+func lowColor() color.Color {
+	if palette.PrioLow != nil {
+		return palette.PrioLow
+	}
+	return palette.Muted
+}
 
 type barRow struct {
 	label string
 	value int
-	color string
+	color color.Color
 }
 
 // renderStats lays the charts out as a responsive grid sized to width.
@@ -54,34 +61,34 @@ func renderStats(s todo.Stats, title string, width int) string {
 	b.WriteString(faintStyle.Render(strings.Repeat("─", width)) + "\n\n")
 
 	due := panel("due", hbar([]barRow{
-		{"overdue", s.Overdue, colHigh},
-		{"today", s.DueToday, colMed},
-		{"this week", s.DueWeek, colOK},
-		{"no date", s.NoDue, colDim},
-		{"deferred", s.Deferred, colInfo},
+		{"overdue", s.Overdue, palette.PrioHigh},
+		{"today", s.DueToday, palette.Warn},
+		{"this week", s.DueWeek, palette.OK},
+		{"no date", s.NoDue, palette.Rule},
+		{"deferred", s.Deferred, palette.Info},
 	}, innerW(width)), width)
 
 	prio := panel("open by priority", hbar([]barRow{
-		{"!H", s.Prio.H, colHigh},
-		{"!M", s.Prio.M, colMed},
-		{"!L", s.Prio.L, colLow},
-		{"none", s.Prio.None, colDim},
+		{"!H", s.Prio.H, palette.PrioHigh},
+		{"!M", s.Prio.M, palette.Warn},
+		{"!L", s.Prio.L, lowColor()},
+		{"none", s.Prio.None, palette.Rule},
 	}, innerW(width)), width)
 
 	catRows := make([]barRow, 0, len(s.ByCategory))
 	for _, c := range s.ByCategory {
-		catRows = append(catRows, barRow{c.Name, c.Open, colInfo})
+		catRows = append(catRows, barRow{c.Name, c.Open, palette.Info})
 	}
 	cat := panel("open by category", hbar(catRows, innerW(width)), width)
 
 	statusRows := make([]barRow, 0, len(s.ByStatus))
 	for _, st := range s.ByStatus {
-		c := colInfo
+		c := palette.Info
 		switch st.Name {
 		case "done":
-			c = colOK
+			c = palette.OK
 		case "open":
-			c = colDim
+			c = palette.Rule
 		}
 		statusRows = append(statusRows, barRow{st.Name, st.Count, c})
 	}
@@ -91,9 +98,9 @@ func renderStats(s todo.Stats, title string, width int) string {
 	ageLabels := []string{"<1d", "1-3d", "4-7d", "8-30d", ">30d"}
 	ageRows := make([]barRow, 0, len(s.OpenAgeDist))
 	for i, c := range s.OpenAgeDist {
-		col := colInfo
+		col := palette.Info
 		if i == len(ageLabels)-1 {
-			col = colHigh // >30d is stale
+			col = palette.PrioHigh // >30d is stale
 		}
 		ageRows = append(ageRows, barRow{ageLabels[i], c, col})
 	}
@@ -155,7 +162,11 @@ func innerW(panelW int) int {
 
 func panel(title, body string, width int) string {
 	inner := titleStyle.Render(title) + "\n" + body
-	return panelStyle.Width(width).Render(inner) // lipgloss v2: Width includes the border
+	st := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(0, 1)
+	if palette.Rule != nil {
+		st = st.BorderForeground(palette.Rule)
+	}
+	return st.Width(width).Render(inner) // lipgloss v2: Width includes the border
 }
 
 // hbar renders labelled horizontal bars scaled to the row max: a fixed label
@@ -195,7 +206,7 @@ func hbar(rows []barRow, width int) string {
 		if most > 0 && r.value > 0 {
 			fill = max(int(float64(r.value)/float64(most)*float64(barW)+0.5), 1)
 		}
-		bar := lipgloss.NewStyle().Foreground(lipgloss.Color(r.color)).Render(strings.Repeat("━", fill)) +
+		bar := fg(lipgloss.NewStyle(), r.color).Render(strings.Repeat("━", fill)) +
 			faintStyle.Render(strings.Repeat("┄", barW-fill))
 		lines[i] = fmt.Sprintf("%s %s %*d", lipgloss.NewStyle().Width(labelW).Render(labels[i]), bar, valW, r.value)
 	}
@@ -237,16 +248,16 @@ func trend(created, done []int, width int) string {
 	tc.SetViewTimeRange(base, base.AddDate(0, 0, n-1))
 	tc.SetYRange(0, maxY)
 	tc.SetViewYRange(0, maxY)
-	tc.SetDataSetStyle("created", lipgloss.NewStyle().Foreground(lipgloss.Color(colInfo)))
-	tc.SetDataSetStyle("done", lipgloss.NewStyle().Foreground(lipgloss.Color(colOK)))
+	tc.SetDataSetStyle("created", fg(lipgloss.NewStyle(), palette.Info))
+	tc.SetDataSetStyle("done", fg(lipgloss.NewStyle(), palette.OK))
 	for i := range n {
 		d := base.AddDate(0, 0, i)
 		tc.PushDataSet("created", timeserieslinechart.TimePoint{Time: d, Value: float64(created[i])})
 		tc.PushDataSet("done", timeserieslinechart.TimePoint{Time: d, Value: float64(done[i])})
 	}
 	tc.DrawBrailleAll()
-	legend := lipgloss.NewStyle().Foreground(lipgloss.Color(colInfo)).Render("created") + " " +
-		lipgloss.NewStyle().Foreground(lipgloss.Color(colOK)).Render("done")
+	legend := fg(lipgloss.NewStyle(), palette.Info).Render("created") + " " +
+		fg(lipgloss.NewStyle(), palette.OK).Render("done")
 	return tc.View() + "\n" + faintStyle.Render(legend)
 }
 
@@ -264,7 +275,7 @@ func boardBars(s todo.Stats, width int) string {
 		return names[i] < names[j]
 	})
 	for _, n := range names {
-		rows = append(rows, barRow{n, s.ByBoard[n].Open, colInfo})
+		rows = append(rows, barRow{n, s.ByBoard[n].Open, palette.Info})
 	}
 	return hbar(rows, width)
 }

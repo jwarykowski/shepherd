@@ -104,7 +104,7 @@ func (m model) clickRow(msg rowClickMsg) (tea.Model, tea.Cmd) {
 // pages ignore it.
 func (m model) wheel(msg tea.MouseWheelMsg) (tea.Model, tea.Cmd) {
 	switch m.mode {
-	case modeList, modeHelp, modeArchive, modeBoards, modeSettings:
+	case modeList, modeHelp, modeArchive, modeBoards, modeSettings, modeTheme:
 	default:
 		return m, nil
 	}
